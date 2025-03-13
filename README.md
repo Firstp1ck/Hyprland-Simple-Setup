@@ -1,5 +1,9 @@
 # Hyprland Setup
 
+## Example Image
+
+![Hyprland Minimal Setup](example_images/minimal_setup.png)
+
 ## Introduction
 This repository provides a minimalistic Hyprland setup that installs and configures Hyprland along with essential packages and AUR extras. It aims to deliver a lightweight and efficient desktop environment with dynamic wallpaper management and streamlined configuration.
 
