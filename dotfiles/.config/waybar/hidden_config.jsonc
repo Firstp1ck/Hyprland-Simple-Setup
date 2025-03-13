@@ -1,0 +1,8 @@
+{
+    // Keep your settings, but set the height to 0 so nothing shows:
+    "height": 0,
+    "spacing": 4,
+    "modules-left": [],
+    "modules-center": [],
+    "modules-right": []
+}
