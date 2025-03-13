@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-WALLPAPER_DIR="ADD FOLDER PATH"  # Replace with your wallpaper directory
+WALLPAPER_DIR="add/your/wallpaper/directory"  # Replace with your wallpaper directory
 
 MONITORS=("DP-1" "DP-2")  # Replace with your actual monitor names (use `hyprctl monitors`)
 

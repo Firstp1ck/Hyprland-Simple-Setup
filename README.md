@@ -1,9 +1,47 @@
 # Hyprland Setup
 
+## Introduction
+This repository provides a minimalistic Hyprland setup that installs and configures Hyprland along with essential packages and AUR extras. It aims to deliver a lightweight and efficient desktop environment with dynamic wallpaper management and streamlined configuration.
+
+## Environment Setup
+
+- The Setup is designed to run from EndeavourOS with KDE preinstalled. 
+- You may need to modify the script for other distros or environments.
+
 ## Prerequisites
 - [Hyprland](https://hyprland.org/) installed.
 - Utilities like `hyprctl`, `hyprpaper`, and a shell environment.
 - A directory containing your wallpapers.
+- Vivaldi is used for browser in hyprland.conf, change it if you want to use another browser.
+- Check Monitors in hyprland.conf at the start. Adapt it to your setup.
+
+## Dependencies
+
+### Pacman Packages
+- hyprland
+- waybar
+- hyprpaper
+- wofi
+- hyprlock
+- hypridle
+- hyprshot
+- hyprpolkitagent
+- xdg-desktop-portal-hyprland
+- xdg-desktop-portal-gtk
+- xdg-desktop-portal-wlr
+- dunst
+- python-pywal
+- gnome-keyring
+- ttf-jetbrains-mono-nerd
+- polkit-kde-agent
+
+`sudo pacman -S hyprland waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk xdg-desktop-portal-wlr dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
+
+### AUR Extras
+- xwaylandvideobridge-git
+- hyprshot
+
+`yay -S xwaylandvideobridge-git hyprshot`
 
 ## Installation & Configuration
 
@@ -11,8 +49,12 @@
 2. Update the following files with your system-specific details:
    - **Wallpaper Script:**  
      Update the `WALLPAPER_DIR` and `MONITORS` in [.config/hypr/change_wallpaper.sh](./.config/hypr/change_wallpaper.sh).
+   - **Check Hyprlock Wallpaper Path**
+     Update the `background` path in [hyprlock.conf](./.config/hypr/hyprlock.conf) to match your wallpaper directory.
+     
    - **Hyprland Configuration:**  
      Ensure your Hyprland configuration files are correctly placed in your dotfiles directory.
+
 
 ## Running the Wallpaper Script
 
