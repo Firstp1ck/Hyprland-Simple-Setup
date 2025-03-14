@@ -32,14 +32,13 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 - hyprpolkitagent
 - xdg-desktop-portal-hyprland
 - xdg-desktop-portal-gtk
-- xdg-desktop-portal-wlr
 - dunst
 - python-pywal
 - gnome-keyring
 - ttf-jetbrains-mono-nerd
 - polkit-kde-agent
 
-`sudo pacman -S hyprland waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk xdg-desktop-portal-wlr dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
+`sudo pacman -S hyprland waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
 
 ### AUR Extras
 - xwaylandvideobridge-git
