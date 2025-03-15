@@ -173,10 +173,10 @@ tooltip {
 }
 
 #keyboard-state {
-  color: #f38ba8;
+  color: #ff91e7;
   border-left: 0px;
   border-right: 0px;
-  margin-right: 10px;
+  margin-right: 0px;
 }
 
 #mpd {

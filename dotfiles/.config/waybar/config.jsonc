@@ -54,10 +54,10 @@
     "keyboard-state": {
         "numlock": true,
         "capslock": true,
-        "format": "{name} {icon}",
+        "format": "{icon}{name}",
         "format-icons": {
-            "locked": "",
-            "unlocked": ""
+            "locked": "  ",
+            "unlocked": "  "
         }
     },
     "wlr/taskbar": {
@@ -115,13 +115,14 @@
         "spacing": 10
     },
     "clock": {
-        // "timezone": "America/New_York",
+        "timezone": "Zurich", // Change timezone to your location
+        "format": "{:%a %d %b | %Y %H:%M}", // added to display date and time
         "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
-        "format-alt": "{:%Y-%m-%d}"
+        // "format-alt": "{:%Y-%m-%d}"
     },
     "cpu": {
         "format": "{usage}% ",
-        "tooltip": false
+        "tooltip": true
     },
     "memory": {
         "format": "{}% "
@@ -163,15 +164,15 @@
       "tooltip": true,
       "format-icons": {
         "default": "",
-        "performance": "",
-        "balanced": "",
-        "power-saver": ""
+        "performance": " Max",
+        "balanced": " Mid",
+        "power-saver": " Low"
       }
     },
     "network": {
         // "interface": "wlp2*", // (Optional) To force the use of this interface
         "format-wifi": "{essid} ({signalStrength}%) ",
-        "format-ethernet": "{ipaddr}/{cidr} ",
+        "format-ethernet": "{ipaddr}/{cidr} 󰊗",
         "tooltip-format": "{ifname} via {gwaddr} ",
         "format-linked": "{ifname} (No IP) ",
         "format-disconnected": "Disconnected ⚠",
