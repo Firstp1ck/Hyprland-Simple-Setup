@@ -23,28 +23,33 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 
 ### Pacman Packages
 - hyprland
-- waybar
-- hyprpaper
-- wofi
-- hyprlock
-- hypridle
-- hyprshot
-- hyprpolkitagent
-- xdg-desktop-portal-hyprland
-- xdg-desktop-portal-gtk
-- dunst
-- python-pywal
-- gnome-keyring
-- ttf-jetbrains-mono-nerd
-- polkit-kde-agent
+- dolphin (File Manager)
+- vivaldi (Browser)
+- kitty (Terminal)
+- waybar (Status Bar)
+- code (Visual Studio Code - Text Editor)
+- hyprpaper (Wallpaper Manager)
+- wofi (App Launcher)
+- hyprlock (Lock Screen)
+- hypridle (Idle Manager)
+- hyprshot (Screenshot Tool)
+- hyprpolkitagent (Authentication Agent)
+- polkit-kde-agent (Authentication Agent)
+- gnome-keyring (Authentication Agent)
+- xdg-desktop-portal-hyprland (Desktop Integration)
+- xdg-desktop-portal-gtk (Desktop Integration)
+- dunst (Notification Daemon)
+- python-pywal (Wallpaper Changer, not yet implemented)
+- ttf-jetbrains-mono-nerd (Fonts)
 
-`sudo pacman -S hyprland waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
+
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
 
 ### AUR Extras
 - xwaylandvideobridge-git
 - hyprshot
 
-`yay -S xwaylandvideobridge-git hyprshot`
+`yay -S xwaylandvideobridge-git hyprshot visual-studio-code-bin`
 
 ## Installation & Configuration
 
