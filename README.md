@@ -32,7 +32,6 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 - wofi (App Launcher)
 - hyprlock (Lock Screen)
 - hypridle (Idle Manager)
-- hyprshot (Screenshot Tool)
 - hyprpolkitagent (Authentication Agent)
 - polkit-kde-agent (Authentication Agent)
 - gnome-keyring (Authentication Agent)
@@ -46,8 +45,8 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 `sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
 
 ### AUR Extras
-- xwaylandvideobridge-git
-- hyprshot
+- xwaylandvideobridge-git (XWayland Video Bridge)
+- hyprshot (Screenshot Tool)
 
 `yay -S xwaylandvideobridge-git hyprshot visual-studio-code-bin`
 
