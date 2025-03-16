@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 
-WALLPAPER_DIR="add/your/wallpaper/directory"  # Replace with your wallpaper directory
-
-MONITORS=("DP-1" "DP-2")  # Replace with your actual monitor names (use `hyprctl monitors`)
+# Load system-specific configuration file
+CONFIG_FILE="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    echo "Config file not found: $CONFIG_FILE"
+    exit 1
+fi
 
 # Ensure hyprpaper is running
 if ! hyprctl clients | grep -q hyprpaper; then

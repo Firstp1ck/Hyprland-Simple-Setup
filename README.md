@@ -2,7 +2,7 @@
 
 ## Example Image
 
-![Hyprland Minimal Setup](example_images/minimal_setup_1.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_2.png)
 
 ## Introduction
 This repository provides a minimalistic Hyprland setup that installs and configures Hyprland along with essential packages and AUR extras. It aims to deliver a lightweight and efficient desktop environment with dynamic wallpaper management and streamlined configuration.
@@ -19,6 +19,14 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 - Vivaldi is used for browser in hyprland.conf, change it if you want to use another browser.
 - Check Monitors in hyprland.conf at the start. Adapt it to your setup.
 
+## Setup Script Execution
+
+To install and configure Hyprland along with its dependencies, run:
+```bash
+./Start_hyprland_setup.sh
+```
+This script automatically updates Pacman, installs the necessary packages, and configures Hyprland tools.
+
 ## Dependencies
 
 ### Pacman Packages
@@ -28,8 +36,8 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 - kitty (Terminal)
 - waybar (Status Bar)
 - code (Visual Studio Code - Text Editor)
-- hyprpaper (Wallpaper Manager)
-- wofi (App Launcher)
+- hyprpaper (Dynamic Wallpaper Manager)
+- wofi (App Launcher with)
 - hyprlock (Lock Screen)
 - hypridle (Idle Manager)
 - hyprpolkitagent (Authentication Agent)
@@ -38,11 +46,13 @@ This repository provides a minimalistic Hyprland setup that installs and configu
 - xdg-desktop-portal-hyprland (Desktop Integration)
 - xdg-desktop-portal-gtk (Desktop Integration)
 - dunst (Notification Daemon)
-- python-pywal (Wallpaper Changer, not yet implemented)
 - ttf-jetbrains-mono-nerd (Fonts)
+- fish (Shell)
+- bat (cat replacement - used as alias in fish config)
+- lsd (ls replacement - used as alias in fish config)
+- btop (System Monitor - used as alias in fish config)
 
-
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper wofi hyprlock hypridle hyprshot hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent`
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst python-pywal gnome-keyring ttf-jetbrains-mono-nerd polkit-kde-agent fish bat lsd btop`
 
 ### AUR Extras
 - xwaylandvideobridge-git (XWayland Video Bridge)
@@ -70,7 +80,7 @@ The `change_wallpaper.sh` script:
 - Picks a random wallpaper from your specified directory (excluding the current one).
 - Applies the new wallpaper to the specified monitors.
 
-To run the script:
+To run the script (Default Key Shortcut: Super(mainMod) + W):
 ```bash
 ./.config/hypr/change_wallpaper.sh
 ```
@@ -82,6 +92,28 @@ To run the script:
 ## Troubleshooting
 - Ensure that the wallpaper directory exists and contains valid image files.
 - Verify monitor names using `hyprctl monitors`.
+
+## Features
+
+### Terminal Experience
+- Kitty terminal with extensive customization
+- Fish shell with enhanced prompt and useful aliases
+- Modern CLI tools integration (bat, lsd, btop)
+
+### Notifications
+- Dunst notification daemon
+- Progress bar support
+- Notification positioning and styling
+
+### Window Management
+- Custom window rules and workspace management
+- Dynamic wallpaper handling
+- Efficient window navigation shortcuts
+
+### Appearance
+- Waybar themes and layouts
+- Wofi menu styling
+- JetBrains Mono Nerd Font integration
 
 ## Additional Resources
 - [Hyprland Wiki](https://wiki.hyprland.org/)
