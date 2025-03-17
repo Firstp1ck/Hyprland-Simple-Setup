@@ -94,16 +94,30 @@ tooltip {
 
 #workspaces {
   background: #1e1e2e;
-  border-radius: 10px;
+  border-radius: 2px;
   margin-left: 10px;
-  padding-right: 0px;
+  padding-right: 5px;
   padding-left: 5px;
 }
 
-#custom-power_profile {
+#power-profiles-daemon {
+  background-color: #1e1e2e;
+  opacity: 0.8;
+  border-radius: 10px;
+  margin-top: 10px;
+  padding: 0px 10px;
+}
+
+#power-profiles-daemon.performance {
+  color: #ee6363;
+}
+
+#power-profiles-daemon.balanced {
+  color: #fab387;
+}
+
+#power-profiles-daemon.power-saver {
   color: #a6e3a1;
-  border-left: 0px;
-  border-right: 0px;
 }
 
 #window {
@@ -186,7 +200,7 @@ tooltip {
 }
 
 #custom-power {
-  color: #f38ba8;
+  color: #b0d9ff;
   border-radius: 10px;
   margin-right: 10px;
   border-left: 0px;
