@@ -230,11 +230,7 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
 
 ### Autostart Applications
 - Add or modify autostart programs in `~/.config/hypr/sources/exec_once.conf`:
-  ```bash
-  # System utilities
-  exec-once = /usr/lib/polkit-kde-authentication-agent-1
-  exec-once = dunst
-  
+  ```bash  
   # User applications
   exec-once = vivaldi-stable
   exec-once = [workspace 3] code
@@ -327,7 +323,7 @@ For more customization options, refer to:
 - For slow startup or lag:
   ```bash
   # Check startup time
-  hyprclt version
+  hyprctl version
   
   # Monitor resource usage
   htop
