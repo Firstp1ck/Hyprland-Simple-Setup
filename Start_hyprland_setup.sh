@@ -34,20 +34,44 @@ execute_command() {
 
 # Array of Hyprland-related pacman packages
 hyprland_packages=(
-    "hyprland" 
-    "waybar" 
-    "hyprpaper" 
-    "wofi" 
-    "hyprlock" 
-    "hypridle"  
-    "hyprpolkitagent" 
-    "xdg-desktop-portal-hyprland" 
-    "xdg-desktop-portal-gtk" 
-    "dunst" 
-    "python-pywal" 
-    "gnome-keyring" 
-    "ttf-jetbrains-mono-nerd" 
+    # Core Hyprland packages
+    "hyprland"
+    "waybar"
+    "hyprpaper"
+    "wofi"
+    "hyprlock"
+    "hypridle"
+    "hyprpolkitagent"
+    
+    # File Management
+    "dolphin"
+    "git"
+    "fd"
+    "fzf"
+    
+    # Terminal and Shell
+    "kitty"
+    "fish"
+    
+    # Browser
+    "vivaldi"
+    
+    # System Integration
+    "xdg-desktop-portal-hyprland"
+    "xdg-desktop-portal-gtk"
     "polkit-kde-agent"
+    "gnome-keyring"
+    
+    # Notifications
+    "dunst"
+    
+    # Theming and Appearance
+    "ttf-jetbrains-mono-nerd"
+    
+    # CLI Tools
+    "bat"
+    "lsd"
+    "btop"
 )
 
 install_pacman_packages() {
@@ -66,9 +90,11 @@ install_pacman_packages() {
 # AUR Extras Installation
 ##############################################################
 
+# Array of AUR packages
 aur_extras=(
-    "xwaylandvideobridge-git" 
+    "xwaylandvideobridge-git"
     "hyprshot"
+    "visual-studio-code-bin"
 )
 
 install_aur_extras() {

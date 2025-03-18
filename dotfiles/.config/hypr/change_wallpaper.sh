@@ -12,7 +12,7 @@ fi
 # Ensure hyprpaper is running
 if ! hyprctl clients | grep -q hyprpaper; then
   hyprpaper &
-  sleep 0.5 # Allow socket initialization
+  sleep 0.3 # Allow socket initialization
 fi
 
 # Get current wallpaper (if any)

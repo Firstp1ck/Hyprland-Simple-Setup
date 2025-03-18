@@ -28,7 +28,6 @@ alias ls='lsd -lh --group-directories-first --color=auto'
 alias top='btop'
 alias fzf='fzf --bind "enter:execute(vim {})" -m --preview="bat --color=always --style=numbers --line-range=:500 {}"'
 alias fd='fd -H --max-depth 4'
-alias zj='zellij'
 alias grep='grep --color=auto'
 alias pacman='sudo pacman'
 alias pacup='sudo pacman -Syu'
@@ -36,7 +35,6 @@ alias pacin='sudo pacman -S'
 alias pacrm='sudo pacman -Rns'
 alias rm='rm -i'
 alias mv='mv -i'
-alias folder_backup='path/to/backup/folder'
 alias grub-update='sudo grub-mkconfig -o /boot/grub/grub.cfg'
 alias update-grub='sudo grub-mkconfig -o /boot/grub/grub.cfg'
 alias uuid='ls -l /dev/disk/by-uuid'
@@ -69,9 +67,9 @@ set -gx LANGUAGE de_CH:en_US
 set -x fish_history default
 
 # Editor und Visual Terminal View (Add default terminal text editor)
-set -e EDITOR
-set -x VISUAL 
-set -x EDITOR 
+set -e EDITOR nano
+set -x VISUAL nano
+set -x EDITOR nano
 
 set -x TERMINAL kitty
 set -x TERM kitty
