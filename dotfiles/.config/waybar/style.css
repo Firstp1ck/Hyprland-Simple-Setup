@@ -49,7 +49,6 @@ tooltip {
 }
 
 #custom-power_profile,
-#custom-weather,
 #window,
 #clock,
 #battery,
@@ -59,13 +58,10 @@ tooltip {
 #temperature,
 #workspaces,
 #tray,
-#backlight,
-#custom-media,
 #custom-power,
 #cpu,
 #memory,
 #idle_inhibitor,
-#mpd,
 #keyboard-state,
 #wlr-taskbar {
   background: #1e1e2e;
@@ -77,14 +73,8 @@ tooltip {
   border-radius: 10px;
 }
 
-#temperature {
-}
-
 #temperature.critical {
   color: #eba0ac;
-}
-
-#backlight {
 }
 
 #tray {
@@ -94,9 +84,9 @@ tooltip {
 
 #workspaces {
   background: #1e1e2e;
-  border-radius: 2px;
+  border-radius: 10px;
   margin-left: 10px;
-  padding-right: 5px;
+  padding-right: 1px;
   padding-left: 5px;
 }
 
@@ -109,21 +99,15 @@ tooltip {
 }
 
 #power-profiles-daemon.performance {
-  color: #ee6363;
+  color: #f78b8b;
 }
 
 #power-profiles-daemon.balanced {
-  color: #fab387;
+  color: #facc87;
 }
 
 #power-profiles-daemon.power-saver {
   color: #a6e3a1;
-}
-
-#window {
-  border-radius: 10px;
-  margin-left: 60px;
-  margin-right: 60px;
 }
 
 #clock {
@@ -163,11 +147,6 @@ tooltip {
   border-left: 0px;
 }
 
-#custom-weather {
-  border-right: 0px;
-  margin-left: 0px;
-}
-
 #cpu {
   color: #89b4fa;
   border-left: 0px;
@@ -184,6 +163,7 @@ tooltip {
   color: #f9e2af;
   border-left: 0px;
   border-right: 0px;
+  padding-right: 17px;
 }
 
 #keyboard-state {
@@ -191,12 +171,7 @@ tooltip {
   border-left: 0px;
   border-right: 0px;
   margin-right: 0px;
-}
-
-#mpd {
-  color: #f5c2e7;
-  border-left: 0px;
-  margin-right: 10px;
+  padding-left: 1px;
 }
 
 #custom-power {
@@ -204,14 +179,14 @@ tooltip {
   border-radius: 10px;
   margin-right: 10px;
   border-left: 0px;
-}
-
-#custom-media {
-  color: #a6e3a1;
-  margin-right: 10px;
+  padding-right: 1px;
 }
 
 #wlr-taskbar {
+  background-color: #1e1e2e;
+  opacity: 0.8;
+  margin-top: 10px;
+  padding: 0px 10px;
   border-radius: 10px;
   margin-right: 10px;
 }
