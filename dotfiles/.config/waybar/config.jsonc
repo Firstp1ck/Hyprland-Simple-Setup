@@ -48,7 +48,8 @@
         "on-click": "activate",
         "on-click-middle": "close",
         "ignore-list": [
-        "kitty"
+        "kitty",
+        "xwaylandvideobridge"
         ],
         "app_ids-mapping": {
         "firefoxdeveloperedition": "firefox-developer-edition"
