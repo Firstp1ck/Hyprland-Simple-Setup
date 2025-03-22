@@ -38,6 +38,7 @@ hyprland_packages=(
     "hyprland"
     "waybar"
     "hyprpaper"
+    "hyprcursor"
     "wofi"
     "hyprlock"
     "hypridle"
@@ -67,6 +68,7 @@ hyprland_packages=(
     
     # Theming and Appearance
     "ttf-jetbrains-mono-nerd"
+    "rose-pine-hyprcursor"
     
     # CLI Tools
     "bat"
