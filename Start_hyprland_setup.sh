@@ -69,6 +69,7 @@ hyprland_packages=(
     # Theming and Appearance
     "ttf-jetbrains-mono-nerd"
     "rose-pine-hyprcursor"
+    "cava"
     
     # CLI Tools
     "bat"
