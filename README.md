@@ -46,6 +46,8 @@
 
 ![Hyprland Minimal Setup](example_images/Musik_Visualizer.png)
 
+![Hyprland Minimal Setup](example_images/cava.gif)
+
 ## Introduction
 
 This repository provides a comprehensive yet minimalistic Hyprland setup designed for users who want a modern, efficient, and customizable desktop environment. The configuration focuses on:
