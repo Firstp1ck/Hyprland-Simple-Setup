@@ -10,9 +10,9 @@
         "hyprland/workspaces",
         "hyprland/submap"
     ],
-    "modules-center": [
-        "hyprland/window"
-    ],
+    // "modules-center": [
+    //     "hyprland/window"
+    // ],
     "modules-right": [
         "wlr/taskbar",
         "idle_inhibitor",
@@ -62,9 +62,9 @@
     "hyprland/submap": {
         "format": "<span style=\"italic\">{}</span>"
     },
-    "hyprland/window": {
-    "separate-outputs": true
-    },
+    // "hyprland/window": {
+    // "separate-outputs": true
+    // },
     "sway/scratchpad": {
         "format": "{icon} {count}",
         "show-empty": false,

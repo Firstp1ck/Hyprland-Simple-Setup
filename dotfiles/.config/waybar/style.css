@@ -48,21 +48,22 @@ tooltip {
   border-radius: 10px;
 }
 
-#custom-power_profile,
 #window,
-#clock,
-#battery,
-#pulseaudio,
-#network,
-#bluetooth,
-#temperature,
 #workspaces,
-#tray,
-#custom-power,
+#idle_inhibitor,
+#pulseaudio,
+#battery,
+#bluetooth,
+#network,
+#custom-power_profile,
 #cpu,
 #memory,
-#idle_inhibitor,
+#temperature,
 #keyboard-state,
+#clock,
+#tray,
+#custom-power,
+
 #wlr-taskbar {
   background: #1e1e2e;
   opacity: 0.8;
@@ -71,10 +72,6 @@ tooltip {
   margin-top: 10px;
   border: 1px solid #181825;
   border-radius: 10px;
-}
-
-#temperature.critical {
-  color: #eba0ac;
 }
 
 #tray {
@@ -90,6 +87,44 @@ tooltip {
   padding-left: 5px;
 }
 
+#idle_inhibitor {
+  color: #95ffff;
+  border-left: 0px;
+  border-right: 0px;
+  padding-right: 17px;
+}
+
+#pulseaudio {
+  color: #96d8ff;
+  border-left: 0px;
+  border-right: 0px;
+}
+
+#pulseaudio.microphone {
+  color: #96d8ff;
+  border-left: 0px;
+  border-right: 0px;
+  margin-right: 10px;
+}
+
+#network {
+  color: #95b1ff;
+  border-left: 0px;
+  border-right: 0px;
+}
+
+#bluetooth {
+  color: #95b1ff;
+  margin-right: 10px;
+} 
+
+#battery {
+  color: #a8ff96;
+  border-radius: 0 10px 10px 0;
+  margin-right: 10px;
+  border-left: 0px;
+}
+
 #power-profiles-daemon {
   background-color: #1e1e2e;
   opacity: 0.8;
@@ -99,83 +134,53 @@ tooltip {
 }
 
 #power-profiles-daemon.performance {
-  color: #f78b8b;
+  color: #9a7eff;
 }
 
 #power-profiles-daemon.balanced {
-  color: #facc87;
+  color: #9cb6ff;
 }
 
 #power-profiles-daemon.power-saver {
-  color: #a6e3a1;
-}
-
-#clock {
-  color: #fab387;
-  margin-left: 10px;
-  border-right: 0px;
-}
-
-#network {
-  color: #f9e2af;
-  border-left: 0px;
-  border-right: 0px;
-}
-
-#bluetooth {
-  color: #89b4fa;
-  margin-right: 10px;
-} 
-
-#pulseaudio {
-  color: #89b4fa;
-  border-left: 0px;
-  border-right: 0px;
-}
-
-#pulseaudio.microphone {
-  color: #cba6f7;
-  border-left: 0px;
-  border-right: 0px;
-  margin-right: 10px;
-}
-
-#battery {
-  color: #a6e3a1;
-  border-radius: 0 10px 10px 0;
-  margin-right: 10px;
-  border-left: 0px;
+  color: #96e1ff;
 }
 
 #cpu {
-  color: #89b4fa;
+  color: #ca9bff;
   border-left: 0px;
   border-right: 0px;
 }
 
 #memory {
-  color: #cba6f7;
+  color: #f49dff;
   border-left: 0px;
   border-right: 0px;
 }
 
-#idle_inhibitor {
-  color: #f9e2af;
-  border-left: 0px;
-  border-right: 0px;
-  padding-right: 17px;
+#temperature {
+  color: #fc9bff;
+}
+
+#temperature.critical {
+  color: #ff5874;
 }
 
 #keyboard-state {
-  color: #ff91e7;
+  color: #ff9acd;
   border-left: 0px;
   border-right: 0px;
   margin-right: 0px;
   padding-left: 1px;
 }
 
+#clock {
+  color: #ff9b9b;
+  margin-left: 10px;
+  border-right: 0px;
+}
+
 #custom-power {
-  color: #b0d9ff;
+  color: #a1d2ff;
   border-radius: 10px;
   margin-right: 10px;
   border-left: 0px;

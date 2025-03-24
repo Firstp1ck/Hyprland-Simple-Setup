@@ -19,7 +19,7 @@ fi
 CURRENT_WALL=$(hyprctl hyprpaper listloaded | grep -oP 'image: \K.*' | head -1)
 
 # Get a random wallpaper excluding the current one
-WALLPAPER=$(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" \) ! -name "$(basename "$CURRENT_WALL")" | shuf -n 1)
+WALLPAPER=$(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.jpeg" \) ! -name "$(basename "$CURRENT_WALL")" | shuf -n 1)
 
 # Apply wallpaper to all monitors
 hyprctl hyprpaper preload "$WALLPAPER"
