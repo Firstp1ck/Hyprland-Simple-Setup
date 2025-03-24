@@ -63,6 +63,7 @@ hyprland_packages=(
     "xdg-desktop-portal-gtk"
     "polkit-kde-agent"
     "gnome-keyring"
+    "network-manager-applet"
     
     # Notifications
     "dunst"

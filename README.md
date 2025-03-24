@@ -1,5 +1,15 @@
 # Hyprland Setup
 
+## Example Image
+
+![Hyprland Minimal Setup](example_images/minimal_setup_2.png)
+
+## Example Terminal and Musik Visualizer
+
+![Hyprland Minimal Setup](example_images/Kitty_cava_btop_fastfetch.png)
+
+![Hyprland Minimal Setup](example_images/cava.gif)
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Environment Setup](#environment-setup)
@@ -35,18 +45,6 @@
   - [Security Features](#security-features)
   - [Performance Optimizations](#performance-optimizations)
 - [Additional Resources](#additional-resources)
-
-## Example Image
-
-![Hyprland Minimal Setup](example_images/minimal_setup_2.png)
-
-## Example Terminal and Musik Visualizer
-
-![Hyprland Minimal Setup](example_images/Kitty_Terminal.png)
-
-![Hyprland Minimal Setup](example_images/Musik_Visualizer.png)
-
-![Hyprland Minimal Setup](example_images/cava.gif)
 
 ## Introduction
 
@@ -123,8 +121,9 @@ This script automatically updates Pacman, installs the necessary packages, and c
 - lsd (ls replacement - used as alias in fish config)
 - btop (System Monitor - used as alias in fish config)
 - nwg-displays (Display Manager to handle multiple monitors)
+- network-manager-applet (Network Manager)
 
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays`
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays network-manager-applet`
 
 ### AUR Extras
 - xwaylandvideobridge-git (XWayland Video Bridge)
