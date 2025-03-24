@@ -64,6 +64,8 @@ hyprland_packages=(
     "polkit-kde-agent"
     "gnome-keyring"
     "network-manager-applet"
+    "networkmanager"
+    "nm-connection-editor"
     
     # Notifications
     "dunst"

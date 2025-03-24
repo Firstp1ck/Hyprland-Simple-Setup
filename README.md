@@ -84,7 +84,8 @@ This setup is ideal for:
 
 ## Prerequisites
 - [Hyprland](https://hyprland.org/) installed.
-- Utilities like `hyprctl`, `hyprpaper`, and a shell environment.
+- Utilities like `hyprctl`, `hyprpaper`, and a shell environment (like fish).
+- `NetworkManager` with`network-manager-applet` and `nm-connection-editor` installed.
 - A directory containing your wallpapers.
 - Vivaldi is used for browser in hyprland.conf, change it if you want to use another browser.
 - Check Monitors in hyprland.conf at the start. Adapt it to your setup.
@@ -121,7 +122,9 @@ This script automatically updates Pacman, installs the necessary packages, and c
 - lsd (ls replacement - used as alias in fish config)
 - btop (System Monitor - used as alias in fish config)
 - nwg-displays (Display Manager to handle multiple monitors)
+- networkmanager (Network Manager)
 - network-manager-applet (Network Manager)
+- nm-connection-editor (Network Manager)
 
 `sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays network-manager-applet`
 
