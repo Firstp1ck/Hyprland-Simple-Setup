@@ -2,7 +2,7 @@
 
 ## Example Image
 
-![Hyprland Minimal Setup](example_images/minimal_setup_2.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_3.png)
 
 ## Example Terminal and Musik Visualizer
 
