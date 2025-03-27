@@ -27,7 +27,6 @@
   - [Appearance](#appearance)
   - [Autostart Applications](#autostart-applications)
   - [Monitor Configuration](#monitor-configuration)
-  - [Performance Tweaks](#performance-tweaks)
 - [Troubleshooting](#troubleshooting)
   - [Display and Monitor Issues](#display-and-monitor-issues)
   - [Wallpaper Management](#wallpaper-management-1)
@@ -43,19 +42,29 @@
   - [Notification System](#notification-system)
   - [Visual Customization](#visual-customization)
   - [Security Features](#security-features)
-  - [Performance Optimizations](#performance-optimizations)
 - [Additional Resources](#additional-resources)
 
 ## Introduction
 
 This repository provides a comprehensive yet minimalistic Hyprland setup designed for users who want a modern, efficient, and customizable desktop environment.
 
-### What's Included
-- Complete Hyprland configuration with optimal defaults
-- Dynamic wallpaper management system
-- Integrated notification and status system
-- Modern terminal environment with fish shell
-- Security features including screen locking and authentication
+### Quick Start
+
+1. **❗❗❗ VERY IMPORTANT: Before cloning, open a terminal and change to your home directory (cd ~). Then clone the repository into your home directory:**
+   ```bash
+   cd ~
+   git clone https://github.com/yourusername/Hyprland_Simple_Setup.git
+   ```
+2. Navigate into the project directory:
+   ```bash
+   cd Hyprland_Simple_Setup
+   ```
+3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, keybindings, and environment variables).
+4. Run the setup script to install dependencies and configure your environment:
+   ```bash
+   ./Start_hyprland_setup.sh
+   ```
+5. Launch Hyprland. Enjoy your new desktop setup!
 
 ## Environment Setup
 
@@ -81,7 +90,7 @@ This script automatically updates Pacman, installs the necessary packages, and c
 ## Dependencies
 
 ### Pacman Packages
-- hyprland (Main Hyprland Package, includes following packages: 
+- hyprland (Main Hyprland Package)
 - dolphin (File Manager)
 - vivaldi (Browser)
 - kitty (Terminal)
@@ -98,12 +107,13 @@ This script automatically updates Pacman, installs the necessary packages, and c
 - dunst (Notification Daemon)
 - ttf-jetbrains-mono-nerd (Fonts)
 - fish (Shell)
+- stow (Utility for managing dotfiles)
 - bat (cat replacement - used as alias in fish config)
 - lsd (ls replacement - used as alias in fish config)
 - btop (System Monitor - used as alias in fish config)
 - nwg-displays (Display Manager to handle multiple monitors)
 
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays`
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish stow bat lsd btop nwg-displays`
 
 ### AUR Extras
 - xwaylandvideobridge-git (XWayland Video Bridge)

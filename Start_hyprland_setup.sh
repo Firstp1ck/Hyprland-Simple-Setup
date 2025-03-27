@@ -224,6 +224,15 @@ main() {
     set_fish_language_config
     install_pacman_packages
     install_aur_extras
+
+    # Setup dotfiles via stow
+    if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
+        echo "Setting up dotfiles with Start_stow_solve.sh..."
+        bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"
+    else
+        echo "Warning: Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts. Skipping dotfiles setup."
+    fi
+
     print_message "Hyprland setup completed successfully!"
 }
 
