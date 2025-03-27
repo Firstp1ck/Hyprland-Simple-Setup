@@ -1,5 +1,13 @@
 # Hyprland Setup
 
+<div style="background-color: #232136; border-left: 5px solidrgb(111, 142, 235); padding: 1em; margin-bottom: 1em; text-align: center; color: #e0def4;">
+  <h2 style="color: #ebbcba;">Hello Fellow Hyprland Newcomers!</h2>
+  <p style="font-size: 1.2em; font-weight: bold;">Welcome to my Hyprland Setup!</p>
+  <p>I hope you find it useful and enjoyable.</p>
+  <p style="color: #f6c177;">❗ If something does not work, please <a href="https://github.com/Firstp1ck/Hyprland_simple-minimal_Setup/issues/new" target="_blank" style="color:rgb(123, 130, 255); text-decoration: underline;">open an issue</a> on this repository ❗<br>
+  ❗I am always open to suggestions and feedback ❗</p>
+</div>
+
 ## Example Image
 
 ![Hyprland Minimal Setup](example_images/minimal_setup_3.png)
@@ -50,16 +58,16 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 ### Quick Start
 
-1. **❗❗❗ VERY IMPORTANT: Before cloning, open a terminal and change to your home directory (cd ~). Then clone the repository into your home directory:**
+1. **Clone the repository.**
    ```bash
-   cd ~
    git clone https://github.com/yourusername/Hyprland_Simple_Setup.git
    ```
-2. Navigate into the project directory:
+2. Navigate into the project directory and copy the dotfiles directory to your home directory:
    ```bash
    cd Hyprland_Simple_Setup
+   cp -r dotfiles ~/.
    ```
-3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, keybindings, and environment variables).
+3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Installation & Configuration](#installation--configuration)).
 4. Run the setup script to install dependencies and configure your environment:
    ```bash
    ./Start_hyprland_setup.sh
@@ -70,6 +78,7 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 - The Setup is designed to run from EndeavourOS with KDE preinstalled. 
 - You may need to modify the script for other distros or environments.
+- Uses stow to manage dotfiles. The stow setupscript makes backups from the original dotfiles in the home directory.
 
 ## Prerequisites
 - [Hyprland](https://hyprland.org/) installed.

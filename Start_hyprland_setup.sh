@@ -50,7 +50,7 @@ check_user_input() {
 # New function to update configuration files with user input
 update_configs() {
     # Update the wallpaper configuration file
-    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    local wallpaper_conf="$HOME/dotfiles/.config/hypr/sources/change_wallpaper.conf"
     mkdir -p "$(dirname "$wallpaper_conf")"
     {
         echo "# Wallpaper Configuration"
@@ -58,7 +58,7 @@ update_configs() {
     } > "$wallpaper_conf"
     
     # Update the display configuration file with each monitor details
-    local displays_conf="$HOME/.config/hypr/sources/displays.conf"
+    local displays_conf="$HOME/dotfiles/.config/hypr/sources/displays.conf"
     mkdir -p "$(dirname "$displays_conf")"
     {
         echo "# Display Configuration"
@@ -78,7 +78,7 @@ update_configs() {
 
 # New function to update fish language config in fish config file
 set_fish_language_config() {
-    local fish_conf="$HOME/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/fish/config.fish"
+    local fish_conf="$HOME/dotfiles/.config/fish/config.fish"
     echo "Select your preferred language setting for Fish Shell:"
     echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
     echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
@@ -138,6 +138,7 @@ hyprland_packages=(
     "git"
     "fd"
     "fzf"
+    "stow"
     
     # Terminal and Shell
     "kitty"
