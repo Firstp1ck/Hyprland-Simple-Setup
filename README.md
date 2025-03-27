@@ -1,11 +1,13 @@
 # Hyprland Setup
 
-<div style="background-color: #232136; border-left: 5px solidrgb(111, 142, 235); padding: 1em; margin-bottom: 1em; text-align: center; color: #e0def4;">
-  <h2 style="color:rgb(185, 242, 255);">Hello Fellow Hyprland Newcomers!</h2>
+<div align="center" style="background-color: #232136; border-left: 5px solid rgb(111, 142, 235); padding: 1em; margin-bottom: 1em; color: #e0def4;">
+  <h2 style="color: rgb(185, 242, 255);">Hello Fellow Hyprland Newcomers!</h2>
   <p style="font-size: 1.2em; font-weight: bold;">Welcome to my Hyprland Setup!</p>
   <p>I hope you find it useful and enjoyable.</p>
-  <p style="color: #f6c177;">❗ If something does not work, please <a href="https://github.com/Firstp1ck/Hyprland_simple-minimal_Setup/issues/new" target="_blank" style="color:rgb(123, 130, 255); text-decoration: underline;">open an issue</a> on this repository ❗<br>
-  ❗I am always open to suggestions and feedback ❗</p>
+  <p style="color: #f6c177;">
+    ❗ If something does not work, please <a href="https://github.com/Firstp1ck/Hyprland_simple-minimal_Setup/issues/new" rel="noopener noreferrer" style="color: rgb(123, 130, 255); text-decoration: underline;">open an issue</a> on this repository ❗<br>
+    ❗I am always open to suggestions and feedback ❗
+  </p>
 </div>
 
 ## Example Image
