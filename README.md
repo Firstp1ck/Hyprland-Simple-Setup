@@ -1,20 +1,22 @@
 # Hyprland Setup
 
-<style>
-  /* Hyprland-inspired styles */
-  body {
-    background-color: #232136;
-    font-family: 'JetBrains Mono', monospace;
-    color: #e0def4;
-  }
-  h1, h2, h3, h4, h5, h6 {
-    color: #b9f2ff;
-  }
-  a {
-    color: rgb(123, 130, 255);
-    text-decoration: underline;
-  }
-</style>
+<details>
+  <style>
+    /* Hyprland-inspired styles */
+    body {
+      background-color: #232136;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e0def4;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #b9f2ff;
+    }
+    a {
+      color: rgb(123, 130, 255);
+      text-decoration: underline;
+    }
+  </style>
+</details>
 
 <div align="center" style="background-color: #232136; border-left: 5px solid rgb(111, 142, 235); padding: 1em; margin-bottom: 1em; color: #e0def4;">
   <h2 style="color: rgb(185, 242, 255);">Hello Fellow Hyprland Newcomers!</h2>
