@@ -78,7 +78,7 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 ### Quick Start
 
-1. **Clone the repository.**
+1. **Clone the repository into your home directory.**
    ```bash
    git clone https://github.com/yourusername/Hyprland_Simple_Setup.git
    ```
@@ -90,6 +90,7 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Installation & Configuration](#installation--configuration)).
 4. Run the setup script to install dependencies and configure your environment:
    ```bash
+   cd ~/Hyprland_Simple_Setup/Setup
    ./Start_hyprland_setup.sh
    ```
 5. Launch Hyprland. Enjoy your new desktop setup!
@@ -112,6 +113,7 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 To install and configure Hyprland along with its dependencies, run:
 ```bash
+cd ~/Hyprland_Simple_Setup/Setup
 ./Start_hyprland_setup.sh
 ```
 This script automatically updates Pacman, installs the necessary packages, and configures Hyprland tools.
