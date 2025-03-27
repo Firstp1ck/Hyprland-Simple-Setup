@@ -1,23 +1,18 @@
-#TODO
-
 # Security Policy
 
 ## Supported Versions
 
 Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+currently being supported with security updates. Only the versions listed below
+are receiving security fixes.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 0.1.0   | :white_check_mark: |
+| x.x.x   | :x:                |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
-
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+If you discover a security issue, please report it immediately. Send
+an email with a detailed description to security@example.com. We will review
+your report and update you on our progress. Please do not disclose the vulnerability publicly until a fix is released.
