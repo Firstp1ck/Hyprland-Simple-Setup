@@ -48,26 +48,7 @@
 
 ## Introduction
 
-This repository provides a comprehensive yet minimalistic Hyprland setup designed for users who want a modern, efficient, and customizable desktop environment. The configuration focuses on:
-
-### Key Features
-- **Simplicity**: Straightforward installation and configuration process
-- **Performance**: Optimized settings for smooth operation
-- **Flexibility**: Easy customization options for personal preferences
-- **Integration**: Seamless compatibility with modern Linux tools and applications
-
-### Design Philosophy
-The setup follows these principles:
-- Minimal dependencies while maintaining full functionality
-- Sensible defaults that work out of the box
-- Clear configuration structure for easy modification
-- Performance-focused settings without sacrificing features
-
-### Target Users
-This setup is ideal for:
-- Users transitioning from traditional desktop environments to Hyprland
-- Developers seeking a efficient, keyboard-driven workflow
-- Anyone interested in modern Wayland-based desktop setups
+This repository provides a comprehensive yet minimalistic Hyprland setup designed for users who want a modern, efficient, and customizable desktop environment.
 
 ### What's Included
 - Complete Hyprland configuration with optimal defaults
@@ -75,7 +56,6 @@ This setup is ideal for:
 - Integrated notification and status system
 - Modern terminal environment with fish shell
 - Security features including screen locking and authentication
-- Performance optimizations for various hardware configurations
 
 ## Environment Setup
 
@@ -85,7 +65,7 @@ This setup is ideal for:
 ## Prerequisites
 - [Hyprland](https://hyprland.org/) installed.
 - Utilities like `hyprctl`, `hyprpaper`, and a shell environment (like fish).
-- `NetworkManager` with`network-manager-applet` and `nm-connection-editor` installed.
+- `networkmanager` with`network-manager-applet` and `nm-connection-editor` installed.
 - A directory containing your wallpapers.
 - Vivaldi is used for browser in hyprland.conf, change it if you want to use another browser.
 - Check Monitors in hyprland.conf at the start. Adapt it to your setup.
@@ -101,7 +81,7 @@ This script automatically updates Pacman, installs the necessary packages, and c
 ## Dependencies
 
 ### Pacman Packages
-- hyprland
+- hyprland (Main Hyprland Package, includes following packages: 
 - dolphin (File Manager)
 - vivaldi (Browser)
 - kitty (Terminal)
@@ -122,11 +102,8 @@ This script automatically updates Pacman, installs the necessary packages, and c
 - lsd (ls replacement - used as alias in fish config)
 - btop (System Monitor - used as alias in fish config)
 - nwg-displays (Display Manager to handle multiple monitors)
-- networkmanager (Network Manager)
-- network-manager-applet (Network Manager)
-- nm-connection-editor (Network Manager)
 
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays network-manager-applet`
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish bat lsd btop nwg-displays`
 
 ### AUR Extras
 - xwaylandvideobridge-git (XWayland Video Bridge)
@@ -191,19 +168,13 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   # Add or remove file extensions
   WALLPAPER=$(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.webp" \))
   ```
-- Configure wallpaper transition effects in `hyprpaper.conf`:
-  ```ini
-  ipc = on
-  preload = ~/path/to/default.jpg
-  splash = true
-  ```
 
 ### Window Rules
 - Add custom window rules in `hyprland.conf`:
   ```ini
   # Example window rules
-  windowrule = float, ^(pavucontrol)$
-  windowrule = center, ^(pavucontrol)$
+  windowrulev2 = float,class:^(org\.pulseaudio\.pavucontrol)$
+  windowrulev2 = center,class:^(org\.pulseaudio\.pavucontrol)$
   windowrule = workspace 2, ^(vivaldi-stable)$
   windowrule = opacity 0.95, ^(Code)$
   ```
@@ -260,22 +231,14 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   monitor = DP-2,3840x2160@60,5440x0,1.5
   ```
 
-### Performance Tweaks
-- Adjust animation settings for better performance:
-  ```ini
-  animations {
-    enabled = yes
-    animation = windows,1,3,default    # Faster window animations
-    animation = border,1,2,default     # Quicker border animations
-    animation = fade,0                 # Disable fade for better performance
-  }
+### Remove Default Tweaks
   ```
-- Configure misc options for optimization:
+- Configure misc options to remove default settings:
   ```ini
   misc {
-    vfr = true                        # Variable refresh rate
-    disable_hyprland_logo = true      # Disable startup logo
-    disable_splash_rendering = true    # Disable splash screen
+      vfr = true # Enable VFR (Variable Frame Rate) for Hyprland
+      force_default_wallpaper = 0 # Set to 0 or 1 to disable the anime mascot wallpapers
+      disable_hyprland_logo = true # If true disables the random hyprland logo / anime girl background. :(
   }
   ```
 
@@ -402,8 +365,6 @@ For persistent issues:
 
 ### Terminal Experience
 - **Kitty Terminal Integration**
-  - GPU-accelerated rendering for smooth performance
-  - True color and ligature support
   - Multiple layouts (splits, tabs, windows)
   - Session management and restoration
   - Custom key mappings:
@@ -416,7 +377,6 @@ For persistent issues:
 
 - **Fish Shell Enhancements**
   - Smart command history with search
-  - Dynamic OS-aware prompt
   - Built-in completions and suggestions
   - Custom aliases for improved workflow:
     ```fish
@@ -436,105 +396,43 @@ For persistent issues:
 - **Dynamic Workspace Organization**
   - Per-monitor workspaces
   - Automatic workspace assignment rules
-  - Smart window placement algorithms
-  - Scratchpad support for temporary windows
 
 - **Advanced Window Controls**
   - Edge snap and resize
   - Window grouping and tabbing
   - Floating window management
-  - Window fade animations
-  - Example rules:
-    ```ini
-    windowrule = workspace 1, ^(kitty)$
-    windowrule = float, ^(pavucontrol)$
-    windowrule = size 50% 60%, ^(pavucontrol)$
-    windowrule = center, ^(pavucontrol)$
-    ```
 
 - **Multi-Monitor Support**
   - Independent workspace per monitor
-  - Dynamic monitor hot-plugging
-  - Variable refresh rate support
-  - Mixed DPI configuration
 
 ### Notification System
 - **Dunst Configuration**
-  - Rich formatting support
-  - Progress bar integration
   - Critical notification persistence
-  - Custom styling per application
   - Action button support
-  - Example notification features:
-    ```ini
-    # Progress notifications
-    progress_bar = true
-    progress_bar_height = 10
-    progress_bar_corner_radius = 3
-    
-    # Smart positioning
-    follow = mouse
-    offset = 15x15
-    ```
 
 ### Visual Customization
 - **Waybar Integration**
   - Custom modules support
   - System tray integration
   - Workspace overview
-  - Media player controls
   - Network management
   - Volume control
   - Battery monitoring
-  - Example modules:
-    ```json
-    "custom/weather": {
-        "format": "{}°",
-        "interval": 3600,
-        "exec": "weather-script.sh"
-    }
-    ```
 
 - **Theme Management**
-  - Dynamic color schemes
-  - Wallpaper-based theming
   - Font configuration:
     - JetBrains Mono Nerd Font
-    - Icon fonts support
-    - Ligature enablement
-  - Transparency effects
-
-- **Application Styling**
-  - GTK theme integration
-  - Qt style harmonization
-  - Cursor theme support
-  - Icon theme consistency
 
 ### Security Features
 - **Screen Locking**
   - Automatic screen locking
   - Custom lock screen styling
-  - PAM integration
   - Multi-monitor support
 
 - **Authentication**
   - Polkit integration
   - Keyring management
   - Secure screen sharing
-  - XWayland isolation
-
-### Performance Optimizations
-- **Resource Management**
-  - Compositor-level VSync
-  - GPU acceleration
-  - Smart process scheduling
-  - Memory usage optimization
-
-- **Startup Management**
-  - Delayed autostart capability
-  - Service dependency handling
-  - Parallel loading optimization
-  - Session restoration
 
 ## Additional Resources
 - [Hyprland Wiki](https://wiki.hyprland.org/)

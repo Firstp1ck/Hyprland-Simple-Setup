@@ -28,6 +28,94 @@ execute_command() {
     fi
 }
 
+# New function to check and prompt user input for required variables
+check_user_input() {
+    # Check if WALLPAPER_DIR is set, prompt if not
+    if [ -z "$WALLPAPER_DIR" ]; then
+        echo "WARNING: WALLPAPER_DIR is not set."
+        read -p "Please enter the path to your wallpaper directory: " input_wallpaper_dir
+        export WALLPAPER_DIR="$input_wallpaper_dir"
+    fi
+
+    # Check if MONITORS variable is set, prompt if not
+    if [ -z "$MONITORS" ]; then
+        echo "WARNING: MONITORS variable is not set."
+        echo "Please enter your monitor names separated by spaces, check with 'hyprctl monitors' (eg: \"DP-1 HDMI-A-1\"): "
+        read -r input_monitors
+        # Convert input into an array and export it
+        export MONITORS=($input_monitors)
+    fi
+}
+
+# New function to update configuration files with user input
+update_configs() {
+    # Update the wallpaper configuration file
+    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    mkdir -p "$(dirname "$wallpaper_conf")"
+    {
+        echo "# Wallpaper Configuration"
+        echo "WALLPAPER_DIR=\"$WALLPAPER_DIR\""
+    } > "$wallpaper_conf"
+    
+    # Update the display configuration file with each monitor details
+    local displays_conf="$HOME/.config/hypr/sources/displays.conf"
+    mkdir -p "$(dirname "$displays_conf")"
+    {
+        echo "# Display Configuration"
+        for monitor in "${MONITORS[@]}"; do
+            # Prompt for resolution and refresh rate for each monitor
+            read -p "Enter resolution for monitor ${monitor} [2560x1440]: " res
+            res=${res:-2560x1440}
+            read -p "Enter refresh rate for monitor ${monitor} [144]: " refresh
+            refresh=${refresh:-144}
+            # Here, position is fixed; adjust as necessary
+            echo "monitor=${monitor},${res}@${refresh},0x0,1"
+        done
+    } > "$displays_conf"
+    
+    print_message "Configuration files updated with user input."
+}
+
+# New function to update fish language config in fish config file
+set_fish_language_config() {
+    local fish_conf="$HOME/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/fish/config.fish"
+    echo "Select your preferred language setting for Fish Shell:"
+    echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
+    echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
+    echo "3) us     (US English: LC_ALL=en_US.UTF-8, LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
+    read -p "Enter selection number (1-3): " fish_sel
+    local lc_all lang language
+    switch "$fish_sel"
+        case 1
+            lc_all="de_CH.UTF-8"
+            lang="de_CH.UTF-8"
+            language="de_CH:de_DE"
+        case 2
+            lc_all="de_DE.UTF-8"
+            lang="de_DE.UTF-8"
+            language="de_DE:en_US"
+        case 3
+            lc_all="en_US.UTF-8"
+            lang="en_US.UTF-8"
+            language="en_US:de_DE"
+        case '*'
+            echo "Invalid selection, using default (de_CH)."
+            lc_all="en_US.UTF-8"
+            lang="en_US.UTF-8"
+            language="en_US:de_DE"
+    end
+    # Remove existing language settings block if present, then append new settings
+    sed -i '/^## LANGUAGE SETTINGS START/,/^## LANGUAGE SETTINGS END/d' "$fish_conf"
+    {
+        echo "## LANGUAGE SETTINGS START"
+        echo "set -gx LC_ALL $lc_all"
+        echo "set -gx LANG $lang"
+        echo "set -gx LANGUAGE $language"
+        echo "## LANGUAGE SETTINGS END"
+    } >> "$fish_conf"
+    print_message "Fish language settings updated in $fish_conf"
+}
+
 ##############################################################
 # Pacman Update and Hyprland Packages Installation
 ##############################################################
@@ -131,6 +219,9 @@ check_hyprland() {
 ##############################################################
 main() {
     print_message "Starting Hyprland Setup..."
+    check_user_input
+    update_configs
+    set_fish_language_config
     install_pacman_packages
     install_aur_extras
     print_message "Hyprland setup completed successfully!"
