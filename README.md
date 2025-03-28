@@ -78,9 +78,9 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 ### Quick Start
 
-1. **Clone the repository into your home directory.**
+1. **Clones the repository into your home directory.**
    ```bash
-   git clone https://github.com/yourusername/Hyprland_Simple_Setup.git
+   git clone https://github.com/yourusername/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
    ```
 2. Navigate into the project directory and copy the dotfiles directory to your home directory:
    ```bash
