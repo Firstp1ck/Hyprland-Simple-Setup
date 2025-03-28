@@ -478,3 +478,6 @@ For persistent issues:
 ## Additional Resources
 - [Hyprland Wiki](https://wiki.hyprland.org/)
 - [Hyprland GitHub Repository](https://github.com/vaxerski/Hyprland)
+- [Waybar GitHub Repository (Wiki)](https://github.com/Alexays/Waybar/wiki)
+- [Kitty Homepage (Wiki)](https://sw.kovidgoyal.net/kitty/)
+- [Fish Shell (Wiki)](https://fishshell.com/docs/current/index.html)
