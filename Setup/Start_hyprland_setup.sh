@@ -131,7 +131,6 @@ hyprland_packages=(
     "hyprlock"
     "hypridle"
     "hyprpolkitagent"
-    "nwg-displays"
     
     # File Management
     "dolphin"
