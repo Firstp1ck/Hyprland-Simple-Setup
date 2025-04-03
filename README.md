@@ -71,6 +71,7 @@
   - [Visual Customization](#visual-customization)
   - [Security Features](#security-features)
 - [Additional Resources](#additional-resources)
+- [Dotfiles Overview](#dotfiles-overview)
 
 ## Introduction
 
@@ -480,3 +481,26 @@ For persistent issues:
 - [Waybar GitHub Repository (Wiki)](https://github.com/Alexays/Waybar/wiki)
 - [Kitty Homepage (Wiki)](https://sw.kovidgoyal.net/kitty/)
 - [Fish Shell (Wiki)](https://fishshell.com/docs/current/index.html)
+
+## Dotfiles Overview
+
+The repository’s dotfiles are organized as follows:
+
+- **.config/waybar/**  
+  Contains Waybar configuration files (e.g. config.jsonc, style.css) and scripts (e.g. toggle_waybar.sh) for managing your status bar.
+  
+- **.config/wofi/**  
+  Includes Wofi configuration such as menu.css for customizing the launcher appearance.
+  
+- **.config/hypr/**  
+  Holds Hyprland-related configurations and scripts like change_wallpaper.sh and fix-dolphin.sh.
+  
+- **.local/scripts/**  
+  Provides helper scripts such as Start_stow_solve.sh which deploys the dotfiles using GNU stow.
+
+To apply these dotfiles to your system, run the following:
+  
+```bash
+cd ~/Hyprland_Simple_Setup/dotfiles
+bash .local/scripts/Start_stow_solve.sh
+```
