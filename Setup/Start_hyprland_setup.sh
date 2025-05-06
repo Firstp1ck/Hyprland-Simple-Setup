@@ -103,6 +103,16 @@ check_user_input() {
 
 # Function to update configuration files with user input
 update_configs() {
+    # Copy sources_example to sources directory
+    local hypr_config_dir="$HOME/dotfiles/.config/hypr"
+    if [ -d "$hypr_config_dir/sources_example" ]; then
+        print_message "Copying sources_example to sources..."
+        cp -r "$hypr_config_dir/sources_example" "$hypr_config_dir/sources"
+    else
+        print_error "sources_example directory not found in $hypr_config_dir"
+        mkdir -p "$hypr_config_dir/sources"
+    fi
+
     # Update the wallpaper configuration file
     local wallpaper_conf="$HOME/dotfiles/.config/hypr/sources/change_wallpaper.conf"
     mkdir -p "$(dirname "$wallpaper_conf")"
