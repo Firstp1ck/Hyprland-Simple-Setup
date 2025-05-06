@@ -28,12 +28,65 @@ execute_command() {
     fi
 }
 
-# New function to check and prompt user input for required variables
+check_dependencies() {
+    local deps=("git" "sudo")
+    local missing_deps=()
+
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            missing_deps+=("$dep")
+        fi
+    done
+
+    # Check for yay
+    if ! command -v yay >/dev/null 2>&1; then
+        print_warning "YAY is not installed. Installing YAY..."
+        (
+            cd /tmp || exit 1
+            git clone https://aur.archlinux.org/yay.git
+            cd yay || exit 1
+            makepkg -si --noconfirm
+        ) || {
+            print_error "Failed to install YAY"
+            exit 1
+        }
+    fi
+
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        print_error "Missing dependencies: ${missing_deps[*]}"
+        exit 1
+    fi
+}
+
+validate_wallpaper_dir() {
+    if [ ! -d "$WALLPAPER_DIR" ]; then
+        print_error "Wallpaper directory does not exist: $WALLPAPER_DIR"
+        return 1
+    fi
+
+    # Check for at least one image file
+    if ! find "$WALLPAPER_DIR" -maxdepth 1 -type f -exec file {} \; | grep -q "image"; then
+        print_error "No image files found in wallpaper directory"
+        return 1
+    fi
+    return 0
+}
+
+create_backup() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        local backup
+        backup="${file}.bak.$(date +%Y%m%d_%H%M%S)"
+        cp "$file" "$backup" && print_message "Created backup: $backup"
+    fi
+}
+
+# Function to check and prompt user input for required variables
 check_user_input() {
     # Check if WALLPAPER_DIR is set, prompt if not
     if [ -z "$WALLPAPER_DIR" ]; then
         echo "WARNING: WALLPAPER_DIR is not set."
-        read -p "Please enter the path to your wallpaper directory: " input_wallpaper_dir
+        read -rp "Please enter the path to your wallpaper directory: " input_wallpaper_dir
         export WALLPAPER_DIR="$input_wallpaper_dir"
     fi
 
@@ -42,12 +95,13 @@ check_user_input() {
         echo "WARNING: MONITORS variable is not set."
         echo "Please enter your monitor names separated by spaces, check with 'hyprctl monitors' (eg: \"DP-1 HDMI-A-1\"): "
         read -r input_monitors
-        # Convert input into an array and export it
-        export MONITORS=($input_monitors)
+        # Convert input into an array properly using read -a
+        IFS=' ' read -ra MONITORS <<< "$input_monitors"
+        export MONITORS
     fi
 }
 
-# New function to update configuration files with user input
+# Function to update configuration files with user input
 update_configs() {
     # Update the wallpaper configuration file
     local wallpaper_conf="$HOME/dotfiles/.config/hypr/sources/change_wallpaper.conf"
@@ -64,9 +118,9 @@ update_configs() {
         echo "# Display Configuration"
         for monitor in "${MONITORS[@]}"; do
             # Prompt for resolution and refresh rate for each monitor
-            read -p "Enter resolution for monitor ${monitor} [2560x1440]: " res
+            read -rp "Enter resolution for monitor ${monitor} [2560x1440]: " res
             res=${res:-2560x1440}
-            read -p "Enter refresh rate for monitor ${monitor} [144]: " refresh
+            read -rp "Enter refresh rate for monitor ${monitor} [144]: " refresh
             refresh=${refresh:-144}
             # Here, position is fixed; adjust as necessary
             echo "monitor=${monitor},${res}@${refresh},0x0,1"
@@ -76,43 +130,54 @@ update_configs() {
     print_message "Configuration files updated with user input."
 }
 
-# New function to update fish language config in fish config file
+# Function to update fish language config in fish config file
 set_fish_language_config() {
     local fish_conf="$HOME/dotfiles/.config/fish/config.fish"
     echo "Select your preferred language setting for Fish Shell:"
     echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
     echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
     echo "3) us     (US English: LC_ALL=en_US.UTF-8, LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
-    read -p "Enter selection number (1-3): " fish_sel
+    read -rp "Enter selection number (1-3): " fish_sel
     local lc_all lang language
-    switch "$fish_sel"
-        case 1
+    case "$fish_sel" in
+        1)
             lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
             language="de_CH:de_DE"
-        case 2
+            ;;
+        2)
             lc_all="de_DE.UTF-8"
             lang="de_DE.UTF-8"
             language="de_DE:en_US"
-        case 3
+            ;;
+        3)
             lc_all="en_US.UTF-8"
             lang="en_US.UTF-8"
             language="en_US:de_DE"
-        case '*'
+            ;;
+        *)
             echo "Invalid selection, using default (de_CH)."
-            lc_all="en_US.UTF-8"
-            lang="en_US.UTF-8"
-            language="en_US:de_DE"
-    end
-    # Remove existing language settings block if present, then append new settings
+            lc_all="de_CH.UTF-8"
+            lang="de_CH.UTF-8"
+            language="de_CH:de_DE"
+            ;;
+    esac
+    
+    mkdir -p "$(dirname "$fish_conf")"
+    touch "$fish_conf"
+    
+    # Remove existing language settings block if present
     sed -i '/^## LANGUAGE SETTINGS START/,/^## LANGUAGE SETTINGS END/d' "$fish_conf"
+    
+    # Append new language settings
     {
         echo "## LANGUAGE SETTINGS START"
-        echo "set -gx LC_ALL $lc_all"
-        echo "set -gx LANG $lang"
-        echo "set -gx LANGUAGE $language"
+        echo "set -gx LC_ALL \"$lc_all\""
+        echo "set -gx LANG \"$lang\""
+        echo "set -gx LANGUAGE \"$language\""
         echo "## LANGUAGE SETTINGS END"
     } >> "$fish_conf"
+    
     print_message "Fish language settings updated in $fish_conf"
 }
 
@@ -149,7 +214,6 @@ hyprland_packages=(
     # System Integration
     "xdg-desktop-portal-hyprland"
     "xdg-desktop-portal-gtk"
-    "polkit-kde-agent"
     "gnome-keyring"
     "network-manager-applet"
     "networkmanager"
@@ -219,7 +283,29 @@ check_hyprland() {
 ##############################################################
 main() {
     print_message "Starting Hyprland Setup..."
+    
+    check_dependencies
     check_user_input
+    
+    if ! validate_wallpaper_dir; then
+        read -rp "Continue anyway? (y/N): " choice
+        if [[ ! $choice =~ ^[Yy]$ ]]; then
+            print_error "Setup aborted by user"
+            exit 1
+        fi
+    fi
+    
+    # Create backups before updating configs
+    local config_files=(
+        "$HOME/dotfiles/.config/hypr/sources/change_wallpaper.conf"
+        "$HOME/dotfiles/.config/hypr/sources/displays.conf"
+        "$HOME/dotfiles/.config/fish/config.fish"
+    )
+    
+    for file in "${config_files[@]}"; do
+        create_backup "$file"
+    done
+    
     update_configs
     set_fish_language_config
     install_pacman_packages
@@ -227,10 +313,11 @@ main() {
 
     # Setup dotfiles via stow
     if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
-        echo "Setting up dotfiles with Start_stow_solve.sh..."
+        print_message "Setting up dotfiles with Start_stow_solve.sh..."
         bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"
     else
-        echo "Warning: Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts. Skipping dotfiles setup."
+        print_warning "Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts"
+        print_warning "Skipping dotfiles setup"
     fi
 
     print_message "Hyprland setup completed successfully!"

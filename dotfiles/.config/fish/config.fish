@@ -59,10 +59,11 @@ set -g __fish_git_prompt_showdirtystate 1
 set -g __fish_git_prompt_showuntrackedfiles 1
 set -g __fish_git_prompt_showupstream informative
 
-# Language Settings (Set your language settings here)
+## LANGUAGE SETTINGS START
 set -gx LC_ALL de_CH.UTF-8
 set -gx LANG de_CH.UTF-8
 set -gx LANGUAGE de_CH:en_US
+## LANGUAGE SETTINGS END
 
 set -x fish_history default
 
