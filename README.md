@@ -103,12 +103,11 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 - Uses stow to manage dotfiles. The stow setupscript makes backups from the original dotfiles in the home directory.
 
 ## Prerequisites
-- [Hyprland](https://hyprland.org/) installed.
-- Utilities like `hyprctl`, `hyprpaper`, and a shell environment (like fish).
-- `networkmanager` with`network-manager-applet` and `nm-connection-editor` installed.
-- A directory containing your wallpapers.
-- Vivaldi is used for browser in hyprland.conf, change it if you want to use another browser.
-- Check Monitors in hyprland.conf at the start. Adapt it to your setup.
+- Arch-based Linux distribution (tested on EndeavourOS with KDE)
+- Base development tools (`git`, `sudo`)
+- YAY AUR helper (will be installed if missing)
+- A directory containing your wallpapers
+- Internet connection for package downloads
 
 ## Setup Script Execution
 
@@ -122,36 +121,79 @@ This script automatically updates Pacman, installs the necessary packages, and c
 ## Dependencies
 
 ### Pacman Packages
-- hyprland (Main Hyprland Package)
-- dolphin (File Manager)
-- vivaldi (Browser)
-- kitty (Terminal)
-- waybar (Status Bar)
-- hyprpaper (Dynamic Wallpaper Manager)
-- wofi (App Launcher with)
-- hyprlock (Lock Screen)
-- hypridle (Idle Manager)
-- hyprpolkitagent (Authentication Agent)
-- polkit-kde-agent (Authentication Agent)
-- gnome-keyring (Authentication Agent)
-- xdg-desktop-portal-hyprland (Desktop Integration)
-- xdg-desktop-portal-gtk (Desktop Integration)
-- dunst (Notification Daemon)
-- ttf-jetbrains-mono-nerd (Fonts)
-- fish (Shell)
-- stow (Utility for managing dotfiles)
-- bat (cat replacement - used as alias in fish config)
-- lsd (ls replacement - used as alias in fish config)
-- btop (System Monitor - used as alias in fish config)
+Core Hyprland Packages:
+- hyprland (Wayland compositor)
+- waybar (Status bar)
+- hyprpaper (Wallpaper manager)
+- hyprcursor (Cursor themes)
+- wofi (Application launcher)
+- hyprlock (Screen locker)
+- hypridle (Idle manager)
+- hyprpolkitagent (Authentication agent)
+- hyprpicker (Color picker)
+- wl-clipboard & wl-clip-persist (Clipboard managers)
+- hyprgraphics (Graphics utilities)
+- hyprland-qtutils (Qt integration)
+- hyprland-qt-support (Qt support)
+- hyprwayland-scanner (Wayland protocol scanner)
 
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava fish stow bat lsd btop`
+File Management:
+- dolphin (File manager)
+- git (Version control)
+- fd (Modern find)
+- fzf (Fuzzy finder)
+- stow (Dotfiles management)
+- nvim (Text editor)
+
+Terminal and Shell:
+- kitty (Terminal emulator)
+- fish (Shell)
+- konsole (KDE terminal)
+
+Browsers:
+- vivaldi
+- vivaldi-ffmpeg-codecs
+
+System Integration:
+- xdg-desktop-portal-hyprland
+- xdg-desktop-portal-gtk
+- gnome-keyring
+- network-manager-applet
+- networkmanager
+- nm-connection-editor
+- ntfs-3g (NTFS filesystem support)
+- firewalld (Firewall management)
+
+CLI Tools:
+- bat (Modern cat)
+- lsd (Modern ls)
+- btop (System monitor)
+- khal (Calendar)
+- zoxide (Smart cd)
+- lshw (Hardware lister)
+- fastfetch (System info)
+- tldr (Simplified man pages)
+
+Theming and Appearance:
+- ttf-jetbrains-mono-nerd
+- ttf-nerd-fonts-symbols
+- ttf-nerd-fonts-symbols-common
+- rose-pine-hyprcursor
+- cava (Audio visualizer)
+
+Calculator:
+- qalculate-gtk
 
 ### AUR Extras
-- xwaylandvideobridge-git (XWayland Video Bridge)
-- hyprshot (Screenshot Tool)
-- Visual Studio Code (Text Editor)
-
-`yay -S xwaylandvideobridge-git hyprshot visual-studio-code-bin`
+- xwaylandvideobridge-git (Screen sharing)
+- hyprshot (Screenshot utility)
+- visual-studio-code-bin (Code editor)
+- lsplug (Plugin manager)
+- waypaper-git (Wallpaper manager)
+- pyprland (Python bindings)
+- wl-clipboard-history-git (Clipboard history)
+- hyprsunset (Night light)
+- github-desktop-bin (GitHub client)
 
 ## Installation & Configuration
 
@@ -260,20 +302,30 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   ```
 
 ### Monitor Configuration
-- Advanced monitor setup examples:
-  ```bash
-  # High refresh rate gaming monitor
-  monitor = DP-1,2560x1440@165,0x0,1
-  
-  # Vertical secondary monitor
-  monitor = HDMI-A-1,1920x1080@60,2560x0,1,transform,1
-  
-  # Scale for HiDPI
-  monitor = DP-2,3840x2160@60,5440x0,1.5
-  ```
+The setup provides an interactive monitor configuration workflow:
+
+1. Detection:
+   ```bash
+   # Check available monitors
+   hyprctl monitors
+   ```
+
+2. Configuration Process:
+   - Script prompts for monitor names
+   - For each monitor, specify:
+     - Resolution (default: 2560x1440)
+     - Refresh rate (default: 144)
+     - Position (automatically calculated)
+
+3. Configuration Storage:
+   - Settings saved to `~/.config/hypr/sources/displays.conf`
+   - Format example:
+     ```bash
+     monitor=DP-1,2560x1440@144,0x0,1
+     monitor=HDMI-A-1,1920x1080@60,2560x0,1
+     ```
 
 ### Remove Default Tweaks
-  ```
 - Configure misc options to remove default settings:
   ```ini
   misc {
