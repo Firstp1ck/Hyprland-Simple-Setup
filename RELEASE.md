@@ -2,10 +2,10 @@
 
 ## Version 0.2.0 (2024-05-07)
 
-### Major Changes in Setup Script vs. Documentation
+### Major Changes in Setup
 
 #### Package Management Updates
-- Added new core Hyprland packages not listed in README:
+- Added new core Hyprland packages:
   - `hyprcursor`
   - `wl-clipboard` and `wl-clip-persist`
   - `hyprgraphics`
@@ -36,7 +36,7 @@
   - `qalculate-gtk` - Advanced calculator
 
 #### AUR Package Updates
-- Added new AUR packages not documented in README:
+- Added new AUR packages:
   - `lsplug` - Plugin manager
   - `waypaper-git` - Wallpaper manager
   - `pyprland` - Python bindings
