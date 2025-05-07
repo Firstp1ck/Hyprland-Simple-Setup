@@ -1,8 +1,8 @@
 window {
     margin: 0px;
-    border: 5px solid #1e1e2e;
+    border: 10px solid #1e1e2e;
     background-color: #cdd6f4;
-    border-radius: 10px;
+    border-radius: 20px;
 }
 
 #input {

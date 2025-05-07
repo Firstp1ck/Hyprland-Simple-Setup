@@ -85,14 +85,14 @@ create_backup() {
 check_user_input() {
     # Check if WALLPAPER_DIR is set, prompt if not
     if [ -z "$WALLPAPER_DIR" ]; then
-        echo "WARNING: WALLPAPER_DIR is not set."
+        echo "WALLPAPER_DIR is not set."
         read -rp "Please enter the path to your wallpaper directory: " input_wallpaper_dir
         export WALLPAPER_DIR="$input_wallpaper_dir"
     fi
 
     # Check if MONITORS variable is set, prompt if not
     if [ -z "$MONITORS" ]; then
-        echo "WARNING: MONITORS variable is not set."
+        echo "MONITORS variable is not set."
         echo "Please enter your monitor names separated by spaces, check with 'hyprctl monitors' (eg: \"DP-1 HDMI-A-1\"): "
         read -r input_monitors
         # Convert input into an array properly using read -a
@@ -106,8 +106,10 @@ update_configs() {
     # Copy sources_example to sources directory
     local hypr_config_dir="$HOME/dotfiles/.config/hypr"
     if [ -d "$hypr_config_dir/sources_example" ]; then
-        print_message "Copying sources_example to sources..."
-        cp -r "$hypr_config_dir/sources_example" "$hypr_config_dir/sources"
+        print_message "Copying sources_example to sources if not existent..."
+        if [ ! -d "$hypr_config_dir/sources" ]; then
+            cp -r "$hypr_config_dir/sources_example" "$hypr_config_dir/sources"
+        fi
     else
         print_error "sources_example directory not found in $hypr_config_dir"
         mkdir -p "$hypr_config_dir/sources"
@@ -206,6 +208,13 @@ hyprland_packages=(
     "hyprlock"
     "hypridle"
     "hyprpolkitagent"
+    "hyprpicker"
+    "wl-clipboard"
+    "wl-clip-persist"
+    "hyprgraphics" 
+    "hyprland-qtutils" 
+    "hyprland-qt-support" 
+    "hyprwayland-scanner"
     
     # File Management
     "dolphin"
@@ -213,6 +222,7 @@ hyprland_packages=(
     "fd"
     "fzf"
     "stow"
+    "nvim"
     
     # Terminal and Shell
     "kitty"
@@ -220,6 +230,7 @@ hyprland_packages=(
     
     # Browser
     "vivaldi"
+    "vivaldi-ffmpeg-codecs"
     
     # System Integration
     "xdg-desktop-portal-hyprland"
@@ -234,6 +245,8 @@ hyprland_packages=(
     
     # Theming and Appearance
     "ttf-jetbrains-mono-nerd"
+    "ttf-nerd-fonts-symbols"
+    "ttf-nerd-fonts-symbols-common"
     "rose-pine-hyprcursor"
     "cava"
     
@@ -241,6 +254,17 @@ hyprland_packages=(
     "bat"
     "lsd"
     "btop"
+    "khal"
+    "zoxide"
+    "lshw"
+    "ntfs-3g"
+    "firewalld"
+    "konsole"
+    "fastfetch"
+    "tldr"
+
+    # Calculator
+    "qalculate-gtk"
 )
 
 install_pacman_packages() {
@@ -264,6 +288,14 @@ aur_extras=(
     "xwaylandvideobridge-git"
     "hyprshot"
     "visual-studio-code-bin"
+    "lsplug"
+    "waypaper-git"
+
+    # Additional AUR packages
+    "pyprland"
+    "wl-clipboard-history-git"
+    "hyprsunset"
+    "github-desktop-bin"
 )
 
 install_aur_extras() {

@@ -27,6 +27,8 @@
         "battery#bat2",
         "clock",
         "tray",
+        "custom/updates",
+        "custom/dunst",
         "custom/power"
     ],
     
@@ -81,12 +83,14 @@
     },
     "tray": {
         "icon-size": 21,
-        "spacing": 10
+        "spacing": 5,
+        "show-passive-items": true
     },
     "clock": {
         "timezone": "Zurich",
         "format": "{:%a %d %b | %Y %H:%M}", // added to display date and time
-        "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>"
+        "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
+        "on-click": "kitty -e ikhal"
     },
     "cpu": {
         "format": "{usage}% ",
@@ -156,6 +160,33 @@
         },
         "on-click": "pavucontrol"
     },
+
+    "custom/updates": {
+        "format": "{} {icon}",
+        "return-type": "json",
+        "format-icons": {
+            "has-updates": "󱍷",
+            "updated": ""
+        },
+        "exec-if": "which waybar-module-pacman-updates",
+        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 3600 --network-interval-seconds 3600 --tooltip-align-columns monospace",
+        "menu": "on-click-right",
+        "menu-file": "~/.config/waybar/update_menu.xml",
+        "menu-actions": {
+            "update": "kitty ~/Dokumente/GitHub/Linux-Setup/Scripts/Start_System_setup.sh --function update_arch",
+            "refresh": "~/.config/waybar/scripts/refresh_updates.sh"
+            }
+    },
+
+    "custom/dunst": {
+    "exec": "~/.config/waybar/scripts/dunst_history.sh",
+    "return-type": "json",
+    "interval": 1,
+    "on-click": "dunstctl history-clear",
+    "on-click-right": "dunstctl history-clear",
+    "escape": true
+    },
+
     "custom/power": {
         "format" : "⏻ ",
 		"tooltip": false,

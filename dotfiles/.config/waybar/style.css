@@ -62,21 +62,24 @@ tooltip {
 #keyboard-state,
 #clock,
 #tray,
+#custom-updates,
+#custom-dunst,
 #custom-power,
 
 #wlr-taskbar {
   background: #1e1e2e;
   opacity: 0.8;
   padding: 0px 10px;
-  margin: 3px 0px;
-  margin-top: 10px;
+  margin: 0px 0px;
+  margin-top: 5px;
   border: 1px solid #181825;
   border-radius: 10px;
 }
 
 #tray {
   border-radius: 10px;
-  margin-right: 10px;
+  margin-right: 0px;
+  padding: 0px 10px;
 }
 
 #workspaces {
@@ -111,6 +114,8 @@ tooltip {
   color: #95b1ff;
   border-left: 0px;
   border-right: 0px;
+  margin-right: 0px;
+  padding-right: 15px;
 }
 
 #bluetooth {
@@ -120,16 +125,17 @@ tooltip {
 
 #battery {
   color: #a8ff96;
-  border-radius: 0 10px 10px 0;
+  border-radius: 10 10px 10px 10;
   margin-right: 10px;
-  border-left: 0px;
+  border-left: 5px;
+  padding-right: 15px;
 }
 
 #power-profiles-daemon {
   background-color: #1e1e2e;
   opacity: 0.8;
   border-radius: 10px;
-  margin-top: 10px;
+  margin-top: 5px;
   padding: 0px 10px;
 }
 
@@ -149,12 +155,14 @@ tooltip {
   color: #ca9bff;
   border-left: 0px;
   border-right: 0px;
+  padding-right: 15px;
 }
 
 #memory {
   color: #f49dff;
   border-left: 0px;
   border-right: 0px;
+  padding-right: 15px;
 }
 
 #temperature {
@@ -175,8 +183,23 @@ tooltip {
 
 #clock {
   color: #ff9b9b;
-  margin-left: 10px;
+  margin-left: 0px;
   border-right: 0px;
+}
+
+#custom-updates {
+	background-color: #1e1e2e;
+  opacity: 0.8;
+  border-radius: 10px;
+  padding: 0px 15px;
+}
+
+#custom-dunst {
+  background-color: #1e1e2e;
+  opacity: 0.8;
+  border-radius: 10px;
+  padding-left: 10px;
+  padding-right: 12px;
 }
 
 #custom-power {
@@ -184,14 +207,6 @@ tooltip {
   border-radius: 10px;
   margin-right: 10px;
   border-left: 0px;
-  padding-right: 1px;
-}
-
-#wlr-taskbar {
-  background-color: #1e1e2e;
-  opacity: 0.8;
-  margin-top: 10px;
-  padding: 0px 10px;
-  border-radius: 10px;
-  margin-right: 10px;
+  padding-left: 15px;
+  padding-right: 5px;
 }

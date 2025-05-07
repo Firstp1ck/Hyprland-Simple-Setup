@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090
 
 # Load system-specific configuration file
 CONFIG_FILE="${HOME}/.config/hypr/sources/change_wallpaper.conf"
@@ -26,6 +27,9 @@ hyprctl hyprpaper preload "$WALLPAPER"
 for monitor in "${MONITORS[@]}"; do
   hyprctl hyprpaper wallpaper "$monitor,$WALLPAPER"
 done
+
+# Create timestamp file
+touch /tmp/wallpaper-change-ran
 
 echo "Current wallpaper: $CURRENT_WALL"
 echo "New wallpaper: $WALLPAPER"

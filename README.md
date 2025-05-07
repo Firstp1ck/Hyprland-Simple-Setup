@@ -144,7 +144,7 @@ This script automatically updates Pacman, installs the necessary packages, and c
 - lsd (ls replacement - used as alias in fish config)
 - btop (System Monitor - used as alias in fish config)
 
-`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava polkit-kde-agent fish stow bat lsd btop`
+`sudo pacman -S hyprland dolphin kitty vivaldi waybar hyprpaper hyprcursor wofi hyprlock hypridle hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk dunst gnome-keyring ttf-jetbrains-mono-nerd cava fish stow bat lsd btop`
 
 ### AUR Extras
 - xwaylandvideobridge-git (XWayland Video Bridge)

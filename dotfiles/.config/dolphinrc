@@ -1,0 +1,64 @@
+MenuBar=Disabled
+
+[CompactMode]
+IconSize=48
+
+[ContentDisplay]
+DirectorySizeMode=ContentSize
+UsePermissionsFormat=CombinedFormat
+UseShortRelativeDates=false
+
+[ContextMenu]
+ShowCopyMoveMenu=true
+
+[DetailsMode]
+IconSize=48
+
+[ExtractDialog]
+2 screens: Height=626
+2 screens: Width=1404
+DirHistory[$e]=$HOME/Games/
+
+[General]
+DoubleClickViewAction=view_redisplay
+FilterBar=true
+LockPanels=false
+OpenExternallyCalledFolderInNewTab=true
+ShowFullPath=true
+ShowFullPathInTitlebar=true
+ShowToolTips=true
+SortingChoice=CaseInsensitiveSorting
+SplitView=true
+UseTabForSwitchingSplitView=true
+Version=202
+ViewPropsTimestamp=2025,3,6,22,13,8.213
+
+[IconsMode]
+IconSize=48
+PreviewSize=48
+
+[InformationPanel]
+dateFormat=ShortFormat
+
+[KFileDialog Settings]
+Places Icons Auto-resize=false
+Places Icons Static Size=32
+
+[MainWindow]
+MenuBar=Disabled
+
+[Notification Messages]
+warnAboutRisksBeforeActingAsAdmin=false
+
+[PlacesPanel]
+IconSize=32
+
+[PreviewSettings]
+Plugins=appimagethumbnail,audiothumbnail,windowsexethumbnail,imagethumbnail,comicbookthumbnail,cursorthumbnail,djvuthumbnail,ebookthumbnail,exrthumbnail,jpegthumbnail,kraorathumbnail,windowsimagethumbnail,directorythumbnail,fontthumbnail,svgthumbnail,textthumbnail,gdk-pixbuf-thumbnailer
+
+[VersionControl]
+enabledPlugins=Git
+
+[ViewPropertiesDialog]
+2 screens: Height=584
+2 screens: Width=488
