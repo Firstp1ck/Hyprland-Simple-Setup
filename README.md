@@ -81,20 +81,31 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 1. **Clones the repository into your home directory.**
    ```bash
-   git clone https://github.com/yourusername/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
+   git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
    ```
-2. Navigate into the project directory and copy the dotfiles directory to your home directory:
-   ```bash
-   cd Hyprland_Simple_Setup
-   cp -r dotfiles ~/.
-   ```
-3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Installation & Configuration](#installation--configuration)).
-4. Run the setup script to install dependencies and configure your environment:
+2. **Run the setup script to install dependencies and configure your system:**
    ```bash
    cd ~/Hyprland_Simple_Setup/Setup
    ./Start_hyprland_setup.sh
    ```
-5. Launch Hyprland. Enjoy your new desktop setup!
+
+   - The script will:
+     - Detect your system and prerequisites
+     - Install all required packages (Pacman and AUR)
+     - Verify installations
+     - Guide you through configuration steps
+
+3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Installation & Configuration](#installation--configuration)).
+
+4. **Deploy dotfiles using GNU stow:**
+   ```bash
+   cd ~/Hyprland_Simple_Setup/dotfiles
+   bash .local/scripts/Start_stow_solve.sh
+   ```
+
+5. **Edit configuration files as needed (see below for modular config structure).**
+
+6. **Log out and log in to Hyprland, or start it from a TTY.**
 
 ## Environment Setup
 
@@ -108,6 +119,28 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 - YAY AUR helper (will be installed if missing)
 - A directory containing your wallpapers
 - Internet connection for package downloads
+
+## Installation Details
+
+- **Supported:** Arch Linux, EndeavourOS (other distros may require manual adaptation)
+- **Dependencies:** All handled by the setup script (Pacman and AUR)
+- **Dotfile management:** GNU stow (with backup of existing files)
+- **Logging:** All actions logged to `~/Linux-Setup.log`
+
+## Project Structure
+
+- `Setup/Start_hyprland_setup.sh` – Main interactive setup script
+- `dotfiles/`
+  - `.config/`
+    - `hypr/` – Hyprland configs and scripts
+      - `hyprland.conf` – Main config
+      - `sources_example/` – Example modular configs (keybindings, monitors, autostart, etc.)
+      - `scripts/` – Helper scripts (wallpaper, sunset, dolphin fix, etc.)
+    - `waybar/` – Status bar config, style, and scripts (weather, updates, Dunst history)
+    - `wofi/` – Application launcher config and style
+    - `kitty/`, `fish/`, `dunst/`, `nvim/`, `btop/`, `cava/`, `fastfetch/`, `zellij/`, `bat/`, `satty/`, `xdg-desktop-portal/` – App configs
+  - `.bashrc`, `.bash_profile` – Shell configs
+  - `.local/scripts/Start_stow_solve.sh` – Stow deployment script
 
 ## Setup Script Execution
 
@@ -342,6 +375,11 @@ For more customization options, refer to:
 
 ## Troubleshooting
 
+- **Logs:** See `~/Linux-Setup.log`
+- **Package verification:** The setup script checks and reports missing packages
+- **Configuration issues:** Modular config makes it easy to isolate and fix problems
+- **Scripts:** Helper scripts for common issues (e.g., fix dolphin, restart Dunst, etc.)
+
 ### Display and Monitor Issues
 - Verify monitor names and configurations:
   ```bash
@@ -556,3 +594,12 @@ To apply these dotfiles to your system, run the following:
 cd ~/Hyprland_Simple_Setup/dotfiles
 bash .local/scripts/Start_stow_solve.sh
 ```
+
+## Contributing & Support
+
+- Open issues or pull requests on GitHub
+- Suggestions and feedback welcome!
+
+## License
+
+See [LICENSE](LICENSE) for details.
