@@ -28,9 +28,11 @@
   </p>
 </div>
 
-## Example Image
+## Example Images
 
-![Hyprland Minimal Setup](example_images/minimal_setup_3.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_4.png) 
+![Hyprland Minimal Setup](example_images/minimal_setup_5.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_6.png)
 
 ## Example Terminal and Musik Visualizer
 
