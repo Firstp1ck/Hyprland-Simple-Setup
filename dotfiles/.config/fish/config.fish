@@ -32,8 +32,11 @@ end
 set -U fish_greeting ""
 
 # Fish Shell Configuration Script
-set -x SCRIPTS_DIR "$HOME/.local/scripts:$HOME/.local/share/applications:$HOME/.config/hypr/scripts"
+set -x SCRIPTS_DIR "$HOME/Dokumente/GitHub/Linux-Setup/Scripts:$HOME/.local/scripts:$HOME/.local/share/applications:$HOME/.config/hypr/scripts"
 set -x PATH "$PATH:$SCRIPTS_DIR"
+
+set -l SCRIPTS_DIR $HOME/.local/scripts $HOME/.local/share/applications $HOME/.config/hypr/scripts
+find $SCRIPTS_DIR -type f '(' -name '*.sh' -o -name '*.desktop' ')' -exec chmod +x '{}' ';'
 
 set -gx FZF_CTRL_T_COMMAND '
     find . -maxdepth 1 -type d ! -name ".*" -printf "%P/\n" | sort
@@ -41,10 +44,6 @@ set -gx FZF_CTRL_T_COMMAND '
     find . -maxdepth 1 -type d -name ".*" ! -name "." ! -name ".." -printf "%P/\n" | sort
     find . -maxdepth 1 -type f -name ".*" -printf "%P\n" | sort
 '
-
-if test -d "$SCRIPTS_DIR"
-    find "$SCRIPTS_DIR" -type f \( -name "*.sh" -o -name "*.desktop" \) -exec chmod +x {} \;
-end
 
 # Keybinding Aliases
 # General alias
@@ -67,7 +66,7 @@ alias pcn='sudo pacman'
 alias pacman='sudo pacman'
 alias pacsy='sudo reflector --verbose --country DE,CH,AT --protocol https --sort rate --latest 20 --download-timeout 6 --save /etc/pacman.d/mirrorlist'
 alias pacup='sudo pacman -Syu'
-alias pacin='sudo pacman -S'
+alias pacin='sudo pacman -S || yay -S'
 alias pacrm='sudo pacman -Rns'
 alias search='yay -Ss'
 alias apt-search='apt search'
@@ -98,6 +97,12 @@ alias sysstat='systemctl status'
 abbr --add sysen 'systemctl enable'
 abbr --add sysdis 'systemctl disable'
 abbr --add sysusr 'systemctl --user'
+
+# Custom alias
+alias music 'play_music.sh'
+alias stows='Start_stow_solve.sh'
+alias note='notes.sh'
+alias notes='notes.sh'
 
 # Alias Function for cat=bat
 function cat

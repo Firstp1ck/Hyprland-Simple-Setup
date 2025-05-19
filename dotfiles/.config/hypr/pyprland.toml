@@ -1,0 +1,15 @@
+[pyprland]
+plugins = [
+    "scratchpads",
+    "expose",
+    "shift_monitors",
+    #    "workspaces_follow_focus"
+]
+
+[scratchpads.term]
+animation = "fromTop"
+unfocus = "hide"
+command = "kitty --class kitty-dropterm"
+class = "kitty-dropterm"
+size = "75% 60%"
+max_size = "1920px 100%"

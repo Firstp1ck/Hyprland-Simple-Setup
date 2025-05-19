@@ -1,41 +1,49 @@
 // -*- mode: jsonc -*-
 {
     "layer": "top", // Waybar at top layer
-    // "position": "bottom", // Waybar position (top|bottom|left|right)
-    // "height": 30, // Waybar height (to be removed for auto height)
-    // "width": 1280, // Waybar width
-    "spacing": 15, // Gaps between modules
-    // Choose the order of the modules
+    "spacing": 10, // Gaps between modules
     "modules-left": [
+        "custom/power",
+        "custom/menu",
         "hyprland/workspaces",
         "hyprland/submap"
     ],
-    // "modules-center": [
-    //     "hyprland/window"
-    // ],
     "modules-right": [
         "wlr/taskbar",
-        "idle_inhibitor",
+        "custom/weather",
+        // "idle_inhibitor",
         "pulseaudio",
-        "network",
+        // "network",
         "power-profiles-daemon",
-        "cpu",
-        "memory",
+        // "cpu",
+        // "memory",
         "temperature",
         "keyboard-state",
         "battery",
         "battery#bat2",
-        "clock",
+        "bluetooth",
         "tray",
         "custom/updates",
         "custom/dunst",
-        "custom/power"
+        "clock"
     ],
     
     // Modules configuration
+
+    "custom/weather": {
+	"format": "{}",
+	"format-alt": "{alt}:{}",
+	"format-alt-click": "click",
+	"interval": 3600,
+	"return-type": "json",
+	"exec": "$HOME/.config/waybar/scripts/weather.py",
+	"tooltip": true,
+    "on-click": "$HOME/.config/waybar/scripts/weather.sh"
+    },
+
     "keyboard-state": {
         "numlock": true,
-        "capslock": true,
+        "capslock": false,
         "format": "{icon}{name}",
         "format-icons": {
             "locked": "  ",
@@ -74,13 +82,13 @@
         "tooltip": true,
         "tooltip-format": "{app}: {title}"
     },
-    "idle_inhibitor": {
-        "format": "{icon}",
-        "format-icons": {
-            "activated": "",
-            "deactivated": ""
-        }
-    },
+    // "idle_inhibitor": {
+    //     "format": "{icon}",
+    //     "format-icons": {
+    //         "activated": "",
+    //         "deactivated": ""
+    //     }
+    // },
     "tray": {
         "icon-size": 21,
         "spacing": 5,
@@ -88,17 +96,17 @@
     },
     "clock": {
         "timezone": "Zurich",
-        "format": "{:%a %d %b | %Y %H:%M}", // added to display date and time
-        "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
-        "on-click": "kitty -e ikhal"
+        "format": "{:%a %d %b %Y | %H:%M}",
+        "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>",
+        "on-click": "kitty -e calcurse"
     },
-    "cpu": {
-        "format": "{usage}% ",
-        "tooltip": true
-    },
-    "memory": {
-        "format": "{}% "
-    },
+    // "cpu": {
+    //     "format": "{usage}% ",
+    //     "tooltip": true
+    // },
+    // "memory": {
+    //     "format": "{}% "
+    // },
     "temperature": {
         "critical-threshold": 80,
         "format": "{temperatureC}°C {icon}",
@@ -133,15 +141,15 @@
         "power-saver": " Low"
       }
     },
-    "network": {
-        "format-wifi": "{essid} ({signalStrength}%) ",
-        "format-ethernet": "{ifname} via {gwaddr} /{cidr} 󰊗",
-        "tooltip-format": "{ifname} via {gwaddr} ",
-        "format-linked": "{ifname} (No IP) ",
-        "format-disconnected": "Disconnected ⚠",
-        "format-alt": "{ifname}: {ipaddr}/{cidr}",
-        "on-click-right": "nm-connection-editor"
-    },
+    // "network": {
+    //     "format-wifi": "{essid} ({signalStrength}%) ",
+    //     "format-ethernet": "{ifname} via {gwaddr} /{cidr} 󰊗",
+    //     "tooltip-format": "{ifname} via {gwaddr} ",
+    //     "format-linked": "{ifname} (No IP) ",
+    //     "format-disconnected": "Disconnected ⚠",
+    //     "format-alt": "{ifname}: {ipaddr}/{cidr}",
+    //     "on-click-right": "nm-connection-editor"
+    // },
     "pulseaudio": {
         "format": "{volume}% {icon} {format_source}",
         "format-bluetooth": "{volume}% {icon} {format_source}",
@@ -161,15 +169,27 @@
         "on-click": "pavucontrol"
     },
 
+    "bluetooth": {
+        "format": "",  // Font Awesome Bluetooth icon (requires a Nerd Font or Font Awesome)
+        "format-off": "",  // Bluetooth icon with a slash (use a suitable icon for 'off')
+        "format-on": "",   // Icon when Bluetooth is on but not connected
+        "format-connected": " {device_alias}", // Icon and device name when connected
+        "format-connected-battery": " {device_alias} {device_battery_percentage}%",
+        "tooltip": true,
+        "tooltip-format": "Controller: {controller_alias}\nAddress: {controller_address}\nStatus: {status}",
+        "tooltip-format-connected": "Controller: {controller_alias}\nAddress: {controller_address}\nConnected: {device_alias} ({device_address})\nBattery: {device_battery_percentage}%",
+        "on-click": "blueman-manager"
+    },
+
     "custom/updates": {
-        "format": "{} {icon}",
+        "format": "{}{icon}",
         "return-type": "json",
         "format-icons": {
-            "has-updates": "󱍷",
+            "has-updates": " 󱍷",
             "updated": ""
         },
         "exec-if": "which waybar-module-pacman-updates",
-        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 3600 --network-interval-seconds 3600 --tooltip-align-columns monospace",
+        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
         "menu": "on-click-right",
         "menu-file": "~/.config/waybar/update_menu.xml",
         "menu-actions": {
@@ -198,5 +218,13 @@
 			"suspend": "systemctl suspend",
 			"hibernate": "systemctl hibernate"
 		}
-    }
+    },
+
+    "custom/menu": {
+        "format": "{icon} Menu",
+        "format-icons": [""],
+        "tooltip": "Open Menu",
+        "on-click": "wofi --show drun --style ~/.config/wofi/menu.css"
+        // "on-click": "hyprmenu"
+        }
 }

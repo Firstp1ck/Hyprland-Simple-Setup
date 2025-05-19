@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Run the update command
-timeout 10s bash -lc 'waybar-module-pacman-updates --no-zero-output'
+timeout 2s bash -lc 'waybar-module-pacman-updates --no-zero-output'
 
 # Send SIGUSR2 to all waybar processes to trigger a refresh
 killall -SIGUSR2 waybar

@@ -630,14 +630,23 @@ hyprland_packages=(
     "hyprland-qtutils" 
     "hyprland-qt-support" 
     "hyprwayland-scanner"
+    "python-pyquery"
+    "polkit-kde-agent"
     
     # File Management
     "dolphin"
     "git"
+    "onefetch"
     "fd"
     "fzf"
     "stow"
     "nvim"
+    "ark"
+    "7zip"
+    "timeshift"
+    "grub-btrfs"
+    "inotify-tools"
+    "satty"
     
     # Terminal and Shell
     "kitty"
@@ -673,10 +682,11 @@ hyprland_packages=(
     "cava"
     
     # CLI Tools
+    "dysk"
+    "duf"
     "bat"
     "lsd"
     "btop"
-    "khal"
     "zoxide"
     "lshw"
     "ntfs-3g"
@@ -684,6 +694,8 @@ hyprland_packages=(
     "konsole"
     "fastfetch"
     "tldr"
+    "zellij"
+    "calcurse"
 
     # Calculator
     "qalculate-gtk"

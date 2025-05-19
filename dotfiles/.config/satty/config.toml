@@ -1,0 +1,51 @@
+[general]
+# Start Satty in fullscreen mode
+fullscreen = false
+
+# Exit directly after copy/save action
+early-exit = false
+
+# Select the tool on startup [possible values: pointer, crop, line, arrow, rectangle, text, marker, blur, brush]
+initial-tool = "brush"
+
+# Configure the command to be called on copy, for example `wl-copy`
+copy-command = "wl-copy"
+
+# Increase or decrease the size of the annotations
+annotation-size-factor = 1
+
+# Filename to use for saving action. Omit to disable saving to file. Might contain format specifiers: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+output-filename = "$HOME/Bilder/Screenshot-%Y-%m-%d_%H:%M:%S.png"
+
+# Action to perform when the Enter key is pressed [possible values: save-to-clipboard, save-to-file]
+action-on-enter = "save-to-file"
+
+# After copying the screenshot, save it to a file as well
+save-after-copy = true
+
+# Right click to copy
+right-click-copy = true
+
+# Hide toolbars by default
+default-hide-toolbars = false
+
+# The primary highlighter to use, the other is accessible by holding CTRL at the start of a highlight [possible values: block, freehand]
+primary-highlighter = "block"
+
+# Disable notifications
+disable-notifications = false
+
+# Font to use for text annotations
+[font]
+family = "Roboto"
+style = "Regular"
+
+# # custom colours for the colour palette
+[color-palette]
+palette = [
+    "#1ABC9C", 
+    "#2ECC71", 
+    "#3498DB", 
+    "#9B59B6", 
+    "#F1C40F"
+    ]

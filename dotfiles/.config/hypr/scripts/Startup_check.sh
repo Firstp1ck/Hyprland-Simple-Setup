@@ -4,6 +4,12 @@ sleep 5 # Wait for 5 seconds to allow processes to start
 
 # Function to check if a process is running
 check_process() {
+    # Check if process is installed otherwise skip
+    if ! command -v "$1" &>/dev/null; then
+        return 0
+    fi
+    
+    # Check if the process is running
     local process_name="$1"
     if ! pgrep -f "$process_name" >/dev/null; then
         notify-send -u critical "Autostart Warning" "Process '$process_name' is not running!"
@@ -82,3 +88,8 @@ if [ $failed -gt 0 ]; then
 else
     notify-send -u normal "Autostart Status" "All processes are running!"
 fi
+
+# Clearing all temp files
+rm -f /tmp/dolphin-fix-ran
+rm -f /tmp/wallpaper-change-ran
+rm -f /tmp/numlock-set
