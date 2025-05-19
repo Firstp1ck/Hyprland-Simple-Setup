@@ -98,7 +98,7 @@
         "timezone": "Zurich",
         "format": "{:%a %d %b %Y | %H:%M}",
         "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>",
-        "on-click": "kitty -e calcurse"
+        "on-click": "~/.config/waybar/scripts/float_calendar.sh"
     },
     // "cpu": {
     //     "format": "{usage}% ",
