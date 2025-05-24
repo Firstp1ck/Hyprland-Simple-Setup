@@ -891,16 +891,10 @@ configure_notification() {
         return 0
     fi
 
-    # Check if Dunst is already running
-    if pgrep -x "dunst" >/dev/null; then
-        print_message "Dunst notification daemon is already running."
-        track_config_status "Notification Setup" "$CHECK_MARK (Already running)"
-        return 0
-    fi
-
     local SERVICE_NAME="dunst.service"
     local USER_SYSTEMD_DIR="/usr/lib/systemd/user/"
     local SERVICE_PATH="$USER_SYSTEMD_DIR/$SERVICE_NAME"
+    local DUNST_RUNNING=false
 
     # Check if dunst is installed
     if ! command -v dunst &>/dev/null; then
@@ -912,28 +906,79 @@ configure_notification() {
         fi
     fi
 
-    # Check if dunst service is available
-    if ! systemctl --user list-unit-files | grep -q "^$SERVICE_NAME"; then
-        print_message "Dunst service not found. Creating service file..."
+    # Check if Dunst is running
+    if pgrep -x "dunst" >/dev/null; then
+        DUNST_RUNNING=true
+        print_message "Dunst notification daemon is currently running."
+    fi
+
+    # Function to verify service file contents
+    verify_service_file() {
+        if [ ! -f "$SERVICE_PATH" ]; then
+            return 1
+        fi
+        if ! grep -q "Description=Dunst notification daemon" "$SERVICE_PATH" || \
+           ! grep -q "ExecStart=/usr/bin/dunst" "$SERVICE_PATH" || \
+           ! grep -q "WantedBy=default.target" "$SERVICE_PATH" || \
+           ! grep -q "Type=dbus" "$SERVICE_PATH" || \
+           ! grep -q "BusName=org.freedesktop.Notifications" "$SERVICE_PATH"; then
+            return 1
+        fi
+        return 0
+    }
+
+    # Function to create correct service file
+    create_service_file() {
         mkdir -p "$USER_SYSTEMD_DIR"
         cat > "$SERVICE_PATH" <<EOF
 [Unit]
 Description=Dunst notification daemon
 Documentation=man:dunst(1)
 PartOf=graphical-session.target
+After=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=dbus
 BusName=org.freedesktop.Notifications
 ExecStart=/usr/bin/dunst
+Restart=on-failure
+RestartSec=3
+Environment="DISPLAY=:0"
+Environment="WAYLAND_DISPLAY=wayland-0"
 Slice=session.slice
 
 [Install]
 WantedBy=default.target
 EOF
+    }
+
+    # Check if service file exists and is correct
+    if verify_service_file; then
+        print_message "Service file exists and is correctly configured."
+    else
+        print_message "Service file is missing or incorrect. Creating correct service file..."
+        
+        # Stop Dunst if it's running
+        if $DUNST_RUNNING; then
+            print_message "Stopping running Dunst instance..."
+            pkill dunst
+            sleep 1
+        fi
+
+        # Create correct service file
+        create_service_file
+        
+        # Verify the new service file
+        if ! verify_service_file; then
+            print_error "Failed to create correct service file."
+            track_config_status "Notification Setup" "$CROSS_MARK"
+            return 1
+        fi
+
         execute_command "systemctl --user daemon-reload" "Reload user systemd daemon"
         execute_command "systemctl --user enable --now $SERVICE_NAME" "Enable and start Dunst service"
-        print_message "Dunst service created and started."
+        print_message "Dunst service file corrected and service restarted."
     fi
 
     # Start the service if not running
