@@ -354,7 +354,6 @@ check_bootloader() {
 
     print_message "Detected bootloader: $bootloader"
     export BOOTLOADER="$bootloader"
-    echo "$bootloader"
 }
 
 check_yay() {
@@ -545,19 +544,25 @@ update_configs() {
         log_dry_run_operation "update_configs" "Would update Hyprland sources and wallpaper config with WALLPAPER_DIR=$WALLPAPER_DIR"
         return 0
     fi
-    # Copy sources_example to sources directory
-    local hypr_config_dir="$HOME/dotfiles/.config/hypr"
-
     # Check for dotfiles directory in $HOME
-    if [ ! -d $HOME/dotfiles ]; then
-        # Copy Dotfiles directory to $HOME Directory
-        cp "$HOME"/Dokumente/Github/Hyprland_Simple_Setup/dotfiles "$HOME"/dotfiles
-        print_message "Dotfiles were copied to Home directory"
-        return 0
+    if [ ! -d "$HOME/dotfiles" ]; then
+        # Check if source directory exists
+        if [ -d "$HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles" ]; then
+            # Copy Dotfiles directory to $HOME Directory
+            if execute_command "cp -r '$HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles' '$HOME/dotfiles'" "Copy dotfiles to Home directory"; then
+                print_message "Dotfiles were successfully copied to Home directory"
+            else
+                print_error "Failed to copy dotfiles to Home directory"
+            fi
+        else
+            print_error "Source dotfiles directory not found at $HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles"
+        fi
     else
-        print_warning "Dotfiles were not copied to Home Directory"
-        retunn 1
+        print_warning "Dotfiles directory already exists in Home directory"
     fi
+
+    # Continue with the rest of the configuration
+    local hypr_config_dir="$HOME/dotfiles/.config/hypr"
 
     if [ -d "$hypr_config_dir/sources_example" ]; then
         print_message "Copying sources_example to sources if not existent..."
@@ -789,6 +794,7 @@ aur_extras=(
     "wl-clipboard-history-git"
     "hyprsunset"
     "github-desktop-bin"
+    "rose-pine-hyprcursor"
 )
 
 install_aur_extras() {
@@ -904,7 +910,7 @@ configure_notification() {
     fi
 
     local SERVICE_NAME="dunst.service"
-    local USER_SYSTEMD_DIR="/usr/lib/systemd/user/"
+    local USER_SYSTEMD_DIR="/usr/lib/systemd/user"
     local SERVICE_PATH="$USER_SYSTEMD_DIR/$SERVICE_NAME"
     local DUNST_RUNNING=false
 
