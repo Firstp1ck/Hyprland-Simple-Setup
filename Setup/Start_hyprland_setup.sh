@@ -547,6 +547,18 @@ update_configs() {
     fi
     # Copy sources_example to sources directory
     local hypr_config_dir="$HOME/dotfiles/.config/hypr"
+
+    # Check for dotfiles directory in $HOME
+    if [ ! -d $HOME/dotfiles ]; then
+        # Copy Dotfiles directory to $HOME Directory
+        cp "$HOME"/Dokumente/Github/Hyprland_Simple_Setup/dotfiles "$HOME"/dotfiles
+        print_message "Dotfiles were copied to Home directory"
+        return 0
+    else
+        print_warning "Dotfiles were not copied to Home Directory"
+        retunn 1
+    fi
+
     if [ -d "$hypr_config_dir/sources_example" ]; then
         print_message "Copying sources_example to sources if not existent..."
         if [ ! -d "$hypr_config_dir/sources" ]; then
