@@ -621,21 +621,6 @@ update_configs() {
             # Copy Dotfiles directory to $HOME Directory
             if execute_command "cp -r '$HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles' '$HOME/dotfiles'" "Copy dotfiles to Home directory"; then
                 print_message "Dotfiles were successfully copied to Home directory"
-                # Run stow script immediately after copying
-                if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
-                    print_message "Setting up dotfiles with Start_stow_solve.sh..."
-                    if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
-                        print_message "Stow script executed successfully"
-                        track_config_status "Dotfiles Setup" "$CHECK_MARK"
-                    else
-                        print_error "Stow script failed to execute properly"
-                        track_config_status "Dotfiles Setup" "$CROSS_MARK"
-                    fi
-                else
-                    print_warning "Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts"
-                    print_warning "Skipping dotfiles setup"
-                    track_config_status "Dotfiles Setup" "$CROSS_MARK"
-                fi
             else
                 print_error "Failed to copy dotfiles to Home directory"
             fi
@@ -657,6 +642,22 @@ update_configs() {
     else
         print_error "sources_example directory not found in $hypr_config_dir"
         execute_command "mkdir -p '$hypr_config_dir/sources'" "Create sources directory"
+    fi
+
+    # Run stow script after copying sources_example
+    if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
+        print_message "Setting up dotfiles with Start_stow_solve.sh..."
+        if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
+            print_message "Stow script executed successfully"
+            track_config_status "Dotfiles Setup" "$CHECK_MARK"
+        else
+            print_error "Stow script failed to execute properly"
+            track_config_status "Dotfiles Setup" "$CROSS_MARK"
+        fi
+    else
+        print_warning "Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts"
+        print_warning "Skipping dotfiles setup"
+        track_config_status "Dotfiles Setup" "$CROSS_MARK"
     fi
 
     # Update the wallpaper configuration file
@@ -957,6 +958,11 @@ configure_network_manager() {
 
 configure_wifi() {
     announce_step "Configuring WiFi"
+    if ! ip link show wlan0 &>/dev/null; then
+        print_warning "No wireless device (wlan0) found"
+        track_config_status "WiFi Configuration" "$CIRCLE (No wireless device)"
+        return 0
+    fi
     if execute_command "sudo iw dev wlan0 set power_save off" "Disable WiFi power save"; then
         track_config_status "WiFi Configuration" "$CHECK_MARK"
     else
@@ -977,7 +983,7 @@ configure_bluetooth() {
     done
 
     print_message "Enabling Bluetooth..."
-    if execute_command "sudo systemctl enable bluetooth && sudo systemctl start bluetooth" "Enable and start Bluetooth"; then
+    if execute_command "sudo systemctl enable --now bluetooth" "Enable and start Bluetooth"; then
         track_config_status "Bluetooth Setup" "$CHECK_MARK"
     else
         track_config_status "Bluetooth Setup" "$CROSS_MARK"
