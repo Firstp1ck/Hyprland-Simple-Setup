@@ -608,24 +608,57 @@ check_user_input() {
     fi
 }
 
+find_hyprland_setup_dir() {
+    # Search in common locations
+    local search_paths=(
+        "$HOME"
+        "$HOME/Dokumente"
+        "$HOME/Documents"
+        "$HOME/Downloads"
+    )
+    
+    for path in "${search_paths[@]}"; do
+        if [ -d "$path" ]; then
+            local found_dir
+            found_dir=$(find "$path" -maxdepth 3 -type d -name "Hyprland_Simple_Setup" 2>/dev/null | head -n 1)
+            if [ -n "$found_dir" ]; then
+                echo "$found_dir"
+                return 0
+            fi
+        fi
+    done
+    
+    return 1
+}
+
 # Function to update configuration files with user input
 update_configs() {
     if is_dry_run; then
         log_dry_run_operation "update_configs" "Would update Hyprland sources and wallpaper config with WALLPAPER_DIR=$WALLPAPER_DIR"
         return 0
     fi
+
+    # Find Hyprland_Simple_Setup directory
+    local hyprland_setup_dir
+    hyprland_setup_dir=$(find_hyprland_setup_dir)
+    if [ -z "$hyprland_setup_dir" ]; then
+        print_error "Could not find Hyprland_Simple_Setup directory"
+        track_config_status "Dotfiles Setup" "$CROSS_MARK"
+        return 1
+    fi
+
     # Check for dotfiles directory in $HOME
     if [ ! -d "$HOME/dotfiles" ]; then
         # Check if source directory exists
-        if [ -d "$HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles" ]; then
+        if [ -d "$hyprland_setup_dir/dotfiles" ]; then
             # Copy Dotfiles directory to $HOME Directory
-            if execute_command "cp -r '$HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles' '$HOME/dotfiles'" "Copy dotfiles to Home directory"; then
+            if execute_command "cp -r '$hyprland_setup_dir/dotfiles' '$HOME/dotfiles'" "Copy dotfiles to Home directory"; then
                 print_message "Dotfiles were successfully copied to Home directory"
             else
                 print_error "Failed to copy dotfiles to Home directory"
             fi
         else
-            print_error "Source dotfiles directory not found at $HOME/Dokumente/Github/Hyprland_Simple_Setup/dotfiles"
+            print_error "Source dotfiles directory not found at $hyprland_setup_dir/dotfiles"
         fi
     else
         print_warning "Dotfiles directory already exists in Home directory"
@@ -738,6 +771,7 @@ hyprland_packages=(
     "nm-connection-editor"
     
     # File Management
+    "xdg-user-dirs"
     "dolphin"
     "git"
     "onefetch"
@@ -1484,6 +1518,13 @@ configure_monitor() {
 ##############################################################
 main() {
     print_message "Starting Hyprland Setup..."
+    
+    if execute_command "xdg-user-dirs-update" "Creating User Environment"; then
+        print_message "User Environment created"
+    else
+        print_warning "User Environment could not be created!"
+    fi
+
     check_disk_space
     check_dependencies
     check_distro
