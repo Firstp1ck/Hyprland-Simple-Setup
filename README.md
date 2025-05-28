@@ -45,16 +45,16 @@
 - [Environment Setup](#environment-setup)
 - [Prerequisites](#prerequisites)
 - [Setup Script Execution](#setup-script-execution)
-- [Dependencies](#dependencies)
+- [Package Installations](#package-installations)
   - [Pacman Packages](#pacman-packages)
-  - [AUR Extras](#aur-extras)
-- [Installation & Configuration](#installation--configuration)
-- [Running the Wallpaper Script](#running-the-wallpaper-script)
+  - [AUR Packages](#aur-packages)
+- [Manuell Installation & Configuration](#manuell-installation--configuration)
+- [Change Wallpaper with the Wallpaper Script](#change-wallpaper-with-the-wallpaper-script)
+- [Terminal Experience](#terminal-experience)
 - [Customization](#customization)
   - [Wallpaper Management](#wallpaper-management)
   - [Window Rules](#window-rules)
   - [Keybindings](#keybindings)
-  - [Appearance](#appearance)
   - [Autostart Applications](#autostart-applications)
   - [Monitor Configuration](#monitor-configuration)
 - [Troubleshooting](#troubleshooting)
@@ -66,14 +66,7 @@
   - [Configuration Debugging](#configuration-debugging)
   - [Keybinding Issues](#keybinding-issues)
   - [Recovery Options](#recovery-options)
-- [Features](#features)
-  - [Terminal Experience](#terminal-experience)
-  - [Window Management](#window-management)
-  - [Notification System](#notification-system)
-  - [Visual Customization](#visual-customization)
-  - [Security Features](#security-features)
 - [Additional Resources](#additional-resources)
-- [Dotfiles Overview](#dotfiles-overview)
 
 ## Introduction
 
@@ -87,8 +80,8 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
    ```
 2. **Run the setup script to install dependencies and configure your system:**
    ```bash
-   cd ~/Hyprland_Simple_Setup/Setup
-   ./Start_hyprland_setup.sh
+   cd ~/Hyprland_Simple_Setup
+   ./setup.sh
    ```
 
    - The script will:
@@ -97,7 +90,7 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
      - Verify installations
      - Guide you through configuration steps
 
-3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Installation & Configuration](#installation--configuration)).
+3. Update the configuration files in the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
 
 4. **Deploy dotfiles using GNU stow:**
    ```bash
@@ -111,15 +104,15 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
 
 ## Environment Setup
 
-- The Setup is designed to run from EndeavourOS with KDE preinstalled. 
+- The Setup is designed to run from EndeavourOS and Arch (with Hyprland selceted in the archinstall script). 
 - You may need to modify the script for other distros or environments.
 - Uses stow to manage dotfiles. The stow setupscript makes backups from the original dotfiles in the home directory.
 
 ## Prerequisites
-- Arch-based Linux distribution (tested on EndeavourOS with KDE)
+- Arch-based Linux distribution (tested on EndeavourOS and Arch)
 - Base development tools (`git`, `sudo`)
 - YAY AUR helper (will be installed if missing)
-- A directory containing your wallpapers
+- A directory containing your wallpapers (Will use Default Wallpapers from the Repository otherwise)
 - Internet connection for package downloads
 
 ## Installation Details
@@ -141,19 +134,20 @@ This repository provides a comprehensive yet minimalistic Hyprland setup designe
     - `waybar/` – Status bar config, style, and scripts (weather, updates, Dunst history)
     - `wofi/` – Application launcher config and style
     - `kitty/`, `fish/`, `dunst/`, `nvim/`, `btop/`, `cava/`, `fastfetch/`, `zellij/`, `bat/`, `satty/`, `xdg-desktop-portal/` – App configs
-  - `.bashrc`, `.bash_profile` – Shell configs
+    - `fish/` - Shell Configurations
+  - `.bashrc`, `.bash_profile` – Shell Configurations
   - `.local/scripts/Start_stow_solve.sh` – Stow deployment script
 
 ## Setup Script Execution
 
 To install and configure Hyprland along with its dependencies, run:
 ```bash
-cd ~/Hyprland_Simple_Setup/Setup
-./Start_hyprland_setup.sh
+cd ~/Hyprland_Simple_Setup
+./setup.sh
 ```
 This script automatically updates Pacman, installs the necessary packages, and configures Hyprland tools.
 
-## Dependencies
+## Package Installations
 
 ### Pacman Packages
 Core Hyprland Packages:
@@ -171,6 +165,8 @@ Core Hyprland Packages:
 - hyprland-qtutils (Qt integration)
 - hyprland-qt-support (Qt support)
 - hyprwayland-scanner (Wayland protocol scanner)
+- python-pyquery
+- polkit-kde-agent
 
 File Management:
 - dolphin (File manager)
@@ -179,6 +175,14 @@ File Management:
 - fzf (Fuzzy finder)
 - stow (Dotfiles management)
 - nvim (Text editor)
+- xdg-user-dirs
+- onefetch
+- ark
+- 7zip
+- timeshift
+- grub-btrfs
+- inotify-tools
+- satty
 
 Terminal and Shell:
 - kitty (Terminal emulator)
@@ -198,6 +202,13 @@ System Integration:
 - nm-connection-editor
 - ntfs-3g (NTFS filesystem support)
 - firewalld (Firewall management)
+- bluez
+- bluez-utils
+- blueman
+- pipewire
+- pipewire-pulse
+- pavucontrol
+- pulseaudio-qt
 
 CLI Tools:
 - bat (Modern cat)
@@ -208,18 +219,21 @@ CLI Tools:
 - lshw (Hardware lister)
 - fastfetch (System info)
 - tldr (Simplified man pages)
+- dysk
+- duf
+- zellij
+- calcurse
 
 Theming and Appearance:
 - ttf-jetbrains-mono-nerd
 - ttf-nerd-fonts-symbols
 - ttf-nerd-fonts-symbols-common
-- rose-pine-hyprcursor
 - cava (Audio visualizer)
 
 Calculator:
 - qalculate-gtk
 
-### AUR Extras
+### AUR Packages
 - xwaylandvideobridge-git (Screen sharing)
 - hyprshot (Screenshot utility)
 - visual-studio-code-bin (Code editor)
@@ -229,10 +243,20 @@ Calculator:
 - wl-clipboard-history-git (Clipboard history)
 - hyprsunset (Night light)
 - github-desktop-bin (GitHub client)
+- rose-pine-hyprcursor
 
-## Installation & Configuration
+## Manuell Installation & Configuration
 
 1. Clone or copy this repository to your machine.
+  ```bash
+  git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
+  ```
+2. Copy the dotfiles to the Home directory
+  ```bash
+  cd ~/Hyprland_Simple_Setup
+  cp dotfiles/ ~/dotfiles
+  ```
+
 2. Update the following files with your system-specific details:
    - **Wallpaper Configuration:**  
      Create or edit `~/.config/hypr/sources/change_wallpaper.conf` with:
@@ -265,8 +289,17 @@ Calculator:
      set -gx LANG de_CH.UTF-8    # Change to your locale
      set -gx LANGUAGE de_CH:en_US # Change to your language preferences
      ```
+   - **Install required Packages**  
+     Install all necessary packages from the [Pacman Packages](#pacman-packages) and [AUR Packages](#aur-packages) sections using your package manager.
 
-## Running the Wallpaper Script
+   - **Run the Stow Script**  
+     Execute the stow script to symlink all configuration files to their correct locations:
+     ```bash
+     cd ~/dotfiles
+     bash .local/scripts/Start_stow_solve.sh
+     ```
+
+## Change Wallpaper with the Wallpaper Script
 
 The `change_wallpaper.sh` script:
 - Checks if hyprpaper is running and starts it if necessary.
@@ -278,6 +311,35 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
 ./.config/hypr/change_wallpaper.sh
 ```
 
+## Terminal Experience
+- **Kitty Terminal Integration**
+  - Multiple layouts (splits, tabs, windows)
+  - Session management and restoration
+  - Custom key mappings:
+    ```bash
+    # Quick terminal splits
+    ctrl+y -> new window
+    alt+h/j/k/l -> window navigation
+    ctrl+shift+y -> new tab
+    ```
+
+- **Fish Shell Enhancements**
+  - Smart command history with search
+  - Built-in completions and suggestions
+  - Custom aliases for improved workflow:
+    ```fish
+    alias ls='lsd -lh --group-directories-first'
+    alias top='btop'
+    alias cat='bat'
+    ```
+
+- **Modern CLI Tools**
+  - `bat`: Syntax highlighting for file viewing
+  - `lsd`: Enhanced file listing with icons
+  - `btop`: Resource monitoring with graphs
+  - `fzf`: Fuzzy finding with preview
+  - `fd`: Fast file search alternative
+
 ## Customization
 
 ### Wallpaper Management
@@ -288,7 +350,7 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   ```
 
 ### Window Rules
-- Add custom window rules in `hyprland.conf`:
+- Add custom window rules in `~/.config/hypr/sources/windows_and_workspaces.conf`:
   ```ini
   # Example window rules
   windowrulev2 = float,class:^(org\.pulseaudio\.pavucontrol)$
@@ -307,25 +369,6 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   # Screenshot bindings
   bind = , Print, exec, hyprshot -m output
   bind = SHIFT, Print, exec, hyprshot -m region
-  ```
-
-### Appearance
-- Modify Waybar styling in `style.css`:
-  ```css
-  /* Adjust transparency and colors */
-  window#waybar {
-    background: rgba(21, 18, 27, 0.8);
-    color: #ffffff;
-  }
-  ```
-- Configure Wofi menu appearance:
-  ```css
-  /* Customize menu size and colors */
-  window {
-    margin: 5px;
-    background-color: #1e1e2e;
-    border-radius: 15px;
-  }
   ```
 
 ### Autostart Applications
@@ -433,13 +476,13 @@ For more customization options, refer to:
   hyprctl version
   
   # Monitor resource usage
-  htop
+  btop
   
   # Check for GPU issues
   nvidia-smi  # For NVIDIA GPUs
   radeontop   # For AMD GPUs
   ```
-- Reduce animation complexity in `hyprland.conf` if needed
+- Reduce animation complexity in `~/.config/hypr/sources/look_and_feel.conf` if needed
 
 ### Application Integration
 - XWayland applications not working:
@@ -494,108 +537,12 @@ For persistent issues:
 - Join the [Hyprland Discord](https://discord.gg/hQ6M6xbvEM)
 - Review system logs: `journalctl -b -p err`
 
-## Features
-
-### Terminal Experience
-- **Kitty Terminal Integration**
-  - Multiple layouts (splits, tabs, windows)
-  - Session management and restoration
-  - Custom key mappings:
-    ```bash
-    # Quick terminal splits
-    ctrl+shift+enter -> new window
-    alt+h/j/k/l -> window navigation
-    ctrl+shift+t -> new tab
-    ```
-
-- **Fish Shell Enhancements**
-  - Smart command history with search
-  - Built-in completions and suggestions
-  - Custom aliases for improved workflow:
-    ```fish
-    alias ls='lsd -lh --group-directories-first'
-    alias top='btop'
-    alias cat='bat'
-    ```
-
-- **Modern CLI Tools**
-  - `bat`: Syntax highlighting for file viewing
-  - `lsd`: Enhanced file listing with icons
-  - `btop`: Resource monitoring with graphs
-  - `fzf`: Fuzzy finding with preview
-  - `fd`: Fast file search alternative
-
-### Window Management
-- **Dynamic Workspace Organization**
-  - Per-monitor workspaces
-  - Automatic workspace assignment rules
-
-- **Advanced Window Controls**
-  - Edge snap and resize
-  - Window grouping and tabbing
-  - Floating window management
-
-- **Multi-Monitor Support**
-  - Independent workspace per monitor
-
-### Notification System
-- **Dunst Configuration**
-  - Critical notification persistence
-  - Action button support
-
-### Visual Customization
-- **Waybar Integration**
-  - Custom modules support
-  - System tray integration
-  - Workspace overview
-  - Network management
-  - Volume control
-  - Battery monitoring
-
-- **Theme Management**
-  - Font configuration:
-    - JetBrains Mono Nerd Font
-
-### Security Features
-- **Screen Locking**
-  - Automatic screen locking
-  - Custom lock screen styling
-  - Multi-monitor support
-
-- **Authentication**
-  - Polkit integration
-  - Keyring management
-  - Secure screen sharing
-
 ## Additional Resources
 - [Hyprland Wiki](https://wiki.hyprland.org/)
 - [Hyprland GitHub Repository](https://github.com/vaxerski/Hyprland)
 - [Waybar GitHub Repository (Wiki)](https://github.com/Alexays/Waybar/wiki)
 - [Kitty Homepage (Wiki)](https://sw.kovidgoyal.net/kitty/)
 - [Fish Shell (Wiki)](https://fishshell.com/docs/current/index.html)
-
-## Dotfiles Overview
-
-The repository’s dotfiles are organized as follows:
-
-- **.config/waybar/**  
-  Contains Waybar configuration files (e.g. config.jsonc, style.css) and scripts (e.g. toggle_waybar.sh) for managing your status bar.
-  
-- **.config/wofi/**  
-  Includes Wofi configuration such as menu.css for customizing the launcher appearance.
-  
-- **.config/hypr/**  
-  Holds Hyprland-related configurations and scripts like change_wallpaper.sh and fix-dolphin.sh.
-  
-- **.local/scripts/**  
-  Provides helper scripts such as Start_stow_solve.sh which deploys the dotfiles using GNU stow.
-
-To apply these dotfiles to your system, run the following:
-  
-```bash
-cd ~/Hyprland_Simple_Setup/dotfiles
-bash .local/scripts/Start_stow_solve.sh
-```
 
 ## Contributing & Support
 

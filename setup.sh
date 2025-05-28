@@ -780,7 +780,6 @@ hyprland_packages=(
     "hyprwayland-scanner"
     "python-pyquery"
     "polkit-kde-agent"
-    "nm-connection-editor"
     
     # File Management
     "xdg-user-dirs"
