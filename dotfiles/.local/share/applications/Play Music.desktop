@@ -1,0 +1,17 @@
+[Desktop Entry]
+Comment[de_CH]=Terminal Music Player
+Comment=Terminal Music Player
+Exec=bash -c '$HOME/.config/hypr/scripts/play_music.sh'
+GenericName[de_CH]=Terminal Music Player
+GenericName=Terminal Music Player
+Icon=kmplayer
+MimeType=
+Name[de_CH]=Play Music
+Name=Play Music
+Path=
+StartupNotify=true
+Terminal=true
+TerminalOptions=\s--noclose
+Type=Application
+X-KDE-SubstituteUID=false
+X-KDE-Username=

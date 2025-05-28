@@ -1,0 +1,17 @@
+[Desktop Entry]
+Comment[de_CH]=Take or Open Quick notes
+Comment=Take or Open Quick notes
+Exec=bash -c '$HOME/.config/hypr/scripts/notes.sh'
+GenericName[de_CH]=Take or Open Quick notes
+GenericName=Take or Open Quick notes
+Icon=knotes
+MimeType=
+Name[de_CH]=Notes
+Name=Notes
+Path=
+StartupNotify=true
+Terminal=true
+TerminalOptions=\s--noclose
+Type=Application
+X-KDE-SubstituteUID=false
+X-KDE-Username=

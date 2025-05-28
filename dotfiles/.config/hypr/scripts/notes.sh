@@ -5,7 +5,8 @@ if [ -z "$KITTY_WINDOW_ID" ]; then
     exec kitty --title Notes bash "$0" "$@"
 fi
 
-notes_dir="/mnt/SSD_NVME_4TB/Onedrive/Dokumente/0_Notes"
+notes_dir="$HOME/Dokumente/0_Notes"
+mkdir -p "$notes_dir"
 
 # Ask if the user wants to create a new file
 read -rp "Do you want to create a new file? (Y/n) " choice

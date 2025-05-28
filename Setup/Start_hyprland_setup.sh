@@ -600,11 +600,23 @@ validate_wallpaper_dir() {
 
 # Function to check and prompt user input for required variables
 check_user_input() {
+    # Find Hyprland_Simple_Setup directory first
+    local hyprland_setup_dir
+    hyprland_setup_dir=$(find_hyprland_setup_dir)
+    if [ -z "$hyprland_setup_dir" ]; then
+        print_error "Could not find Hyprland_Simple_Setup directory"
+        return 1
+    fi
+
+    # Set default wallpaper directory
+    local default_wallpaper_dir="$hyprland_setup_dir/Wallpaper"
+
     # Check if WALLPAPER_DIR is set, prompt if not
     if [ -z "$WALLPAPER_DIR" ]; then
         echo "WALLPAPER_DIR is not set."
-        read -rp "Please enter the path to your wallpaper directory: " input_wallpaper_dir
-        export WALLPAPER_DIR="$input_wallpaper_dir"
+        read -rp "Please enter the path to your wallpaper directory or use Default (Default: [$default_wallpaper_dir]): " input_wallpaper_dir
+        # Use default if no input provided
+        export WALLPAPER_DIR="${input_wallpaper_dir:-$default_wallpaper_dir}"
     fi
 }
 
