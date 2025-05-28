@@ -260,6 +260,76 @@ track_config_status() {
     config_statuses+=("$config_name: $status")
 }
 
+list_packages() {
+    announce_step "Generating Package Lists (user-installed and AUR packages)..."
+    local date_suffix packages_file aur_file is_endeavouros is_debian_based
+    date_suffix=$(date +%Y-%m-%d)
+    packages_file="$HOME/user_installed_packages_${date_suffix}.txt"
+    aur_file="$HOME/aur_packages_${date_suffix}.txt"
+    is_endeavouros=false
+    is_debian_based=false
+
+    if command -v eos-packagelist &> /dev/null && grep -q "EndeavourOS" /etc/os-release; then
+        is_endeavouros=true
+        print_message "EndeavourOS detected - will exclude default EndeavourOS packages."
+    elif command -v apt &> /dev/null && (grep -q "Debian\\|Ubuntu\\|Mint" /etc/os-release || [ -f /etc/debian_version ]); then
+        is_debian_based=true
+        print_message "Debian-based system detected - will list manually installed packages."
+    else
+        print_message "Arch Linux detected - will list all explicitly installed packages."
+    fi
+
+    print_message "This utility will generate:"
+    print_message "  1. A list of manually installed packages"
+    if [ "$is_endeavouros" = true ]; then
+        print_message "     (excluding EndeavourOS default packages)"
+    elif [ "$is_debian_based" = true ]; then
+        print_message "     (using apt-mark showmanual)"
+    fi
+    print_message "  2. A separate list of AUR packages"
+    if [ "$is_debian_based" = true ]; then
+        print_message "     (not applicable on Debian-based systems)"
+    fi
+
+    print_message "Generating package lists..."
+    if [ "$is_endeavouros" = true ]; then
+        echo -e "# User installed packages (excluding EndeavourOS defaults)" > "$packages_file"
+    elif [ "$is_debian_based" = true ]; then
+        echo -e "# Manually installed packages on Debian-based system" > "$packages_file"
+    else
+        echo -e "# User installed packages on Arch Linux" > "$packages_file"
+    fi
+    echo -e "# Generated on: $(date)\n" >> "$packages_file"
+
+    if [ "$is_debian_based" = false ]; then
+        echo -e "# AUR packages installed on the system" > "$aur_file"
+        echo -e "# Generated on: $(date)\n" >> "$aur_file"
+    fi
+
+    print_message "Processing main package list..."
+    if [ "$is_endeavouros" = true ]; then
+        execute_command "comm -23 <(pacman -Qqet | sort) <(eos-packagelist KDE-Desktop 'EndeavourOS applications' 'Recommended applications selection' 'Spell Checker and language package' 'Firewall' 'LTS kernel in addition' 'Printing support' 'HP printer/scanner support' | sort) >> '$packages_file'" "List user packages (EndeavourOS)"
+    elif [ "$is_debian_based" = true ]; then
+        execute_command "apt-mark showmanual >> '$packages_file'" "List manually installed packages (Debian)"
+    else
+        execute_command "pacman -Qqet >> '$packages_file'" "List explicitly installed packages (Arch)"
+    fi
+    print_message "Main package list done."
+
+    if [ "$is_debian_based" = false ]; then
+        print_message "Processing AUR package list..."
+        execute_command "pacman -Qqm >> '$aur_file'" "List AUR packages"
+        print_message "AUR package list done."
+    fi
+
+    print_message "Package lists have been saved to:"
+    print_message "  Main package list: $packages_file"
+    print_message "  AUR package list: $aur_file"
+    print_message "Total packages found: $(grep -v '^#' "$packages_file" | wc -l)"
+    print_message "Total AUR packages found: $(grep -v '^#' "$aur_file" | wc -l)"
+    print_message "Thank you for using the Package Installation History Utility!"
+}
+
 verify_installed_packages() {
     extended_announce_step "VERIFYING INSTALLED PACKAGES"
 
@@ -445,19 +515,19 @@ check_distro() {
 
 check_desktop_environment() {
     if [ -n "$XDG_CURRENT_DESKTOP" ]; then
-        echo "$XDG_CURRENT_DESKTOP"
+        print_message "Current Desktop Session: $XDG_CURRENT_DESKTOP"
     elif [ -n "$DESKTOP_SESSION" ]; then
-        echo "$DESKTOP_SESSION"
+        print_message "Current Desktop Session: $DESKTOP_SESSION"
     elif execute_command "pgrep -x plasmashell > /dev/null"; then
-        echo "KDE"
+        print_message "Current Desktop Session: KDE"
     elif execute_command "pgrep -x Hyprland > /dev/null" || [ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]; then
-        echo "Hyprland"
+        print_message "Current Desktop Session: Hyprland"
     elif execute_command "pgrep -x gnome-shell > /dev/null"; then
-        echo "GNOME"
+        print_message "Current Desktop Session: GNOME"
     elif execute_command "pgrep -x xfce4-session > /dev/null"; then
-        echo "XFCE"
+        print_message "Current Desktop Session: XFCE"
     else
-        echo "Unknown"
+        print_message "Current Desktop Session: Unknown"
     fi
 }
 
@@ -649,6 +719,7 @@ hyprland_packages=(
     "hyprwayland-scanner"
     "python-pyquery"
     "polkit-kde-agent"
+    "nm-connection-editor"
     
     # File Management
     "dolphin"
@@ -695,7 +766,6 @@ hyprland_packages=(
     "ttf-jetbrains-mono-nerd"
     "ttf-nerd-fonts-symbols"
     "ttf-nerd-fonts-symbols-common"
-    "rose-pine-hyprcursor"
     "cava"
     
     # CLI Tools
@@ -946,6 +1016,7 @@ configure_notification() {
     }
 
     # Function to create correct service file
+    # TODO Cannot create service file - no permission
     create_service_file() {
         mkdir -p "$USER_SYSTEMD_DIR"
         cat > "$SERVICE_PATH" <<EOF
@@ -1058,7 +1129,7 @@ configure_filepicker() {
         track_config_status "Filepicker Setup" "$CIRCLE (Not in Hyprland)"
         return 0
     fi
-
+    # TODO "Command for 'Symlink application.menu to plasma-applications.menu' failed (after "Creating filepicker configuration...")
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
     local conf_file="${conf_dir}/hyprland-portals.conf"
     local desired_content="[preferred]\ndefault = hyprland;gtk\norg.freedesktop.impl.portal.FileChooser = kde"
@@ -1353,7 +1424,7 @@ configure_monitor() {
             !/^workspace=/ { print }
         ' "$monitors_conf_file" > "${monitors_conf_file}.tmp" && mv "${monitors_conf_file}.tmp" "$monitors_conf_file"
 
-        local wallpaper_conf="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+        local wallpaper_conf="${HOME}/dotfiles/.config/hypr/sources/change_wallpaper.conf"
         if [ -f "$wallpaper_conf" ]; then
             monitors_str=""
             for m in "${configured[@]}"; do
@@ -1450,10 +1521,17 @@ main() {
     # Setup dotfiles via stow
     if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
         print_message "Setting up dotfiles with Start_stow_solve.sh..."
-        bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"
+        if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
+            print_message "Stow script executed successfully"
+            track_config_status "Dotfiles Setup" "$CHECK_MARK"
+        else
+            print_error "Stow script failed to execute properly"
+            track_config_status "Dotfiles Setup" "$CROSS_MARK"
+        fi
     else
         print_warning "Start_stow_solve.sh not found at $HOME/dotfiles/.local/scripts"
         print_warning "Skipping dotfiles setup"
+        track_config_status "Dotfiles Setup" "$CROSS_MARK"
     fi
 
     print_dry_run_summary

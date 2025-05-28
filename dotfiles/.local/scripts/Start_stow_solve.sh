@@ -55,8 +55,8 @@ if ! command -v stow >/dev/null 2>&1; then
     exit 1
 fi
 
-# Set DOTFILES_DIR to /home/firstpick/.dotfiles
-DOTFILES_DIR="$HOME/.dotfiles"
+# Set DOTFILES_DIR to /home/firstpick/dotfiles
+DOTFILES_DIR="$HOME/dotfiles"
 log "INFO" "Using dotfiles directory: $DOTFILES_DIR"
 
 # Change to dotfiles directory
