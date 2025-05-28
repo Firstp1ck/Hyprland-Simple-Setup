@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+
 # shellcheck disable=SC1090
 
 # Load system-specific configuration file
-CONFIG_FILE="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+CONFIG_FILE="${HOME}/dotfiles/.config/hypr/sources/change_wallpaper.conf"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 else

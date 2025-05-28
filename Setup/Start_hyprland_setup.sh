@@ -1449,7 +1449,7 @@ configure_monitor() {
             if grep -q "^MONITORS=" "$wallpaper_conf"; then
                 sed -i "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wallpaper_conf"
             else
-                print_message "MONITORS=($monitors_str)" >> "$wallpaper_conf"
+                echo "MONITORS=($monitors_str)" >> "$wallpaper_conf"
             fi
             print_message "Updated MONITORS in change_wallpaper.conf: MONITORS=($monitors_str)"
         else
