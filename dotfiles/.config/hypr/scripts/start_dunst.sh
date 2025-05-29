@@ -1,19 +1,25 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-MAX_TRIES=3
-TRIES=0
+# Clear the log file if it exists
+true > /tmp/dunst.log
 
-while [ $TRIES -lt $MAX_TRIES ]; do
-    if ! systemctl --user start dunst || dunst; then
-        sleep 1
-        if pgrep -x dunst > /dev/null; then
-            notify-send "Dunst started successfully"
-            exit 0
-        fi
+# Try to start dunst three times
+for i in {1..3}; do
+    echo "Attempt $i to start dunst..." >> /tmp/dunst.log
+    systemctl --user start dunst.service >> /tmp/dunst.log 2>&1
+    
+    # Check if dunst is running
+    if systemctl --user is-active --quiet dunst.service; then
+        echo "Dunst started successfully on attempt $i" >> /tmp/dunst.log
+        break
+    else
+        echo "Failed to start dunst on attempt $i" >> /tmp/dunst.log
     fi
-    TRIES=$((TRIES + 1))
+    
+    # Wait a bit before next attempt
     sleep 1
 done
 
-echo "Failed to start Dunst after $MAX_TRIES attempts" >> /tmp/dunst_error.log
-exit 1
+# Log the final status
+echo "Final dunst status:" >> /tmp/dunst.log
+systemctl --user status dunst.service >> /tmp/dunst.log 2>&1

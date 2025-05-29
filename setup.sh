@@ -1046,7 +1046,7 @@ configure_notification() {
     fi
 
     local SERVICE_NAME="dunst.service"
-    local USER_SYSTEMD_DIR="/usr/lib/systemd/user"
+    local USER_SYSTEMD_DIR="$HOME/.config/systemd/user/"
     local SERVICE_PATH="$USER_SYSTEMD_DIR/$SERVICE_NAME"
     local DUNST_RUNNING=false
 
@@ -1081,9 +1081,38 @@ configure_notification() {
         return 0
     }
 
+    # Function to get environment variables based on display server
+    get_environment_vars() {
+        local env_vars=""
+        
+        # Check for X11
+        if [ -n "$DISPLAY" ]; then
+            env_vars+="Environment=\"DISPLAY=$DISPLAY\"\n"
+        fi
+        
+        # Check for Wayland
+        if [ -n "$WAYLAND_DISPLAY" ]; then
+            env_vars+="Environment=\"WAYLAND_DISPLAY=$WAYLAND_DISPLAY\"\n"
+        fi
+        
+        # Check for XDG_RUNTIME_DIR
+        if [ -n "$XDG_RUNTIME_DIR" ]; then
+            env_vars+="Environment=\"XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR\"\n"
+        fi
+        
+        # Check for XDG_SESSION_TYPE
+        if [ -n "$XDG_SESSION_TYPE" ]; then
+            env_vars+="Environment=\"XDG_SESSION_TYPE=$XDG_SESSION_TYPE\"\n"
+        fi
+        
+        echo -e "$env_vars"
+    }
+
     # Function to create correct service file
-    # TODO Cannot create service file - no permission
     create_service_file() {
+        local env_vars
+        env_vars=$(get_environment_vars)
+        
         mkdir -p "$USER_SYSTEMD_DIR"
         cat > "$SERVICE_PATH" <<EOF
 [Unit]
@@ -1099,9 +1128,7 @@ BusName=org.freedesktop.Notifications
 ExecStart=/usr/bin/dunst
 Restart=on-failure
 RestartSec=3
-Environment="DISPLAY=:0"
-Environment="WAYLAND_DISPLAY=wayland-0"
-Slice=session.slice
+${env_vars}Slice=session.slice
 
 [Install]
 WantedBy=default.target
