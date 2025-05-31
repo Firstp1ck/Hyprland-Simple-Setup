@@ -71,7 +71,56 @@
 
 ## Introduction
 
-This repository provides a comprehensive yet minimalistic Hyprland setup designed for users who want a modern, efficient, and customizable desktop environment.
+This repository provides a minimalistic Hyprland setup designed for users who want a customizable desktop environment.
+
+It sets up the following Components/Apps:
+
+**Core Components**
+- Graphic Drivers (Open Source)
+- Audio (Pipewire)
+- Login Manager (sddm)
+- User Environment (xdg-user-dirs)
+- Keyring Setup (Gnome-keyring)
+- Filepicker Setup (KDE Filepicker for Dolphin)
+- Monitor Setup (Custom Script)
+- Lock Mechanisms (Hyprlock and Hypridle)
+- Brightness Control (Hyprsunset)
+
+**Core Applications**
+- Application Launcher (Wofi)
+- Task Bar (Waybar)
+- Wallpaper Setup (Hyprpaper, Waypaper-git and Custom Script)
+- Notification Manager (Dunst)
+- Clipboard Manager (wl-clipboard)
+- Screenshot Tool (Hyprshot with Satty)
+- Firewall (Firewalld)
+- Browser (Vivaldi)
+
+**CLI Applications**
+- Calendar (Calcurse - CLI)
+- Calculator (Qalculate-gtk)
+- Neovim (Kickstarter)
+- Notes with Neovim (Custom Script)
+- Shell Configuration (Fish Shell - with useful aliases)
+- CLI Tools for a more convenient terminal experience
+
+**Waybar Applications**
+- Weather (In Waybar) (Swiss Specific - Needs adjustments for other countries)
+- Bluetooth (In Waybar) (Bluetooth-Manager)
+- Network (In Waybar) (Network-Manager)
+- Power Button (In Waybar)
+- Update Button (In Waybar) (waybar-module-pacman-updates-git)
+- Temperatur Sensor (In Waybar) (psensor)¨
+- Power Profiles (In Waybar)
+
+**Additional Applications**
+- Keybindings (Extensive Keybinds with App for Overview)
+- Snapshots for Btrfs-Filesystems (Timeshift)
+- Snapshot Setup for Grub (grub-btrfs)
+
+- Scratchpad for Minimizable Terminal (pyprland)
+- Custom Mouse Cursor (rose-pine-hyprcursor)
+
 
 ### Quick Start
 
