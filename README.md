@@ -23,7 +23,7 @@
   <p style="font-size: 1.2em; font-weight: bold;">Welcome to my Hyprland Setup!</p>
   <p>I hope you find it useful and enjoyable.</p>
   <p style="color: #f6c177;">
-    ❗ If something does not work, please <a href="https://github.com/Firstp1ck/Hyprland_simple-minimal_Setup/issues/new" rel="noopener noreferrer" style="color: rgb(123, 130, 255); text-decoration: underline;">open an issue</a> on this repository ❗<br>
+    ❗ If something does not work, please <a href="https://github.com/Firstp1ck/Hyprland_simple-minimal_Setup/issues/new" rel="noopener noreferrer" style="color: rgb(123, 130, 255); text-decoration: underline;">open an issue</a> on this repository or E-Mail me directly via firstpick1992@proton.me ❗<br>
     ❗I am always open to suggestions and feedback ❗
   </p>
 </div>

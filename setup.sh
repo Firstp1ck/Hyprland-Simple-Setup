@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# TODO Get all nessessary Userinput at the start of the Script, for uninterupted setup.
+
 ############################################################## Disabled Shellcheck Messages ##############################################################
 # shellcheck disable=SC2012
 # Use find instead of ls to better handle non-alphanumeric filenames.
