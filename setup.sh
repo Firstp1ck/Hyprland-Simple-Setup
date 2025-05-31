@@ -497,6 +497,7 @@ check_dependencies() {
         exit 1
     fi
 }
+
 check_distro() {
     if is_windows; then
         print_message "Running on Windows in dry-run mode. Simulating Arch Linux environment."
@@ -1601,6 +1602,10 @@ configure_monitor() {
 main() {
     print_message "Starting Hyprland Setup..."
 
+    check_disk_space
+    check_distro
+    check_desktop_environment
+
     # Check if xdg-user-dirs is installed
     if ! command -v xdg-user-dirs-update &>/dev/null; then
         print_message "xdg-user-dirs not found. Installing..."
@@ -1616,10 +1621,7 @@ main() {
         print_warning "User Environment could not be created!"
     fi
     
-    check_disk_space
     check_dependencies
-    check_distro
-    check_desktop_environment
     check_environment
     check_user_input
     
