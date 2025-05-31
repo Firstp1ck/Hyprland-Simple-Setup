@@ -964,13 +964,12 @@ aur_extras=(
     "visual-studio-code-bin"
     "lsplug"
     "waypaper-git"
-
-    # Additional AUR packages
     "pyprland"
     "wl-clipboard-history-git"
     "hyprsunset"
     "github-desktop-bin"
     "rose-pine-hyprcursor"
+    "waybar-module-pacman-updates-git"
 )
 
 install_aur_extras() {
@@ -1416,6 +1415,8 @@ EOF"; then
     fi
 }
 
+# TODO: If only one Monitor is used and the Example Config has two monitors in it, replace "MONITOR_2" also with the user choice of the first monitor.
+# TODO: Also remove all placeholders that are still in the config (Lines with "MONITOR" all in CAPS in it.) 
 configure_monitor() {
     announce_step "Configuring monitor"
 

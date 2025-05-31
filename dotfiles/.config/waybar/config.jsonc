@@ -5,6 +5,7 @@
     "modules-left": [
         "custom/power",
         "custom/menu",
+        "tray",
         "hyprland/workspaces",
         "hyprland/submap"
     ],
@@ -22,7 +23,6 @@
         "battery",
         "battery#bat2",
         "bluetooth",
-        "tray",
         "custom/updates",
         "custom/dunst",
         "clock"
@@ -98,7 +98,7 @@
         "timezone": "Zurich",
         "format": "{:%a %d %b %Y | %H:%M}",
         "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>",
-        "on-click": "~/.config/waybar/scripts/float_calendar.sh"
+        "on-click": "~/.config/hypr/scripts/float_calendar.sh"
     },
     // "cpu": {
     //     "format": "{usage}% ",
