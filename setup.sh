@@ -1600,13 +1600,22 @@ configure_monitor() {
 ##############################################################
 main() {
     print_message "Starting Hyprland Setup..."
-    
+
+    # Check if xdg-user-dirs is installed
+    if ! command -v xdg-user-dirs-update &>/dev/null; then
+        print_message "xdg-user-dirs not found. Installing..."
+        if ! distro_install "xdg-user-dirs"; then
+            print_error "Failed to install xdg-user-dirs"
+            return 1
+        fi
+    fi
+
     if execute_command "xdg-user-dirs-update" "Creating User Environment"; then
         print_message "User Environment created"
     else
         print_warning "User Environment could not be created!"
     fi
-
+    
     check_disk_space
     check_dependencies
     check_distro
