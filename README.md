@@ -42,6 +42,7 @@
 
 ## Table of Contents
 - [Introduction](#introduction)
+  - [Quick Start](#quick-start)
 - [Environment Setup](#environment-setup)
 - [Prerequisites](#prerequisites)
 - [Setup Script Execution](#setup-script-execution)
