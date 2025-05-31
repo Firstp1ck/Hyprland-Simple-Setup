@@ -763,11 +763,9 @@ set_fish_language_config() {
 # Array of Hyprland-related pacman packages
 hyprland_packages=(
     # Core Hyprland packages
-    "hyprland"
     "waybar"
     "hyprpaper"
     "hyprcursor"
-    "wofi"
     "hyprlock"
     "hypridle"
     "hyprpolkitagent"
@@ -779,11 +777,61 @@ hyprland_packages=(
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
+
+    # Installed by "archinstall"-script: Desktop Type
+    "dolphin"
+    "dunst"
+    "grim"
+    "htop"
+    "hyprland"
+    "iwd"
+    "kitty"
+    "nano"
+    "openssh"
     "polkit-kde-agent"
+    "qt5-wayland"
+    "qt6-wayland"
+    "slurp"
+    "smartmontools"
+    "vim"
+    "wget"
+    "wireless_tools"
+    "wofi"
+    "wpa_supplicant"
+    "xdg-desktop-portal-hyprland"
+    "xdg-utils"
+
+    # Installed by "archinstall"-script: Graphics Driver
+    "intel-media-driver"
+    "libva-intel-driver"
+    "libva-mesa-driver"
+    "mesa"
+    "vulkan-intel"
+    "vulkan-nouveau"
+    "vulkan-radeon"
+    "xf86-video-amdgpu"
+    "xf86-video-ati"
+    "xf86-video-nouveau"
+    "xf86-video-vmware"
+    "xorg-server"
+    "xorg-xinit"
+
+    # Installed by "archinstall"-script: Greeter (Login Manager)
+    "sddm"
     
+    # Installed by "archinstall"-script: Audio
+    "pipewire"
+    "pipewire-pulse"
+    "wireplumber"
+
+    # Installed by "archinstall"-script: Kernel
+    "linux"
+    "linux-headers"
+    "linux-api-headers"
+    "linux-firmware"
+
     # File Management
     "xdg-user-dirs"
-    "dolphin"
     "git"
     "onefetch"
     "fd"
@@ -797,8 +845,7 @@ hyprland_packages=(
     "inotify-tools"
     "satty"
     
-    # Terminal and Shell
-    "kitty"
+    # Shell
     "fish"
     
     # Browser
@@ -806,8 +853,8 @@ hyprland_packages=(
     "vivaldi-ffmpeg-codecs"
     
     # System Integration
-    "xdg-desktop-portal-hyprland"
     "xdg-desktop-portal-gtk"
+    "xdg-desktop-portal-kde"
     "gnome-keyring"
     "network-manager-applet"
     "networkmanager"
@@ -819,9 +866,6 @@ hyprland_packages=(
     "pipewire-pulse"
     "pavucontrol"
     "pulseaudio-qt"
-    
-    # Notifications
-    "dunst"
     
     # Theming and Appearance
     "ttf-jetbrains-mono-nerd"
