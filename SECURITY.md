@@ -15,5 +15,5 @@ are receiving security fixes.
 ## Reporting a Vulnerability
 
 If you discover a security issue, please report it immediately. Send
-an email with a detailed description to security@example.com. We will review
+an email with a detailed description to firstpick1992@proton.me. We will review
 your report and update you on our progress. Please do not disclose the vulnerability publicly until a fix is released.
