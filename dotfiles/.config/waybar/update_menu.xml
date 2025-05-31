@@ -6,10 +6,5 @@
         <property name="label">Update System</property>
       </object>
     </child>
-    <child>
-      <object class="GtkMenuItem" id="refresh">
-        <property name="label">Refresh</property>
-      </object>
-    </child>
   </object>
 </interface>

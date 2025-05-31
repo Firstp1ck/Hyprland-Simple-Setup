@@ -889,6 +889,7 @@ hyprland_packages=(
     "tldr"
     "zellij"
     "calcurse"
+    "psensor"
 
     # Calculator
     "qalculate-gtk"

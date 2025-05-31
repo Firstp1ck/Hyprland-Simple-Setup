@@ -110,7 +110,8 @@
     "temperature": {
         "critical-threshold": 80,
         "format": "{temperatureC}°C {icon}",
-        "format-icons": ["", "", ""]
+        "format-icons": ["", "", ""],
+        "on-click": "psensor"
     },
     "battery": {
         "states": {
@@ -193,8 +194,7 @@
         "menu": "on-click-right",
         "menu-file": "~/.config/waybar/update_menu.xml",
         "menu-actions": {
-            "update": "kitty ~/Dokumente/GitHub/Linux-Setup/Scripts/Start_System_setup.sh --function update_arch",
-            "refresh": "~/.config/waybar/scripts/refresh_updates.sh"
+            "update": "kitty ~/Dokumente/GitHub/Linux-Setup/Scripts/Start_System_setup.sh --function update_arch"
             }
     },
 
@@ -224,7 +224,13 @@
         "format": "{icon} Menu",
         "format-icons": [""],
         "tooltip": "Open Menu",
-        "on-click": "wofi --show drun --style ~/.config/wofi/menu.css"
-        // "on-click": "hyprmenu"
+        "on-click": "wofi --show drun --style ~/.config/wofi/menu.css",
+        "menu": "on-click-right",
+        "menu-file": "$HOME/.config/waybar/options_menu.xml",
+        "menu-actions": {
+            "keybinds": "~/.config/waybar/scripts/keybinds.py",
+            "open_keybinds": "kitty nvim ~/.config/hypr/sources/keybindings.conf",
+            "drun": "wofi --show drun --style ~/.config/wofi/menu.css"
         }
+    }
 }

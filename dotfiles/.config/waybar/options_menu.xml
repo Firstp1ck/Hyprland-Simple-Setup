@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkMenu" id="menu">
+    <child>
+      <object class="GtkMenuItem" id="keybinds">
+        <property name="label">Keybinds</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator1"/>
+    </child>    
+    <child>
+      <object class="GtkMenuItem" id="open_keybinds">
+        <property name="label">Open Keybind Config</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator2"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="drun">
+        <property name="label">Application Launcher</property>
+      </object>
+    </child>
+  </object>
+</interface> 
+
+<!--
+    <child>
+      <object class="GtkMenuItem" id="open_keybinds">
+        <property name="label">Open Keybind Config</property>
+      </object>
+    </child> 
+-->
