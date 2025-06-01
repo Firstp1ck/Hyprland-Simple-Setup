@@ -1417,8 +1417,6 @@ EOF"; then
     fi
 }
 
-# TODO: If only one Monitor is used and the Example Config has two monitors in it, replace "MONITOR_2" also with the user choice of the first monitor.
-# TODO: Also remove all placeholders that are still in the config (Lines with "MONITOR" all in CAPS in it.) 
 configure_monitor() {
     announce_step "Configuring monitor"
 
@@ -1442,119 +1440,137 @@ configure_monitor() {
             return
         fi
 
+        # Get monitor names
         local monitor_names=()
         while IFS= read -r line; do
             monitor_names+=("$(echo "$line" | awk '{print $2}')")
         done < <(echo "$monitor_output" | grep "^Monitor")
 
+        # Initialize variables for monitor configuration
         local primary_monitor=""
         local primary_width=""
+        local configured_monitors=()
+        # local monitors_conf_file="${HOME}/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/hypr/sources_example/monitors.conf"
+        local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
+        # local wallpaper_conf="${HOME}/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
+        local wallpaper_conf="${HOME}/.config/hypr/sources/change_wallpaper.conf"
 
-        while true; do
-            print_message "Available monitors:"
-            local i=0
-            for name in "${monitor_names[@]}"; do
-                print_message "$i: $name"
-                ((i++))
+        # Function to get available modes for a monitor
+        get_monitor_modes() {
+            local monitor_name="$1"
+            local modes_str
+            modes_str=$(echo "$monitor_output" | grep -A 100 "Monitor $monitor_name" | grep "availableModes:" | head -n 1)
+            echo "${modes_str#*availableModes: }"
+        }
+
+        # Function to calculate aspect ratio
+        calculate_aspect_ratio() {
+            local width="$1"
+            local height="$2"
+            gcd() {
+                local a=$1
+                local b=$2
+                while [ "$b" -ne 0 ]; do
+                    local temp=$b
+                    b=$(( a % b ))
+                    a=$temp
+                done
+                echo "$a"
+            }
+            local divisor
+            divisor=$(gcd "$width" "$height")
+            echo "$((width/divisor)):$((height/divisor))"
+        }
+
+        # Function to configure a single monitor
+        configure_single_monitor() {
+            local monitor_name="$1"
+            local modes
+            modes=$(get_monitor_modes "$monitor_name")
+            
+            # Group modes by aspect ratio
+            declare -A ratio_modes
+            for mode in $modes; do
+                if [[ "$mode" != *x* ]]; then
+                    continue
+                fi
+                local res=${mode%%@*}
+                local width=${res%%x*}
+                local height=${res#*x}
+                if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+                    continue
+                fi
+                local ratio
+                ratio=$(calculate_aspect_ratio "$width" "$height")
+                if [[ ! " ${ratio_modes[$ratio]} " =~ ${mode} ]]; then
+                    ratio_modes["$ratio"]+="$mode "
+                fi
             done
-            read -rp "Select monitor number: " monitor_index
-            chosen_monitor="${monitor_names[$monitor_index]}"
 
-            local modes_lines mode_line
-            modes_lines=$(echo "$monitor_output" | grep "availableModes:")
-            if [ -n "$modes_lines" ]; then
-                declare -A ratio_modes
-                gcd() {
-                    local a=$1
-                    local b=$2
-                    while [ "$b" -ne 0 ]; do
-                        local temp=$b
-                        b=$(( a % b ))
-                        a=$temp
-                    done
-                    echo "$a"
-                }
-                for mode_line in $modes_lines; do
-                    local modes_str
-                    modes_str=${mode_line#*availableModes: }
-                    for mode in $modes_str; do
-                        if [[ "$mode" != *x* ]]; then
-                            continue
-                        fi
-                        local res=${mode%%@*}
-                        local width=${res%%x*}
-                        local height=${res#*x}
-                        if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
-                            continue
-                        fi
-                        local div
-                        div=$(gcd "$width" "$height")
-                        local simple_width=$(( width / div ))
-                        local simple_height=$(( height / div ))
-                        local ratio="${simple_width}:${simple_height}"
-                        if [[ ! " ${ratio_modes[$ratio]} " =~ ${mode} ]]; then
-                            ratio_modes["$ratio"]+="$mode "
-                        fi
-                    done
-                done
-                print_message "Available ratios:"
-                ratios=("${!ratio_modes[@]}")
-                PS3="Select ratio number: "
-                select selected_ratio in "${ratios[@]}"; do
-                    if [ -n "$selected_ratio" ]; then
-                        chosen_ratio="$selected_ratio"
-                        break
-                    else
-                        print_message "Invalid selection. Try again."
-                    fi
-                done
-                read -ra resolutions <<< "${ratio_modes[$chosen_ratio]}"
-                print_message "Choose a resolution for ratio $chosen_ratio:"
-                PS3="Select resolution number: "
-                select chosen_resolution in "${resolutions[@]}"; do
-                    if [ -n "$chosen_resolution" ]; then
-                        break
-                    else
-                        print_message "Invalid selection. Try again."
-                    fi
-                done
+            # Let user select aspect ratio
+            print_message "Available ratios for $monitor_name:"
+            local ratios=("${!ratio_modes[@]}")
+            PS3="Select ratio number: "
+            select selected_ratio in "${ratios[@]}"; do
+                if [ -n "$selected_ratio" ]; then
+                    break
+                else
+                    print_message "Invalid selection. Try again."
+                fi
+            done
 
-                if [ -z "$primary_monitor" ]; then
-                    primary_monitor="$chosen_monitor"
-                    primary_width="${chosen_resolution%%x*}"
+            # Let user select resolution
+            read -ra resolutions <<< "${ratio_modes[$selected_ratio]}"
+            print_message "Choose a resolution for ratio $selected_ratio:"
+            PS3="Select resolution number: "
+            select chosen_resolution in "${resolutions[@]}"; do
+                if [ -n "$chosen_resolution" ]; then
+                    break
+                else
+                    print_message "Invalid selection. Try again."
+                fi
+            done
+
+            # Get scale factor
+            read -rp "Enter scale for monitor $monitor_name (1.0 - 2.0): " scale
+
+            # Calculate offset
+            local offset
+            if [ -z "$primary_monitor" ]; then
+                primary_monitor="$monitor_name"
+                primary_width="${chosen_resolution%%x*}"
+                offset="0x0"
+            else
+                if [ "$monitor_name" = "$primary_monitor" ]; then
                     offset="0x0"
                 else
-                    if [ "$chosen_monitor" = "$primary_monitor" ]; then
-                        offset="0x0"
-                    else
-                        offset="${primary_width}x0"
-                    fi
-                fi
-
-                read -rp "Enter scale for monitor ${chosen_monitor} (1.0 - 2.0): " scale
-
-                local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
-                if grep -q "^monitor=${chosen_monitor}," "$monitors_conf_file"; then
-                    sed -i "s|^monitor=${chosen_monitor},.*|monitor=${chosen_monitor},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
-                else
-                    sed -i "1i monitor=${chosen_monitor},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
+                    offset="${primary_width}x0"
                 fi
             fi
-            if prompt_yes_no "Configure another monitor?"; then
-                : # continue loop
+
+            # Update monitor configuration
+            if grep -q "^monitor=${monitor_name}," "$monitors_conf_file"; then
+                sed -i "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
             else
+                sed -i "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
+            fi
+
+            configured_monitors+=("$monitor_name")
+        }
+
+        # Configure each monitor
+        for monitor_name in "${monitor_names[@]}"; do
+            configure_single_monitor "$monitor_name"
+            if [ "${#monitor_names[@]}" -gt 1 ] && ! prompt_yes_no "Configure another monitor?"; then
                 break
             fi
         done
 
-        local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
-        mapfile -t configured < <(grep "^monitor=" "$monitors_conf_file" | awk -F',' '{print $1}' | sed 's/monitor=//')
-        primary="${configured[0]}"
-        if [ "${#configured[@]}" -gt 1 ]; then
-            secondary="${configured[1]}"
-        else
-            secondary="$primary"
-        fi
+        # Update workspace assignments
+        local primary="${configured_monitors[0]}"
+        local secondary="${configured_monitors[1]:-$primary}"
+        
+        # Update workspace assignments in monitors.conf
         awk -F, -v p="$primary" -v s="$secondary" 'BEGIN { OFS="," }
             /^workspace=/ {
                 split($1, arr, "=");
@@ -1565,10 +1581,10 @@ configure_monitor() {
             !/^workspace=/ { print }
         ' "$monitors_conf_file" > "${monitors_conf_file}.tmp" && mv "${monitors_conf_file}.tmp" "$monitors_conf_file"
 
-        local wallpaper_conf="${HOME}/dotfiles/.config/hypr/sources/change_wallpaper.conf"
+        # Update wallpaper configuration
         if [ -f "$wallpaper_conf" ]; then
-            monitors_str=""
-            for m in "${configured[@]}"; do
+            local monitors_str=""
+            for m in "${configured_monitors[@]}"; do
                 monitors_str+="\"$m\" "
             done
             monitors_str=$(echo "$monitors_str")
@@ -1581,6 +1597,10 @@ configure_monitor() {
         else
             print_warning "Wallpaper configuration file not found: $wallpaper_conf"
         fi
+
+        # Remove any remaining placeholder text
+        sed -i '/MONITOR_[0-9]/d' "$monitors_conf_file"
+        sed -i '/MONITOR_[0-9]/d' "$wallpaper_conf"
 
     elif command -v kscreen-doctor &>/dev/null; then
         local monitor_output
@@ -1685,6 +1705,8 @@ main() {
 # Add command line argument handling
 DRY_RUN=false
 VERBOSE=false
+CONFIGURE_MONITOR_ONLY=false
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --dry-run)
@@ -1693,11 +1715,19 @@ while [[ "$#" -gt 0 ]]; do
         --verbose)
             VERBOSE=true
             ;;
+        --configure-monitor)
+            CONFIGURE_MONITOR_ONLY=true
+            ;;
         *)
             print_warning "Unknown parameter passed: $1"
             ;;
     esac
     shift
 done
+
+if [ "$CONFIGURE_MONITOR_ONLY" = true ]; then
+    configure_monitor
+    exit 0
+fi
 
 main
