@@ -124,35 +124,31 @@ It sets up the following Components/Apps:
 
 ### Quick Start
 
-1. **Clones the repository into your home directory.**
+1. **Clones the repository into your home directory and runs the setup script.**
    ```bash
    git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
-   ```
-2. **Run the setup script to install dependencies and configure your system:**
-   ```bash
    cd ~/Hyprland_Simple_Setup
    ./setup.sh
    ```
-
    - The script will:
      - Detect your system and prerequisites
      - Install all required packages (Pacman and AUR)
      - Verify installations
      - Guide you through configuration steps
 
-3. If you add new configuration files add them to the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
+2. If you add new configuration files add them to the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
 
-4. **Deploy dotfiles using GNU stow:**
+3. **Deploy dotfiles using GNU stow:**
    ```bash
    cd ~/Hyprland_Simple_Setup/dotfiles
    bash .local/scripts/Start_stow_solve.sh
    ```
 
-5. **Edit configuration files as needed (see below for modular config structure).**
+4. **Edit configuration files as needed (see below for modular config structure).**
 
-6. **Log out and log in to Hyprland, or start it from a TTY.**
+5. **Log out and log in to Hyprland, or start it from a TTY.**
 
-7. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)
+6. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)
 
 ## Environment Setup
 
