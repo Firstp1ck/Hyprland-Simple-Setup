@@ -1269,7 +1269,6 @@ configure_filepicker() {
         track_config_status "Filepicker Setup" "$CIRCLE (Not in Hyprland)"
         return 0
     fi
-    # TODO "Command for 'Symlink application.menu to plasma-applications.menu' failed (after "Creating filepicker configuration...")
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
     local conf_file="${conf_dir}/hyprland-portals.conf"
     local desired_content="[preferred]\ndefault = hyprland;gtk\norg.freedesktop.impl.portal.FileChooser = kde"
