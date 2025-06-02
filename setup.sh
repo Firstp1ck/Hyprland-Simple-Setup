@@ -171,7 +171,7 @@ distro_install() {
         fedora)
             execute_command "sudo dnf install -y ${packages[*]}" "Install packages: ${packages[*]}"
             ;;
-        arch|endeavouros)
+        arch|endeavouros|cachyos)
             if ! execute_command "sudo pacman -S --needed --noconfirm ${packages[*]}" "Install packages: ${packages[*]}"; then
                 print_warning "pacman failed, trying yay as fallback for: ${packages[*]}"
                 if execute_command "yay -S --needed --noconfirm ${packages[*]}" "Install packages with yay: ${packages[*]}"; then
@@ -285,6 +285,9 @@ list_packages() {
     if command -v eos-packagelist &> /dev/null && grep -q "EndeavourOS" /etc/os-release; then
         is_endeavouros=true
         print_message "EndeavourOS detected - will exclude default EndeavourOS packages."
+    elif grep -q "CachyOS" /etc/os-release; then
+        is_endeavouros=true
+        print_message "CachyOS detected - will exclude default CachyOS packages."
     elif command -v apt &> /dev/null && (grep -q "Debian\\|Ubuntu\\|Mint" /etc/os-release || [ -f /etc/debian_version ]); then
         is_debian_based=true
         print_message "Debian-based system detected - will list manually installed packages."
@@ -943,8 +946,8 @@ remove_cache() {
     announce_step "Removing pacman cache"
     if [[ "$DISTRO" == "endeavouros" ]]; then
         execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (EndeavourOS)"
-    elif [[ "$DISTRO" == "arch" ]]; then
-        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux)"
+    elif [[ "$DISTRO" == "arch" ]] || [[ "$DISTRO" == "cachyos" ]]; then
+        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux/CachyOS)"
     else
         execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache"
     fi
