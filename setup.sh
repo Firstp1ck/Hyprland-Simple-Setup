@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# TODO Get all nessessary Userinput at the start of the Script, for uninterupted setup.
-
 ############################################################## Disabled Shellcheck Messages ##############################################################
 # shellcheck disable=SC2012
 # Use find instead of ls to better handle non-alphanumeric filenames.
@@ -1631,7 +1629,90 @@ configure_monitor() {
 
 configure_sddm_theme() {
     announce_step "Configuring SDDM Theme"
-    # TODO Create SDDM Theme Configuration
+
+    # Check if SDDM is installed and being used
+    if ! command -v sddm &>/dev/null; then
+        print_message "SDDM is not installed. Skipping theme configuration."
+        track_config_status "SDDM Theme Setup" "$CIRCLE (Not installed)"
+        return 0
+    fi
+
+    # Check if SDDM is the current display manager
+    if ! systemctl is-enabled sddm &>/dev/null; then
+        print_message "SDDM is not enabled as display manager. Skipping theme configuration."
+        track_config_status "SDDM Theme Setup" "$CIRCLE (Not enabled)"
+        return 0
+    fi
+
+    # Check if zip is installed
+    if ! command -v zip &>/dev/null; then
+        print_message "Installing zip package..."
+        if ! distro_install "zip"; then
+            print_error "Failed to install zip package."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
+    fi
+
+    # Create temporary directory for theme download
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    if [ ! -d "$temp_dir" ]; then
+        print_error "Failed to create temporary directory."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # Download the theme
+    print_message "Downloading SDDM Eucalyptus Drop theme..."
+    if ! execute_command "curl -L 'https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop/-/archive/master/sddm-eucalyptus-drop-master.zip' -o '$temp_dir/sddm-eucalyptus-drop-master.zip'"; then
+        print_error "Failed to download SDDM theme."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # Install the theme using sddmthemeinstaller
+    print_message "Installing SDDM theme..."
+    if ! execute_command "sddmthemeinstaller --install '$temp_dir/sddm-eucalyptus-drop-master.zip'"; then
+        print_error "Failed to install SDDM theme."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # Configure SDDM to use the theme
+    local sddm_conf_dir="/etc/sddm.conf.d"
+    local sddm_conf="$sddm_conf_dir/sddm.conf"
+    local default_conf="$HOME/Hyprland_Simple_Setup/system_files/default.conf"
+
+    # Create sddm.conf.d directory if it doesn't exist
+    if ! execute_command "sudo mkdir -p '$sddm_conf_dir'"; then
+        print_error "Failed to create SDDM configuration directory."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # If default.conf exists, use it as a template
+    if [ -f "$default_conf" ]; then
+        print_message "Using default.conf as template..."
+        if ! execute_command "sudo cp '$default_conf' '$sddm_conf'"; then
+            print_error "Failed to copy default.conf to SDDM configuration."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
+    fi
+
+    # Update or add the Current theme setting
+    if ! execute_command "sudo sed -i '/^Current=/c\Current=eucalyptus-drop' '$sddm_conf'"; then
+        print_error "Failed to update SDDM theme configuration."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # Clean up temporary directory
+    rm -rf "$temp_dir"
+
+    print_message "SDDM theme configuration completed successfully."
+    track_config_status "SDDM Theme Setup" "$CHECK_MARK"
 }
 
 ##############################################################
@@ -1711,6 +1792,7 @@ main() {
     configure_timeshift
     configure_grub_btrfsd
     configure_monitor
+    configure_sddm_theme
 
     print_dry_run_summary
     print_status_summary
