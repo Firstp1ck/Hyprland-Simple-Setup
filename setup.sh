@@ -636,7 +636,13 @@ check_user_input() {
 }
 
 find_hyprland_setup_dir() {
-    # Search in common locations
+    # First check the installed package location
+    if [ -d "/usr/share/hyprland-simple-setup" ]; then
+        echo "/usr/share/hyprland-simple-setup"
+        return 0
+    fi
+    
+    # Fallback to searching in common locations
     local search_paths=(
         "$HOME"
         "$HOME/Dokumente"
