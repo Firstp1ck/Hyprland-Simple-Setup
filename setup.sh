@@ -1647,20 +1647,30 @@ configure_sddm_theme() {
         fi
     fi
 
-    # Clone the theme repository
-    print_message "Cloning SDDM Eucalyptus Drop theme..."
-    if ! execute_command "git clone https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop.git '$downloads_dir/sddm-eucalyptus-drop'"; then
-        print_error "Failed to clone SDDM theme repository."
-        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-        return 1
+    # Check if theme already exists in Downloads
+    if [ -d "$downloads_dir/eucalyptus-drop" ]; then
+        print_message "SDDM theme already exists in Downloads directory, skipping clone."
+    else
+        # Clone the theme repository
+        print_message "Cloning SDDM Eucalyptus Drop theme..."
+        if ! execute_command "git clone https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop.git '$downloads_dir/eucalyptus-drop'"; then
+            print_error "Failed to clone SDDM theme repository."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
     fi
 
-    # Copy the theme to SDDM themes directory
-    print_message "Installing SDDM theme..."
-    if ! execute_command "sudo cp -r '$downloads_dir/sddm-eucalyptus-drop' /usr/share/sddm/themes/"; then
-        print_error "Failed to copy SDDM theme to themes directory."
-        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-        return 1
+    # Check if theme already exists in SDDM themes directory
+    if [ -d "/usr/share/sddm/themes/eucalyptus-drop" ]; then
+        print_message "SDDM theme already exists in themes directory, skipping copy."
+    else
+        # Copy the theme to SDDM themes directory
+        print_message "Installing SDDM theme..."
+        if ! execute_command "sudo cp -r $downloads_dir/eucalyptus-drop /usr/share/sddm/themes/"; then
+            print_error "Failed to copy SDDM theme to themes directory."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
     fi
 
     # Configure SDDM to use the theme
@@ -1701,7 +1711,7 @@ configure_sddm_theme() {
     fi
 
     # Clean up downloaded theme
-    if ! execute_command "rm -rf '$downloads_dir/sddm-eucalyptus-drop'"; then
+    if ! execute_command "rm -rf '$downloads_dir/eucalyptus-drop'"; then
         print_warning "Failed to clean up downloaded theme from Downloads directory."
     fi
 
