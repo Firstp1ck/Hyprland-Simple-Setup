@@ -1657,7 +1657,7 @@ configure_sddm_theme() {
 
     # Copy the theme to SDDM themes directory
     print_message "Installing SDDM theme..."
-    if ! execute_command "sudo cp -r '$downloads_dir/sddm-eucalyptus-drop/eucalyptus-drop' /usr/share/sddm/themes/"; then
+    if ! execute_command "sudo cp -r '$downloads_dir/sddm-eucalyptus-drop' /usr/share/sddm/themes/"; then
         print_error "Failed to copy SDDM theme to themes directory."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
