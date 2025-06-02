@@ -31,8 +31,32 @@ config_statuses=()
 
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
+SUDO_PASSWORD=""
+FISH_LANGUAGE_CHOICE=""
 
 ############################################################## Helper Functions ##############################################################
+
+get_sudo_password() {
+    if [ -z "$SUDO_PASSWORD" ]; then
+        read -rsp "Enter sudo password: " SUDO_PASSWORD
+        echo
+        # Verify the password works
+        if ! echo "$SUDO_PASSWORD" | sudo -S true 2>/dev/null; then
+            print_error "Invalid sudo password"
+            exit 1
+        fi
+    fi
+}
+
+get_fish_language_choice() {
+    if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
+        echo "Select your preferred language setting for Fish Shell:"
+        echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
+        echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
+        echo "3) us     (US English: LC_ALL=en_US.UTF-8, LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
+        read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
+    fi
+}
 
 is_windows() {
     case "$(uname -s)" in
@@ -69,7 +93,12 @@ execute_command() {
         log_dry_run_operation "$caller_function" "$description"
         return 0
     else
-        eval "$cmd"
+        # If command requires sudo, use stored password
+        if [[ "$cmd" == sudo* ]]; then
+            echo "$SUDO_PASSWORD" | eval "$cmd"
+        else
+            eval "$cmd"
+        fi
         local exit_code=$?
         print_verbose "Command executed: $cmd (Exit code: $exit_code)"
         if [ $exit_code -ne 0 ]; then
@@ -723,13 +752,9 @@ set_fish_language_config() {
         return 0
     fi
     local fish_conf="$HOME/dotfiles/.config/fish/config.fish"
-    echo "Select your preferred language setting for Fish Shell:"
-    echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
-    echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
-    echo "3) us     (US English: LC_ALL=en_US.UTF-8, LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
-    read -rp "Enter selection number (1-3): " fish_sel
     local lc_all lang language
-    case "$fish_sel" in
+
+    case "$FISH_LANGUAGE_CHOICE" in
         1)
             lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
@@ -1619,12 +1644,19 @@ configure_monitor() {
     fi
 }
 
+configure_sddm_theme() {
+    announce_step "Configuring SDDM Theme"
+    # TODO Create SDDM Theme Configuration
+}
+
 ##############################################################
 # Main Execution Flow
 ##############################################################
 main() {
     print_message "Starting Hyprland Setup..."
 
+    get_sudo_password
+    get_fish_language_choice
     check_disk_space
     check_distro
     check_desktop_environment
@@ -1699,7 +1731,8 @@ main() {
     print_dry_run_summary
     print_status_summary
 
-    print_message "Hyprland setup completed successfully!"
+    print_message "Hyprland setup completed successfully! Reloading Hyprland..."
+    hyprctl reload
 }
 
 # Add command line argument handling
