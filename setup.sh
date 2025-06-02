@@ -31,22 +31,9 @@ config_statuses=()
 
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
-SUDO_PASSWORD=""
 FISH_LANGUAGE_CHOICE=""
 
 ############################################################## Helper Functions ##############################################################
-
-get_sudo_password() {
-    if [ -z "$SUDO_PASSWORD" ]; then
-        read -rsp "Enter sudo password: " SUDO_PASSWORD
-        echo
-        # Verify the password works
-        if ! echo "$SUDO_PASSWORD" | sudo -S true 2>/dev/null; then
-            print_error "Invalid sudo password"
-            exit 1
-        fi
-    fi
-}
 
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
@@ -93,12 +80,7 @@ execute_command() {
         log_dry_run_operation "$caller_function" "$description"
         return 0
     else
-        # If command requires sudo, use stored password
-        if [[ "$cmd" == sudo* ]]; then
-            echo "$SUDO_PASSWORD" | eval "$cmd"
-        else
-            eval "$cmd"
-        fi
+        bash -c "$cmd"
         local exit_code=$?
         print_verbose "Command executed: $cmd (Exit code: $exit_code)"
         if [ $exit_code -ne 0 ]; then
@@ -1655,7 +1637,6 @@ configure_sddm_theme() {
 main() {
     print_message "Starting Hyprland Setup..."
 
-    get_sudo_password
     get_fish_language_choice
     check_disk_space
     check_distro
