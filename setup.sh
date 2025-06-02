@@ -1637,18 +1637,19 @@ configure_sddm_theme() {
         return 0
     fi
 
-    # Create temporary directory for theme download
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    if [ ! -d "$temp_dir" ]; then
-        print_error "Failed to create temporary directory."
-        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-        return 1
+    # Create Downloads directory if it doesn't exist
+    local downloads_dir="$HOME/Downloads"
+    if [ ! -d "$downloads_dir" ]; then
+        if ! execute_command "mkdir -p '$downloads_dir'"; then
+            print_error "Failed to create Downloads directory."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
     fi
 
     # Clone the theme repository
     print_message "Cloning SDDM Eucalyptus Drop theme..."
-    if ! execute_command "git clone https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop.git '$temp_dir/sddm-eucalyptus-drop'"; then
+    if ! execute_command "git clone https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop.git '$downloads_dir/sddm-eucalyptus-drop'"; then
         print_error "Failed to clone SDDM theme repository."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
@@ -1656,7 +1657,7 @@ configure_sddm_theme() {
 
     # Copy the theme to SDDM themes directory
     print_message "Installing SDDM theme..."
-    if ! execute_command "sudo cp -r '$temp_dir/sddm-eucalyptus-drop/eucalyptus-drop' /usr/share/sddm/themes/"; then
+    if ! execute_command "sudo cp -r '$downloads_dir/sddm-eucalyptus-drop/eucalyptus-drop' /usr/share/sddm/themes/"; then
         print_error "Failed to copy SDDM theme to themes directory."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
@@ -1699,8 +1700,10 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # Clean up temporary directory
-    rm -rf "$temp_dir"
+    # Clean up downloaded theme
+    if ! execute_command "rm -rf '$downloads_dir/sddm-eucalyptus-drop'"; then
+        print_warning "Failed to clean up downloaded theme from Downloads directory."
+    fi
 
     print_message "SDDM theme configuration completed successfully."
     track_config_status "SDDM Theme Setup" "$CHECK_MARK"
