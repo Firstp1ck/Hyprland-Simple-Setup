@@ -1630,31 +1630,11 @@ configure_monitor() {
 configure_sddm_theme() {
     announce_step "Configuring SDDM Theme"
 
-    # Check if SDDM and SDDM-KCM are installed and being used
-    if ! command -v sddm &>/dev/null || ! command -v sddm-kcm &>/dev/null; then
-        print_message "SDDM or SDDM-KCM is not installed. Installing SDDM-KCM..."
-        if ! distro_install "sddm-kcm"; then
-            print_error "Failed to install SDDM-KCM."
-            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-            return 1
-        fi
-    fi
-
     # Check if SDDM is the current display manager
     if ! systemctl is-enabled sddm &>/dev/null; then
         print_message "SDDM is not enabled as display manager. Skipping theme configuration."
         track_config_status "SDDM Theme Setup" "$CIRCLE (Not enabled)"
         return 0
-    fi
-
-    # Check if zip is installed
-    if ! command -v zip &>/dev/null; then
-        print_message "Installing zip package..."
-        if ! distro_install "zip"; then
-            print_error "Failed to install zip package."
-            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-            return 1
-        fi
     fi
 
     # Create temporary directory for theme download
@@ -1666,18 +1646,18 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # Download the theme
-    print_message "Downloading SDDM Eucalyptus Drop theme..."
-    if ! execute_command "curl -L 'https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop/-/archive/master/sddm-eucalyptus-drop-master.zip' -o '$temp_dir/sddm-eucalyptus-drop-master.zip'"; then
-        print_error "Failed to download SDDM theme."
+    # Clone the theme repository
+    print_message "Cloning SDDM Eucalyptus Drop theme..."
+    if ! execute_command "git clone https://gitlab.com/Matt.Jolly/sddm-eucalyptus-drop.git '$temp_dir/sddm-eucalyptus-drop'"; then
+        print_error "Failed to clone SDDM theme repository."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
     fi
 
-    # Change to temp directory and install the theme
+    # Copy the theme to SDDM themes directory
     print_message "Installing SDDM theme..."
-    if ! execute_command "cd '$temp_dir' && sddmthemeinstaller --install sddm-eucalyptus-drop-master.zip"; then
-        print_error "Failed to install SDDM theme."
+    if ! execute_command "sudo cp -r '$temp_dir/sddm-eucalyptus-drop/eucalyptus-drop' /usr/share/sddm/themes/"; then
+        print_error "Failed to copy SDDM theme to themes directory."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
     fi
@@ -1707,6 +1687,14 @@ configure_sddm_theme() {
     # Update or add the Current theme setting
     if ! execute_command "sudo sed -i '/^Current=/c\Current=eucalyptus-drop' '$sddm_conf'"; then
         print_error "Failed to update SDDM theme configuration."
+        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+        return 1
+    fi
+
+    # Restart SDDM service
+    print_message "Restarting SDDM service..."
+    if ! execute_command "sudo systemctl restart sddm.service"; then
+        print_error "Failed to restart SDDM service."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
     fi
