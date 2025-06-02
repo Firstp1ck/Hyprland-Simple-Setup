@@ -1630,11 +1630,14 @@ configure_monitor() {
 configure_sddm_theme() {
     announce_step "Configuring SDDM Theme"
 
-    # Check if SDDM is installed and being used
-    if ! command -v sddm &>/dev/null; then
-        print_message "SDDM is not installed. Skipping theme configuration."
-        track_config_status "SDDM Theme Setup" "$CIRCLE (Not installed)"
-        return 0
+    # Check if SDDM and SDDM-KCM are installed and being used
+    if ! command -v sddm &>/dev/null || ! command -v sddm-kcm &>/dev/null; then
+        print_message "SDDM or SDDM-KCM is not installed. Installing SDDM-KCM..."
+        if ! distro_install "sddm-kcm"; then
+            print_error "Failed to install SDDM-KCM."
+            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
+            return 1
+        fi
     fi
 
     # Check if SDDM is the current display manager
@@ -1671,9 +1674,9 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # Install the theme using sddmthemeinstaller
+    # Change to temp directory and install the theme
     print_message "Installing SDDM theme..."
-    if ! execute_command "sddmthemeinstaller --install '$temp_dir/sddm-eucalyptus-drop-master.zip'"; then
+    if ! execute_command "cd '$temp_dir' && sddmthemeinstaller --install sddm-eucalyptus-drop-master.zip"; then
         print_error "Failed to install SDDM theme."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
