@@ -1808,6 +1808,7 @@ main() {
 DRY_RUN=false
 VERBOSE=false
 CONFIGURE_MONITOR_ONLY=false
+CONFIGURE_SDDM_ONLY=false
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -1820,6 +1821,9 @@ while [[ "$#" -gt 0 ]]; do
         --configure-monitor)
             CONFIGURE_MONITOR_ONLY=true
             ;;
+        --configure-sddm)
+            CONFIGURE_SDDM_ONLY=true
+            ;;
         *)
             print_warning "Unknown parameter passed: $1"
             ;;
@@ -1829,6 +1833,11 @@ done
 
 if [ "$CONFIGURE_MONITOR_ONLY" = true ]; then
     configure_monitor
+    exit 0
+fi
+
+if [ "$CONFIGURE_SDDM_ONLY" = true ]; then
+    configure_sddm_theme
     exit 0
 fi
 
