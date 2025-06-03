@@ -64,6 +64,7 @@ tooltip {
 #keyboard-state,
 #clock,
 #tray,
+#custom-brightness,
 #custom-updates,
 #custom-notification,
 #custom-power,
@@ -97,6 +98,15 @@ tooltip {
   border-left: 0px;
   border-right: 0px;
   margin-right: 0px;
+}
+#custom-brightness {
+  color: #96d8ff;
+  background: #1e1e2e;
+  border-left: 10px;
+  border-right: 10px;
+  margin-top: 5px;
+  padding: 0px 10px;
+  border-radius: 10px;
 }
 #network {
   color: #95b1ff;

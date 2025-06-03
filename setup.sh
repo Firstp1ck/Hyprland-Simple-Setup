@@ -794,7 +794,6 @@ hyprland_packages=(
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
-    "swaync"
 
     # Installed by "archinstall"-script: Desktop Type
     "dolphin"
@@ -884,6 +883,8 @@ hyprland_packages=(
     "pipewire-pulse"
     "pavucontrol"
     "pulseaudio-qt"
+    "swaync"
+    "ddcutil"
     
     # Theming and Appearance
     "ttf-jetbrains-mono-nerd"

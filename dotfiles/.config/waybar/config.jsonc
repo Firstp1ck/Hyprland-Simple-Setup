@@ -14,6 +14,7 @@
         "custom/weather",
         // "idle_inhibitor",
         "pulseaudio",
+        "custom/brightness",
         // "network",
         "power-profiles-daemon",
         // "cpu",
@@ -181,6 +182,23 @@
         "tooltip-format-connected": "Controller: {controller_alias}\nAddress: {controller_address}\nConnected: {device_alias} ({device_address})\nBattery: {device_battery_percentage}%",
         "on-click": "blueman-manager"
     },
+
+    "custom/brightness": {
+        "exec": "ddcutil -b 7 getvcp 10 -t | awk '{print $4}'",
+        "interval": 1,
+        "format": "☀️ {}%",
+        "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
+        "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
+        "menu": "on-click-right",
+        "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
+        "menu-actions": {
+            "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
+            "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
+            "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
+            "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
+            "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
+            }
+        },
 
     "custom/updates": {
         "format": "{}{icon}",
