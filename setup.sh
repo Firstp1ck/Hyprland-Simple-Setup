@@ -794,7 +794,6 @@ hyprland_packages=(
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
-    "wlogout"
     "swaync"
 
     # Installed by "archinstall"-script: Desktop Type
@@ -989,6 +988,7 @@ aur_extras=(
     "github-desktop-bin"
     "rose-pine-hyprcursor"
     "waybar-module-pacman-updates-git"
+    "wlogout"
     "nerd-fonts-noto-sans-mono"
 )
 
