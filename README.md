@@ -90,7 +90,7 @@ It sets up the following Components/Apps:
 - Application Launcher (Wofi)
 - Task Bar (Waybar)
 - Wallpaper Setup (Hyprpaper, Waypaper-git and Custom Script)
-- Notification Manager (Dunst)
+- Notification Manager (Swaync)
 - Clipboard Manager (wl-clipboard)
 - Screenshot Tool (Hyprshot with Satty)
 - Calculator (Qalculate-gtk)
@@ -179,9 +179,9 @@ It sets up the following Components/Apps:
       - `hyprland.conf` – Main config
       - `sources_example/` – Example modular configs (keybindings, monitors, autostart, etc.)
       - `scripts/` – Helper scripts (wallpaper, sunset, dolphin fix, etc.)
-    - `waybar/` – Status bar config, style, and scripts (weather, updates, Dunst history)
+    - `waybar/` – Status bar config, style, and scripts (weather, updates)
     - `wofi/` – Application launcher config and style
-    - `kitty/`, `fish/`, `dunst/`, `nvim/`, `btop/`, `cava/`, `fastfetch/`, `zellij/`, `bat/`, `satty/`, `xdg-desktop-portal/` – App configs
+    - `kitty/`, `fish/`, `swaync/`, `nvim/`, `btop/`, `cava/`, `fastfetch/`, `zellij/`, `bat/`, `satty/`, `xdg-desktop-portal/` – App configs
     - `fish/` - Shell Configurations
   - `.bashrc`, `.bash_profile` – Shell Configurations
   - `.local/scripts/Start_stow_solve.sh` – Stow deployment script
@@ -471,7 +471,7 @@ For more customization options, refer to:
 - **Logs:** See `~/Linux-Setup.log`
 - **Package verification:** The setup script checks and reports missing packages
 - **Configuration issues:** Modular config makes it easy to isolate and fix problems
-- **Scripts:** Helper scripts for common issues (e.g., fix dolphin, restart Dunst, etc.)
+- **Scripts:** Helper scripts for common issues (e.g., fix dolphin etc.)
 
 ### Display and Monitor Issues
 - Verify monitor names and configurations:

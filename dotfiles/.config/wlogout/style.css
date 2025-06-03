@@ -1,0 +1,55 @@
+* {
+	box-shadow: none;
+}
+
+window {
+	/* TODO: Add background image correctly */
+	/* background-image: url("path/to/Wallpaper/Forest_01.png"); */
+	background-color: rgb(31, 83, 161);
+}
+
+button {
+    border-radius: 20px;
+	margin: 30px;
+	padding: 50px;
+    border-color: rgb(70, 73, 255);
+	text-decoration-color: #FFFFFF;
+    color: #FFFFFF;
+	background-color: #4a74ff;
+	border-style: solid;
+	border-width: 2px;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 20%;
+}
+
+button:focus, button:active, button:hover {
+	background-color: #aac5ff;
+	outline-style: groove;
+	color: #000000;
+	border-width: 5px;
+}
+
+#lock {
+    background-image: image(url("/usr/share/wlogout/icons/lock.png"), url("/usr/local/share/wlogout/icons/lock.png"));
+}
+
+#logout {
+    background-image: image(url("/usr/share/wlogout/icons/logout.png"), url("/usr/local/share/wlogout/icons/logout.png"));
+}
+
+#suspend {
+    background-image: image(url("/usr/share/wlogout/icons/suspend.png"), url("/usr/local/share/wlogout/icons/suspend.png"));
+}
+
+#hibernate {
+    background-image: image(url("/usr/share/wlogout/icons/hibernate.png"), url("/usr/local/share/wlogout/icons/hibernate.png"));
+}
+
+#shutdown {
+    background-image: image(url("/usr/share/wlogout/icons/shutdown.png"), url("/usr/local/share/wlogout/icons/shutdown.png"));
+}
+
+#reboot {
+    background-image: image(url("/usr/share/wlogout/icons/reboot.png"), url("/usr/local/share/wlogout/icons/reboot.png"));
+}
