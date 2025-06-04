@@ -891,6 +891,11 @@ hyprland_packages=(
     "ttf-nerd-fonts-symbols"
     "ttf-nerd-fonts-symbols-common"
     "cava"
+    "breeze"
+    "breeze5"
+    "breeze-gtk"
+    "qt5ct"
+    "qt6ct"
     
     # CLI Tools
     "dysk"
@@ -1541,7 +1546,7 @@ configure_sddm_theme() {
     # Configure SDDM to use the theme
     local sddm_conf_dir="/etc/sddm.conf.d"
     local sddm_conf="$sddm_conf_dir/sddm.conf"
-    local default_conf="$HOME/Hyprland_Simple_Setup/system_files/default.conf"
+    local default_conf="$HOME/Hyprland_Simple_Setup/system_files/sddm.conf"
 
     # Create sddm.conf.d directory if it doesn't exist
     if ! execute_command "sudo mkdir -p '$sddm_conf_dir'"; then
@@ -1550,11 +1555,11 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # If default.conf exists, use it as a template
+    # If sddm.conf exists, use it as a template
     if [ -f "$default_conf" ]; then
-        print_message "Using default.conf as template..."
+        print_message "Using sddm.conf as template..."
         if ! execute_command "sudo cp '$default_conf' '$sddm_conf'"; then
-            print_error "Failed to copy default.conf to SDDM configuration."
+            print_error "Failed to copy sddm.conf to SDDM configuration."
             track_config_status "SDDM Theme Setup" "$CROSS_MARK"
             return 1
         fi
