@@ -116,6 +116,7 @@ menu {
 }
 #custom-notification {
   font-family: "NotoSansMono Nerd Font";
+  font-size: 16px;
   padding-right: 15px;
 }
 #custom-power {
