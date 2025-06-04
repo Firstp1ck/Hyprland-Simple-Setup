@@ -899,6 +899,7 @@ hyprland_packages=(
     "breeze-gtk"
     "qt5ct"
     "qt6ct"
+    "nwg-look"
     
     # CLI Tools
     "dysk"
