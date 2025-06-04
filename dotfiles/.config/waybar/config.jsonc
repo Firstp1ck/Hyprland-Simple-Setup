@@ -7,50 +7,40 @@
         "custom/menu",
         "tray",
         "hyprland/workspaces",
-        "hyprland/submap"
+        "hyprland/submap",
+        "custom/clipboard"
     ],
     "modules-right": [
         "wlr/taskbar",
         "custom/weather",
-        // "idle_inhibitor",
         "pulseaudio",
         "custom/brightness",
-        // "network",
+        "network",
         "power-profiles-daemon",
-        // "cpu",
-        // "memory",
         "temperature",
         "keyboard-state",
         "battery",
-        "battery#bat2",
         "bluetooth",
         "custom/updates",
         "custom/notification",
         "clock"
+        // Unused Modules
+        // "idle_inhibitor",
+        // "cpu",
+        // "memory",
     ],
     
     // Modules configuration
-
-    "custom/weather": {
-	"format": "{}",
-	"format-alt": "{alt}:{}",
-	"format-alt-click": "click",
-	"interval": 3600,
-	"return-type": "json",
-	"exec": "$HOME/.config/waybar/scripts/weather.py",
-	"tooltip": true,
-    "on-click": "$HOME/.config/waybar/scripts/weather.sh"
-    },
-
     "keyboard-state": {
         "numlock": true,
         "capslock": false,
         "format": "{icon}{name}",
         "format-icons": {
-            "locked": "  ",
-            "unlocked": "  "
+            "locked": " ",
+            "unlocked": " "
         }
     },
+
     "wlr/taskbar": {
         "format": "{icon}",
         "icon-size": 30,
@@ -70,50 +60,31 @@
             "Foot Server": "Terminal"
         }
     },
+
     "hyprland/submap": {
         "format": "<span style=\"italic\">{}</span>"
     },
-    // "hyprland/window": {
-    // "separate-outputs": true
-    // },
-    "sway/scratchpad": {
-        "format": "{icon} {count}",
-        "show-empty": false,
-        "format-icons": ["", ""],
-        "tooltip": true,
-        "tooltip-format": "{app}: {title}"
-    },
-    // "idle_inhibitor": {
-    //     "format": "{icon}",
-    //     "format-icons": {
-    //         "activated": "",
-    //         "deactivated": ""
-    //     }
-    // },
+
     "tray": {
         "icon-size": 21,
         "spacing": 5,
         "show-passive-items": true
     },
+
     "clock": {
         "timezone": "Zurich",
         "format": "{:%a %d %b %Y | %H:%M}",
         "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>",
         "on-click": "~/.config/hypr/scripts/float_calendar.sh"
     },
-    // "cpu": {
-    //     "format": "{usage}% ",
-    //     "tooltip": true
-    // },
-    // "memory": {
-    //     "format": "{}% "
-    // },
+
     "temperature": {
         "critical-threshold": 80,
-        "format": "{temperatureC}°C {icon}",
+        "format": " {temperatureC}°C {icon}",
         "format-icons": ["", "", ""],
         "on-click": "psensor"
     },
+
     "battery": {
         "states": {
             "good": 80,
@@ -125,13 +96,9 @@
         "format-charging": "{capacity}% ",
         "format-plugged": "{capacity}% ",
         "format-alt": "{time} {icon}",
-        // "format-good": "", // An empty format will hide the module
-        // "format-full": "",
         "format-icons": ["", "", "", "", ""]
     },
-    "battery#bat2": {
-        "bat": "BAT2"
-    },
+
     "power-profiles-daemon": {
       "format": "{icon}",
       "tooltip-format": "Power profile: {profile}\nDriver: {driver}",
@@ -141,18 +108,21 @@
         "performance": " Max",
         "balanced": " Mid",
         "power-saver": " Low"
-      }
+        }
     },
-    // "network": {
-    //     "format-wifi": "{essid} ({signalStrength}%) ",
-    //     "format-ethernet": "{ifname} via {gwaddr} /{cidr} 󰊗",
-    //     "tooltip-format": "{ifname} via {gwaddr} ",
-    //     "format-linked": "{ifname} (No IP) ",
-    //     "format-disconnected": "Disconnected ⚠",
-    //     "format-alt": "{ifname}: {ipaddr}/{cidr}",
-    //     "on-click-right": "nm-connection-editor"
-    // },
+
+    "network": {
+        "format-wifi": "{signalStrength}% ",
+        "format-ethernet": "Connected ",
+        "tooltip-format": "{ifname} via {gwaddr} ",
+        "format-linked": "{ifname} (No IP) ",
+        "format-disconnected": "Disconnected ⚠",
+        "format-alt": "{ifname}: {ipaddr}/{cidr}",
+        "on-click-right": "nm-connection-editor"
+    },
+
     "pulseaudio": {
+        "on-click": "pavucontrol",
         "format": "{volume}% {icon} {format_source}",
         "format-bluetooth": "{volume}% {icon} {format_source}",
         "format-bluetooth-muted": " {icon} {format_source}",
@@ -167,38 +137,49 @@
             "portable": "",
             "car": "",
             "default": ["", "", ""]
-        },
-        "on-click": "pavucontrol"
+        }
     },
 
     "bluetooth": {
-        "format": "",  // Font Awesome Bluetooth icon (requires a Nerd Font or Font Awesome)
-        "format-off": "",  // Bluetooth icon with a slash (use a suitable icon for 'off')
-        "format-on": "",   // Icon when Bluetooth is on but not connected
-        "format-connected": " {device_alias}", // Icon and device name when connected
+        "format": "",
+        "format-off": "",
+        "format-on": "",
+        "format-connected": " {device_alias}",
         "format-connected-battery": " {device_alias} {device_battery_percentage}%",
         "tooltip": true,
         "tooltip-format": "Controller: {controller_alias}\nAddress: {controller_address}\nStatus: {status}",
         "tooltip-format-connected": "Controller: {controller_alias}\nAddress: {controller_address}\nConnected: {device_alias} ({device_address})\nBattery: {device_battery_percentage}%",
-        "on-click": "blueman-manager"
+        "on-click": "blueman-manager",
+        "on-click-right": "$HOME/.config/hypr/scripts/toggle_bluetooth.sh"
+    },
+
+    "custom/weather": {
+        "format": "{}",
+        "format-alt": "{alt}:{}",
+        "format-alt-click": "click",
+        "interval": 3600,
+        "return-type": "json",
+        "exec": "$HOME/.config/waybar/scripts/weather.py",
+        "tooltip": true,
+        "on-click": "$HOME/.config/waybar/scripts/weather.sh"
     },
 
     "custom/brightness": {
-        "exec": "ddcutil -b 7 getvcp 10 -t | awk '{print $4}'",
-        "interval": 1,
-        "format": "☀️ {}%",
-        "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
-        "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
-        "menu": "on-click-right",
-        "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
-        "menu-actions": {
-            "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
-            "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
-            "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
-            "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
-            "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
-            }
-        },
+    "exec": "ddcutil -b 7 getvcp 10 -t | awk '{print $4}'",
+    "interval": 1,
+    "format": " {}%",
+    "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
+    "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
+    "menu": "on-click-right",
+    "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
+    "menu-actions": {
+        "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
+        "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
+        "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
+        "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
+        "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
+        }
+    },
 
     "custom/updates": {
         "format": "{}{icon}",
@@ -208,12 +189,7 @@
             "updated": ""
         },
         "exec-if": "which waybar-module-pacman-updates",
-        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
-        "menu": "on-click-right",
-        "menu-file": "~/.config/waybar/update_menu.xml",
-        "menu-actions": {
-            "update": "kitty ~/Dokumente/GitHub/Linux-Setup/Scripts/Start_System_setup.sh --function update_arch"
-            }
+        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace"
     },
 
     "custom/notification": {
@@ -238,17 +214,17 @@
       },
 
     "custom/power": {
-        "format": " ⏻ ",
-        "tooltip": false,
-        "on-click": "wlogout --protocol layer-shell",
-        "menu": "on-click-right",
-        "menu-file": "$HOME/.config/waybar/power_menu.xml", // Menu file in resources folder
-        "menu-actions": {
-            "shutdown": "shutdown",
-            "reboot": "reboot",
-            "suspend": "systemctl suspend",
-            "hibernate": "systemctl hibernate",
-            "logout": "hyprctl dispatch exit"
+    "format": " ⏻ ",
+    "tooltip": false,
+    "on-click": "wlogout --protocol layer-shell",
+    "menu": "on-click-right",
+    "menu-file": "$HOME/.config/waybar/power_menu.xml", // Menu file in resources folder
+    "menu-actions": {
+        "shutdown": "shutdown",
+        "reboot": "reboot",
+        "suspend": "systemctl suspend",
+        "hibernate": "systemctl hibernate",
+        "logout": "hyprctl dispatch exit"
         }
     },
 
@@ -261,8 +237,40 @@
         "menu-file": "$HOME/.config/waybar/options_menu.xml",
         "menu-actions": {
             "keybinds": "~/.config/waybar/scripts/keybinds.py",
+            "drun": "wofi --show drun --style ~/.config/wofi/menu.css",
             "open_keybinds": "kitty nvim ~/.config/hypr/sources/keybindings.conf",
-            "drun": "wofi --show drun --style ~/.config/wofi/menu.css"
+            "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
         }
+    },
+
+    "custom/clipboard": {
+        "format": "󰅌",
+        "exec": "wl-clipboard-history -p",
+        "interval": 5,
+        "on-click": "$HOME/.config/waybar/scripts/clipboard.sh"
     }
 }
+
+// Unused Modules
+    // Shows the window title in the taskbar
+    // "hyprland/window": {
+    // "separate-outputs": true
+    // },
+
+    // Shows Idle Inhibitor Icon
+    // "idle_inhibitor": {
+    //     "format": "{icon}",
+    //     "format-icons": {
+    //         "activated": "",
+    //         "deactivated": ""
+    //     }
+    // },
+
+    // Shows CPU and Memory Usage
+    // "cpu": {
+    //     "format": "{usage}% ",
+    //     "tooltip": true
+    // },
+    // "memory": {
+    //     "format": "{}% "
+    // },

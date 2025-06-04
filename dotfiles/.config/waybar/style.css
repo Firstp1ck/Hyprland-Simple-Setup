@@ -1,42 +1,34 @@
+@define-color primary #96d8ff;
+@define-color background rgba(21, 18, 27, 0.8);
+
+/* All Modules */
 * {
-  border: none;
-  border-radius: 0;
   font-family: "JetBrainsMono Nerd Font";
   font-weight: bold;
-  font-size: 16px;
-  min-height: 0;
-}
-
-window#waybar {
+  font-size: 15px;
   background: rgba(21, 18, 27, 0);
-  color: #cdd6f4;
 }
-
+window#waybar {
+  color: @primary;
+}
 tooltip {
-  background: #1e1e2e;
+  background: @background;
   border-radius: 10px;
   border-width: 10px;
   border-style: solid;
   border-color: #11111b;
 }
+menu menuitem:hover {
+  background-color: rgba(150, 216, 255, 0.1);
+  border-color: @primary;
+}
 
 /* Workspaces */
-#workspaces {
-  background: #1e1e2e;
-  border-radius: 10px;
-}
 #workspaces button {
-  padding-left: 7px;
-  padding-right: 7px;
   color: #313244;
 }
-#workspaces button.active,
-#workspaces button.focused {
-  color: #a6adc8;
-}
-#workspaces button.focused {
-  background: #eba0ac;
-  border-radius: 10px;
+#workspaces button.active {
+  color: @primary;
 }
 #workspaces button.urgent {
   color: #11111b;
@@ -44,20 +36,24 @@ tooltip {
   border-radius: 10px;
 }
 #workspaces button:hover {
-  background: #11111b;
+  background: #010116;
   color: #cdd6f4;
+  border-color: @primary;
   border-radius: 10px;
 }
 
 /* Bar modules */
 #window,
 #workspaces,
+#custom-clipboard,
+#menu,
+#submap,
 #idle_inhibitor,
 #pulseaudio,
 #battery,
 #bluetooth,
 #network,
-#custom-power_profile,
+#power-profiles-daemon,
 #cpu,
 #memory,
 #temperature,
@@ -70,128 +66,110 @@ tooltip {
 #custom-power,
 #custom-weather,
 #custom-menu,
+#custom-razerbattery,
 #wlr-taskbar {
-  background: #1e1e2e;
+  background: @background;
+  font-family: "JetBrainsMono Nerd Font";
   opacity: 1.0;
   padding: 0px 10px;
   margin: 0px 0px;
   margin-top: 5px;
-  border: 1px solid #181825;
+  border: 0.5px solid @primary;
   border-radius: 10px;
 }
 
 /* Individual modules */
-#tray {
+#submap {
+  background-color: rgba(10, 10, 10, 0.8);
+  color: rgba(152, 239, 106, 1);
+}
+menu {
+  background-color: @background;
+  border: 1px solid @primary;
   border-radius: 10px;
-  margin-right: 0px;
-  padding: 0px 10px;
-}
-#idle_inhibitor {
-  color: #95ffff;
-  border-left: 0px;
-  border-right: 0px;
-  padding-right: 17px;
-}
-#pulseaudio,
-#pulseaudio.microphone {
-  color: #96d8ff;
-  border-left: 0px;
-  border-right: 0px;
-  margin-right: 0px;
-}
-#custom-brightness {
-  color: #96d8ff;
-  background: #1e1e2e;
-  border-left: 10px;
-  border-right: 10px;
-  margin-top: 5px;
-  padding: 0px 10px;
-  border-radius: 10px;
-}
-#network {
-  color: #95b1ff;
-  border-left: 0px;
-  border-right: 0px;
-  margin-right: 0px;
-  padding-right: 15px;
-}
-#bluetooth {
-  color: #96d8ff;
 }
 #battery {
   color: #a8ff96;
-  border-radius: 10px;
-  margin-right: 10px;
-  border-left: 5px;
   padding-right: 15px;
 }
-#power-profiles-daemon.performance { color: #96d8ff; }
-#power-profiles-daemon.balanced { color: #9ca6ff; }
-#power-profiles-daemon.power-saver { color: #9a7eff; }
-#power-profiles-daemon {
-  background-color: #1e1e2e;
-  opacity: 1.0;
-  border-radius: 10px;
-  margin-top: 5px;
-  padding: 0px 10px;
+#power-profiles-daemon.performance { 
+  color: @primary; 
 }
-#cpu {
-  color: #96d8ff;
-  border-left: 0px;
-  border-right: 0px;
-  padding-right: 15px;
+#power-profiles-daemon.balanced { 
+  color: #9ca6ff; 
 }
-#memory {
-  color: #96d8ff;
-  border-left: 0px;
-  border-right: 0px;
-  padding-right: 15px;
+#power-profiles-daemon.power-saver { 
+  color: #9a7eff; 
 }
-#temperature { color: #96d8ff; }
-#temperature.critical { color: #ff5874; }
-#keyboard-state {
-  color: #96d8ff;
-  border-left: 0px;
-  border-right: 0px;
-  margin-right: 0px;
-  padding-left: 1px;
+#temperature.critical {
+   color: #ff5874; 
 }
 #clock {
-  color: #96d8ff;
-  margin-left: 0px;
   margin-right: 5px;
-  border-right: 0px;
+}
+#custom-clipboard {
+  padding-left: 11px;
+  padding-right: 12px;
 }
 #custom-updates {
-  background-color: #1e1e2e;
-  border-radius: 10px;
   padding-right: 15px;
-  color: #96d8ff;
 }
 #custom-notification {
   font-family: "NotoSansMono Nerd Font";
-  background-color: #1e1e2e;
-  border-radius: 10px;
-  padding-left: 10px;
-  padding-right: 12px;
-  color: #96d8ff;
+  padding-right: 15px;
 }
 #custom-power {
-  color: #96d8ff;
-  border-radius: 10px;
   margin-left: 5px;
-  margin-right: 0px;
-  border-left: 0px;
-  padding-left: 15px;
-  padding-right: 5px;
+  padding-left: 5px;
+}
+#custom-razerbattery {
+    padding-right: 0px;
+}
+
+/* Not Used CSS Modues, defined with other Modules above */
+#tray {
+/* Add unique CSS Options */
+}
+#workspaces {
+/* Add unique CSS Options */
+}
+#workspaces button.focused {
+/* Add unique CSS Options */
 }
 #custom-weather {
-  color: #96d8ff;
+/* Add unique CSS Options */
 }
 #custom-menu {
-  color: #96d8ff;
-  padding-left: 10px;
-  padding-right: 10px;
-  margin-left: 0px;
-  margin-right: 0px;
+/* Add unique CSS Options */
+}
+#keyboard-state {
+/* Add unique CSS Options */
+}
+#temperature { 
+/* Add unique CSS Options */
+}
+#power-profiles-daemon {
+/* Add unique CSS Options */
+}
+#pulseaudio,
+#pulseaudio.microphone {
+/* Add unique CSS Options */
+}
+#custom-brightness {
+/* Add unique CSS Options */
+}
+#network {
+/* Add unique CSS Options */
+}
+#bluetooth {
+/* Add unique CSS Options */
+}
+#cpu {
+/* Add unique CSS Options */
+}
+#memory {
+/* Add unique CSS Options */
+}
+#idle_inhibitor {
+/* Add unique CSS Options */
 }

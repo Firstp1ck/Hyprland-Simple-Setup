@@ -794,6 +794,7 @@ hyprland_packages=(
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
+    "arch-wiki-docs"
 
     # Installed by "archinstall"-script: Desktop Type
     "dolphin"

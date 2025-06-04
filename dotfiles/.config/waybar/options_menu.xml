@@ -2,33 +2,41 @@
 <interface>
   <object class="GtkMenu" id="menu">
     <child>
-      <object class="GtkMenuItem" id="keybinds">
-        <property name="label">Keybinds</property>
+      <object class="GtkMenuItem" id="drun">
+        <property name="label">Application Launcher</property>
       </object>
     </child>
     <child>
       <object class="GtkSeparatorMenuItem" id="separator1"/>
-    </child>    
+    </child>
     <child>
-      <object class="GtkMenuItem" id="open_keybinds">
-        <property name="label">Open Keybind Config</property>
+      <object class="GtkMenuItem" id="keybinds">
+        <property name="label">View Keybinds</property>
       </object>
     </child>
     <child>
       <object class="GtkSeparatorMenuItem" id="separator2"/>
     </child>
     <child>
-      <object class="GtkMenuItem" id="drun">
-        <property name="label">Application Launcher</property>
-      </object>
-    </child>
-  </object>
-</interface> 
-
-<!--
-    <child>
       <object class="GtkMenuItem" id="open_keybinds">
         <property name="label">Open Keybind Config</property>
       </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator3"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="onedrive_live">
+        <property name="label">Onedrive live view</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator4"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="snapshot">
+        <property name="label">Take Snapshot</property>
+      </object>
     </child> 
--->
+  </object>
+</interface> 
