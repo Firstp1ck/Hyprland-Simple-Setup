@@ -794,6 +794,7 @@ hyprland_packages=(
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
+    "tk"
     "arch-wiki-docs"
 
     # Installed by "archinstall"-script: Desktop Type
@@ -891,6 +892,7 @@ hyprland_packages=(
     "ttf-jetbrains-mono-nerd"
     "ttf-nerd-fonts-symbols"
     "ttf-nerd-fonts-symbols-common"
+    "otf-font-awesome"
     "cava"
     "breeze"
     "breeze5"

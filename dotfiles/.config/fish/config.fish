@@ -5,7 +5,7 @@ end
 set -U fish_greeting ""
 
 # Make scripts executable
-set -l SCRIPTS_DIR $HOME/Dokumente/GitHub/Linux-Setup/Scripts $HOME/.local/scripts $HOME/.local/share/applications $HOME/.config/hypr/scripts $HOME/Dokumente/GitHub/Open-Linux-Setup/Other
+set -l SCRIPTS_DIR $HOME/.local/scripts $HOME/.local/share/applications $HOME/.config/hypr/scripts
 find $SCRIPTS_DIR -type f '(' -name '*.sh' -o -name '*.desktop' ')' -exec chmod +x '{}' ';'
 
 # FZF configuration
