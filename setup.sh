@@ -1541,7 +1541,7 @@ configure_sddm_theme() {
     else
         # Copy the theme to SDDM themes directory
         print_message "Installing SDDM theme..."
-        if ! execute_command "sudo cp -r $downloads_dir/eucalyptus-drop /usr/share/sddm/themes/"; then
+        if ! execute_command "sudo cp -r '$downloads_dir/eucalyptus-drop' /usr/share/sddm/themes/"; then
             print_error "Failed to copy SDDM theme to themes directory."
             track_config_status "SDDM Theme Setup" "$CROSS_MARK"
             return 1
@@ -1551,7 +1551,6 @@ configure_sddm_theme() {
     # Configure SDDM to use the theme
     local sddm_conf_dir="/etc/sddm.conf.d"
     local sddm_conf="$sddm_conf_dir/sddm.conf"
-    local default_conf="$hyprland_setup_dir/system_files/sddm.conf"
 
     # Create sddm.conf.d directory if it doesn't exist
     if ! execute_command "sudo mkdir -p '$sddm_conf_dir'"; then
@@ -1560,19 +1559,9 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # If sddm.conf exists, use it as a template
-    if [ -f "$default_conf" ]; then
-        print_message "Using sddm.conf as template..."
-        if ! execute_command "sudo cp '$default_conf' '$sddm_conf'"; then
-            print_error "Failed to copy sddm.conf to SDDM configuration."
-            track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-            return 1
-        fi
-    fi
-
-    # Update or add the Current theme setting
-    if ! execute_command "sudo sed -i '/^Current=/c\Current=eucalyptus-drop' '$sddm_conf'"; then
-        print_error "Failed to update SDDM theme configuration."
+    # Create or update sddm.conf with the theme configuration
+    if ! execute_command "echo -e '[Theme]\nCurrent=eucalyptus-drop' | sudo tee '$sddm_conf'"; then
+        print_error "Failed to create/update SDDM configuration."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
     fi
