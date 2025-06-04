@@ -1550,7 +1550,7 @@ configure_sddm_theme() {
     # Configure SDDM to use the theme
     local sddm_conf_dir="/etc/sddm.conf.d"
     local sddm_conf="$sddm_conf_dir/sddm.conf"
-    local default_conf="$HOME/Hyprland_Simple_Setup/system_files/sddm.conf"
+    local default_conf="$hyprland_setup_dir/system_files/sddm.conf"
 
     # Create sddm.conf.d directory if it doesn't exist
     if ! execute_command "sudo mkdir -p '$sddm_conf_dir'"; then
