@@ -189,7 +189,8 @@
             "updated": ""
         },
         "exec-if": "which waybar-module-pacman-updates",
-        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace"
+        "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
+        "on-click": "$HOME/.config/waybar/scripts/update.sh"
     },
 
     "custom/notification": {
