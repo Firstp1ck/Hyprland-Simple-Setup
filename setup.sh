@@ -1000,7 +1000,7 @@ aur_extras=(
     "rose-pine-hyprcursor"
     "waybar-module-pacman-updates-git"
     "wlogout"
-    "nerd-fonts-noto-sans-mono"
+    # "nerd-fonts-noto-sans-mono"
 )
 
 install_aur_extras() {
