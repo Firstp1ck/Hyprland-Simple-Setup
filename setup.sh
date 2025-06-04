@@ -637,8 +637,8 @@ check_user_input() {
 
 find_hyprland_setup_dir() {
     # First check the installed package location
-    if [ -d "/usr/share/hyprland-simple-setup" ]; then
-        echo "/usr/share/hyprland-simple-setup"
+    if [ -d "/usr/share/hyprland-simple-setup-git" ]; then
+        echo "/usr/share/hyprland-simple-setup-git"
         return 0
     fi
     
@@ -652,8 +652,9 @@ find_hyprland_setup_dir() {
     
     for path in "${search_paths[@]}"; do
         if [ -d "$path" ]; then
+            # Search for both directory names
             local found_dir
-            found_dir=$(find "$path" -maxdepth 3 -type d -name "Hyprland_Simple_Setup" 2>/dev/null | head -n 1)
+            found_dir=$(find "$path" -maxdepth 3 -type d \( -name "Hyprland_Simple_Setup" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
             if [ -n "$found_dir" ]; then
                 echo "$found_dir"
                 return 0
