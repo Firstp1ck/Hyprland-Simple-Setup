@@ -30,9 +30,9 @@
 
 ## Example Images
 
-![Hyprland Minimal Setup](example_images/minimal_setup_4.png) 
-![Hyprland Minimal Setup](example_images/minimal_setup_5.png)
-![Hyprland Minimal Setup](example_images/minimal_setup_6.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_7.png) 
+![Hyprland Minimal Setup](example_images/minimal_setup_8.png)
+![Hyprland Minimal Setup](example_images/minimal_setup_9.png)
 
 ## Example Terminal and Musik Visualizer
 
