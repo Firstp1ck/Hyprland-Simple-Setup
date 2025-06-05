@@ -15,6 +15,16 @@ set -gx MANPAGER "nvim +Man!"
 set -x PATH /usr/local/bin $PATH
 set -x PATH $PATH $HOME/go/bin
 
-# Scripts Directory
-set -x SCRIPTS_DIR "$HOME/Dokumente/GitHub/Linux-Setup/Scripts:$HOME/Dokumente/GitHub/Open-Linux-Setup/Other:$HOME/.local/scripts:$HOME/.local/share/applications:$HOME/.config/hypr/scripts:$HOME/.config/waybar/scripts"
-set -x PATH "$PATH:$SCRIPTS_DIR" 
+# Script directories
+set LOCAL_SCRIPTS $HOME/.local/scripts
+set LOCAL_APPLICATIONS $HOME/.local/share/applications
+set HYPR_SCRIPTS $HOME/.config/hypr/scripts
+set WAYBAR_SCRIPTS $HOME/.config/waybar/scripts
+
+# Combine all script directories
+set -x SCRIPTS_DIR_PATH "$LOCAL_SCRIPTS:$LOCAL_APPLICATIONS:$HYPR_SCRIPTS:$WAYBAR_SCRIPTS"
+set -x PATH "$PATH:$SCRIPTS_DIR_PATH"
+
+# Make scripts executable
+set -l SCRIPTS_DIR_EXE $LOCAL_SCRIPTS $LOCAL_APPLICATIONS $HYPR_SCRIPTS $WAYBAR_SCRIPTS
+find $SCRIPTS_DIR_EXE -type f '(' -name '*.sh' -o -name '*.desktop' ')' -exec chmod +x '{}' ';'

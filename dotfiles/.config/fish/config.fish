@@ -4,10 +4,6 @@ end
 
 set -U fish_greeting ""
 
-# Make scripts executable
-set -l SCRIPTS_DIR $HOME/.local/scripts $HOME/.local/share/applications $HOME/.config/hypr/scripts
-find $SCRIPTS_DIR -type f '(' -name '*.sh' -o -name '*.desktop' ')' -exec chmod +x '{}' ';'
-
 # FZF configuration
 set -gx FZF_CTRL_T_COMMAND '
     find . -maxdepth 1 -type d ! -name ".*" -printf "%P/\n" | sort
