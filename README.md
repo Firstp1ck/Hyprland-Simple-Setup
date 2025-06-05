@@ -127,12 +127,20 @@ It sets up the following Components/Apps:
 > **Info:** Tested on fresh user and arch installs
 
 1. **Option 1: Install via AUR**
-   ```bash
-   yay -S hyprland-simple-setup-git
-   hyprland-simple-setup-git
-   ```
+   - **Using yay:**
+     ```bash
+     yay -S hyprland-simple-setup-git
+     ```
+   - **Using paru:**
+     ```bash
+     paru -S hyprland-simple-setup-git
+     ```
+   - **After Installation:**
+     ```bash
+     hyprland-simple-setup-git
+     ```
 
-2. **Option 2: Manual Installation**
+2. **Option 2: Installation via Git**
    ```bash
    git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
    cd ~/Hyprland_Simple_Setup
@@ -156,7 +164,7 @@ It sets up the following Components/Apps:
 
 6. **Log out and log in to Hyprland, or start it from a TTY.**
 
-7. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)
+7. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)**
 
 ## Environment Setup
 
