@@ -741,14 +741,14 @@ set_fish_language_config() {
         log_dry_run_operation "set_fish_language_config" "Would update fish language config"
         return 0
     fi
-    local fish_conf="$HOME/dotfiles/.config/fish/config.fish"
+    local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
     local lc_all lang language
 
     case "$FISH_LANGUAGE_CHOICE" in
         1)
             lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
-            language="de_CH:de_DE"
+            language="de_CH:en_US"
             ;;
         2)
             lc_all="de_DE.UTF-8"
@@ -758,19 +758,31 @@ set_fish_language_config() {
         3)
             lc_all="en_US.UTF-8"
             lang="en_US.UTF-8"
-            language="en_US:de_DE"
+            language="en_US:de_CH"
             ;;
         *)
             echo "Invalid selection, using default (de_CH)."
             lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
-            language="de_CH:de_DE"
+            language="de_CH:en_US"
             ;;
     esac
-    execute_command "mkdir -p '$(dirname "$fish_conf")'" "Create fish config directory"
-    execute_command "touch '$fish_conf'" "Touch fish config file"
-    execute_command "sed -i '/^## LANGUAGE SETTINGS START/,/^## LANGUAGE SETTINGS END/d' '$fish_conf'" "Remove old language block in fish config"
-    execute_command "echo '## LANGUAGE SETTINGS START' >> '$fish_conf' && echo 'set -gx LC_ALL \"$lc_all\"' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '## LANGUAGE SETTINGS END' >> '$fish_conf'" "Append new language block to fish config"
+
+    # Check if file exists
+    if [ ! -f "$fish_conf" ]; then
+        print_message "Creating fish config file at $fish_conf"
+        execute_command "mkdir -p '$(dirname "$fish_conf")'" "Create fish config directory"
+        execute_command "touch '$fish_conf'" "Touch fish config file"
+        # Add initial language settings if file is new
+        execute_command "echo '# Language Settings' >> '$fish_conf' && echo 'set -gx LC_ALL \"$lc_all\"' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '' >> '$fish_conf'" "Add initial language settings"
+    else
+        print_message "Updating existing fish config file at $fish_conf"
+        # Replace existing language settings
+        execute_command "sed -i 's/^set -gx LC_ALL .*/set -gx LC_ALL \"$lc_all\"/' '$fish_conf'" "Update LC_ALL"
+        execute_command "sed -i 's/^set -gx LANG .*/set -gx LANG \"$lang\"/' '$fish_conf'" "Update LANG"
+        execute_command "sed -i 's/^set -gx LANGUAGE .*/set -gx LANGUAGE \"$language\"/' '$fish_conf'" "Update LANGUAGE"
+    fi
+
     print_message "Fish language settings updated in $fish_conf"
 }
 
