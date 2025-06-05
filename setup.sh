@@ -36,9 +36,9 @@ FISH_LANGUAGE_CHOICE=""
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
         echo "Select your preferred language setting for Fish Shell:"
-        echo "1) de_CH (Default: LC_ALL=de_CH.UTF-8, LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
-        echo "2) de     (German: LC_ALL=de_DE.UTF-8, LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
-        echo "3) us     (US English: LC_ALL=en_US.UTF-8, LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
+        echo "1) de_CH (Default: LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
+        echo "2) de     (German: LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
+        echo "3) us     (US English: LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
         read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
     fi
 }
@@ -449,10 +449,22 @@ check_yay() {
             return 0
         fi
 
-        # Make sure git is installed
+        # Check for required packages
+        local missing_packages=()
+        if ! pacman -Qq base-devel &>/dev/null; then
+            missing_packages+=("base-devel")
+        fi
+        if ! pacman -Qq debugedit &>/dev/null; then
+            missing_packages+=("debugedit")
+        fi
         if ! command -v git &> /dev/null; then
-            print_message "Installing git and base-devel"
-            distro_install "git base-devel"
+            missing_packages+=("git")
+        fi
+
+        # Install missing packages if any
+        if [ ${#missing_packages[@]} -gt 0 ]; then
+            print_message "Installing required packages: ${missing_packages[*]}"
+            distro_install "${missing_packages[@]}"
         fi
 
         # Clone the yay repo and build it
@@ -483,7 +495,7 @@ check_disk_space() {
 }
 
 check_dependencies() {
-    local deps=("git" "sudo")
+    local deps=("git" "sudo" "base-devel" "debugedit")
     local missing_deps=()
 
     for dep in "${deps[@]}"; do
@@ -751,27 +763,23 @@ set_fish_language_config() {
         return 0
     fi
     local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
-    local lc_all lang language
+    local lang language
 
     case "$FISH_LANGUAGE_CHOICE" in
         1)
-            lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
             language="de_CH:en_US"
             ;;
         2)
-            lc_all="de_DE.UTF-8"
             lang="de_DE.UTF-8"
             language="de_DE:en_US"
             ;;
         3)
-            lc_all="en_US.UTF-8"
             lang="en_US.UTF-8"
             language="en_US:de_CH"
             ;;
         *)
             echo "Invalid selection, using default (de_CH)."
-            lc_all="de_CH.UTF-8"
             lang="de_CH.UTF-8"
             language="de_CH:en_US"
             ;;
@@ -783,11 +791,10 @@ set_fish_language_config() {
         execute_command "mkdir -p '$(dirname "$fish_conf")'" "Create fish config directory"
         execute_command "touch '$fish_conf'" "Touch fish config file"
         # Add initial language settings if file is new
-        execute_command "echo '# Language Settings' >> '$fish_conf' && echo 'set -gx LC_ALL \"$lc_all\"' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '' >> '$fish_conf'" "Add initial language settings"
+        execute_command "echo '# Language Settings' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '' >> '$fish_conf'" "Add initial language settings"
     else
         print_message "Updating existing fish config file at $fish_conf"
         # Replace existing language settings
-        execute_command "sed -i 's/^set -gx LC_ALL .*/set -gx LC_ALL \"$lc_all\"/' '$fish_conf'" "Update LC_ALL"
         execute_command "sed -i 's/^set -gx LANG .*/set -gx LANG \"$lang\"/' '$fish_conf'" "Update LANG"
         execute_command "sed -i 's/^set -gx LANGUAGE .*/set -gx LANGUAGE \"$language\"/' '$fish_conf'" "Update LANGUAGE"
     fi

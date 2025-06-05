@@ -144,7 +144,6 @@ if [ -d "$SCRIPTS_DIR" ]; then
 fi
 
 # Language settings
-export LC_ALL="de_CH.UTF-8"
 export LANG="de_CH.UTF-8"
 export LANGUAGE=de_CH:en_US
 

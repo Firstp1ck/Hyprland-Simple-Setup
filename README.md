@@ -126,6 +126,17 @@ It sets up the following Components/Apps:
 
 > **Info:** Tested on fresh user and arch installs
 
+0. **Install yay (AUR Helper)**
+   ```bash
+   # Check for dependencies
+   sudo pacman -S git base-devel
+   
+   # Clone and install yay
+   git clone https://aur.archlinux.org/yay.git
+   cd yay
+   makepkg -si
+   ```
+
 1. **Option 1: Install via AUR**
    - **Using yay:**
      ```bash
@@ -349,7 +360,6 @@ This script automatically updates Pacman, installs the necessary packages, and c
    - **Environment Variables:**  
      Check `~/.config/fish/config.fish` for correct language settings:
      ```fish
-     set -gx LC_ALL de_CH.UTF-8  # Change to your locale
      set -gx LANG de_CH.UTF-8    # Change to your locale
      set -gx LANGUAGE de_CH:en_US # Change to your language preferences
      ```

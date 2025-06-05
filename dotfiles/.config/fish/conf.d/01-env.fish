@@ -1,5 +1,4 @@
 # Language Settings
-set -gx LC_ALL de_CH.UTF-8
 set -gx LANG de_CH.UTF-8
 set -gx LANGUAGE de_CH:en_US
 
