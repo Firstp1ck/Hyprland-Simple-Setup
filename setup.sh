@@ -1595,9 +1595,87 @@ configure_sddm_theme() {
     track_config_status "SDDM Theme Setup" "$CHECK_MARK"
 }
 
+user_confirmation() {
+    echo -e "\n${GREEN}=== Hyprland Setup Overview ===${NC}\n"
+    
+    echo -e "${YELLOW}1. Backup Configuration${NC}"
+    echo "   • Creates backup of entire .config directory"
+    echo "   • Backup will be stored in: ~/.config.bak.[timestamp]"
+    
+    echo -e "\n${YELLOW}2. Package Installation${NC}"
+    echo "   • Core Hyprland packages:"
+    echo "     - waybar, hyprpaper, hyprcursor, hyprlock, hypridle"
+    echo "     - hyprpolkitagent, hyprpicker, wl-clipboard"
+    echo "   • Desktop Environment:"
+    echo "     - dolphin, dunst, kitty, polkit-kde-agent"
+    echo "     - qt5/6-wayland, slurp, wofi"
+    echo "   • Graphics & Display:"
+    echo "     - mesa, vulkan drivers, xorg-server"
+    echo "     - various video drivers (intel, amd, nvidia)"
+    echo "   • System Tools:"
+    echo "     - pipewire (audio), sddm (login manager)"
+    echo "     - linux kernel and firmware"
+    echo "   • File Management:"
+    echo "     - xdg-user-dirs, git, fd, fzf, stow"
+    echo "     - nvim, ark, 7zip, timeshift"
+    echo "   • Shell & Terminal:"
+    echo "     - fish shell with language configuration"
+    echo "     - various CLI tools (bat, lsd, btop, etc.)"
+    echo "   • AUR Packages:"
+    echo "     - xwaylandvideobridge, hyprshot, waypaper"
+    echo "     - visual-studio-code-bin, github-desktop"
+    echo "     - various Hyprland-related tools"
+    
+    echo -e "\n${YELLOW}3. Environment Configuration${NC}"
+    echo "   • Fish Shell Setup:"
+    echo "     - Set as default shell"
+    echo "     - Configure language settings"
+    echo "     - Install fzf integration"
+    echo "   • Editor Configuration:"
+    echo "     - Set nvim as default editor"
+    echo "   • Network Setup:"
+    echo "     - Configure NetworkManager"
+    echo "     - Setup WiFi and Bluetooth"
+    echo "   • Security:"
+    echo "     - Configure gnome-keyring"
+    echo "     - Setup file picker integration"
+    
+    echo -e "\n${YELLOW}4. System Settings${NC}"
+    echo "   • Update pacman mirrors:"
+    echo "     - Configure fastest mirrors from DE, CH, AT"
+    echo "     - Sort by download speed"
+    echo "   • Package cache cleanup"
+    echo "   • Display Manager:"
+    echo "     - Configure SDDM with Eucalyptus Drop theme"
+    echo "   • Boot Configuration:"
+    echo "     - Setup grub-btrfsd (if using GRUB and BTRFS)"
+    echo "     - Setup Timeshift for system snapshots"
+    echo "   • System Maintenance:"
+    echo "     - Configure pacman color and ILoveCandy"
+    echo "   • Monitor Configuration:"
+    echo "     - Setup display settings"
+    echo "     - Configure workspace distribution across monitors"
+    echo "     - Setup wallpaper configuration"
+    
+    echo -e "\n${YELLOW}5. End Report${NC}"
+
+    echo "   • System status verification"
+    echo "   • Installation summary report"
+    echo "   • Create Log file in $HOME"
+    
+    echo -e "\n${RED}Note:${NC} This script will modify system settings and install packages."
+    echo "      A backup of your configuration will be created before making changes."
+    
+    if ! prompt_yes_no "Do you want to proceed with the installation?"; then
+        print_error "Installation aborted by user"
+        exit 1
+    fi
+}
+
 ##############################################################
 # Main Execution Flow
 ##############################################################
+
 main() {
     print_message "Starting Hyprland Setup..."
 
@@ -1717,4 +1795,5 @@ if [ "$CONFIGURE_SDDM_ONLY" = true ]; then
     exit 0
 fi
 
+user_confirmation
 main
