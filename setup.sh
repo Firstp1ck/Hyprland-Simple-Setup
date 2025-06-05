@@ -711,6 +711,15 @@ update_configs() {
         execute_command "mkdir -p '$hypr_config_dir/sources'" "Create sources directory"
     fi
 
+    # Update app_variables.conf to use hyprland_setup_dir instead of ~
+    local app_vars_conf="$hypr_config_dir/sources/app_variables.conf"
+    if [ -f "$app_vars_conf" ]; then
+        print_message "Updating wallpaper path in app_variables.conf..."
+        execute_command "sed -i 's|\\\$wallpaper=~/Hyprland_Simple_Setup/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g' '$app_vars_conf'" "Update wallpaper path in app_variables.conf"
+    else
+        print_warning "app_variables.conf not found at $app_vars_conf"
+    fi
+
     # Run stow script after copying sources_example
     if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
         print_message "Setting up dotfiles with Start_stow_solve.sh..."
