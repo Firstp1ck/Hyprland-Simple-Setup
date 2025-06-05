@@ -1674,6 +1674,7 @@ user_confirmation() {
     
     echo -e "\n${RED}Note:${NC} This script will modify system settings and install packages."
     echo "      A backup of your configuration will be created before making changes."
+    echo "      The Script will run about 7 minutes to complete and will prompt you for monitor setup. Afterwards the system will log you out"
     
     if ! prompt_yes_no "Do you want to proceed with the installation?"; then
         print_error "Installation aborted by user"
