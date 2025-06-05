@@ -124,7 +124,15 @@ It sets up the following Components/Apps:
 
 ### Quick Start
 
-1. **Clones the repository into your home directory and runs the setup script.**
+> **Info:** Tested on fresh user and arch installs
+
+1. **Option 1: Install via AUR**
+   ```bash
+   yay -S hyprland-simple-setup-git
+   hyprland-simple-setup-git
+   ```
+
+2. **Option 2: Manual Installation**
    ```bash
    git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
    cd ~/Hyprland_Simple_Setup
@@ -136,19 +144,19 @@ It sets up the following Components/Apps:
      - Verify installations
      - Guide you through configuration steps
 
-2. If you add new configuration files add them to the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
+3. If you add new configuration files add them to the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
 
-3. **Deploy dotfiles using GNU stow:**
+4. **Deploy dotfiles using GNU stow:**
    ```bash
    cd ~/Hyprland_Simple_Setup/dotfiles
    bash .local/scripts/Start_stow_solve.sh
    ```
 
-4. **Edit configuration files as needed (see below for modular config structure).**
+5. **Edit configuration files as needed (see below for modular config structure).**
 
-5. **Log out and log in to Hyprland, or start it from a TTY.**
+6. **Log out and log in to Hyprland, or start it from a TTY.**
 
-6. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)
+7. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)
 
 ## Environment Setup
 

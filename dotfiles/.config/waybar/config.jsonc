@@ -216,7 +216,6 @@
 
     "custom/power": {
     "format": " ⏻ ",
-    "tooltip": false,
     "on-click": "wlogout --protocol layer-shell",
     "menu": "on-click-right",
     "menu-file": "$HOME/.config/waybar/power_menu.xml", // Menu file in resources folder
