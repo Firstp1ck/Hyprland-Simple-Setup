@@ -30,6 +30,7 @@ config_statuses=()
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
+SETUP_DIR=Hyprland-Simple-Setup
 
 ############################################################## Helper Functions ##############################################################
 
@@ -627,11 +628,11 @@ validate_wallpaper_dir() {
 
 # Function to check and prompt user input for required variables
 check_user_input() {
-    # Find Hyprland_Simple_Setup directory first
+    # Find Hyprland-Simple-Setup directory first
     local hyprland_setup_dir
     hyprland_setup_dir=$(find_hyprland_setup_dir)
     if [ -z "$hyprland_setup_dir" ]; then
-        print_error "Could not find Hyprland_Simple_Setup directory"
+        print_error "Could not find $SETUP_DIR directory"
         return 1
     fi
 
@@ -666,7 +667,7 @@ find_hyprland_setup_dir() {
         if [ -d "$path" ]; then
             # Search for both directory names
             local found_dir
-            found_dir=$(find "$path" -maxdepth 3 -type d \( -name "Hyprland_Simple_Setup" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
+            found_dir=$(find "$path" -maxdepth 3 -type d \( -name "$SETUP_DIR" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
             if [ -n "$found_dir" ]; then
                 echo "$found_dir"
                 return 0
@@ -684,11 +685,11 @@ update_configs() {
         return 0
     fi
 
-    # Find Hyprland_Simple_Setup directory
+    # Find Hyprland-Simple-Setup directory
     local hyprland_setup_dir
     hyprland_setup_dir=$(find_hyprland_setup_dir)
     if [ -z "$hyprland_setup_dir" ]; then
-        print_error "Could not find Hyprland_Simple_Setup directory"
+        print_error "Could not find $SETUP_DIR directory"
         track_config_status "Dotfiles Setup" "$CROSS_MARK"
         return 1
     fi
@@ -727,7 +728,7 @@ update_configs() {
     local app_vars_conf="$hypr_config_dir/sources/app_variables.conf"
     if [ -f "$app_vars_conf" ]; then
         print_message "Updating wallpaper path in app_variables.conf..."
-        execute_command "sed -i 's|\\\$wallpaper=~/Hyprland_Simple_Setup/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g' '$app_vars_conf'" "Update wallpaper path in app_variables.conf"
+        execute_command "sed -i 's|\\\$wallpaper=~/$SETUP_DIR/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g' '$app_vars_conf'" "Update wallpaper path in app_variables.conf"
     else
         print_warning "app_variables.conf not found at $app_vars_conf"
     fi
@@ -1361,9 +1362,9 @@ configure_monitor() {
         local primary_monitor=""
         local primary_width=""
         local configured_monitors=()
-        # local monitors_conf_file="${HOME}/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/hypr/sources_example/monitors.conf"
+        # local monitors_conf_file="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/monitors.conf"
         local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
-        # local wallpaper_conf="${HOME}/Dokumente/GitHub/Hyprland_Simple_Setup/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
+        # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
         local wallpaper_conf="${HOME}/.config/hypr/sources/change_wallpaper.conf"
 
         # Function to get available modes for a monitor

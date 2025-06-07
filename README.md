@@ -153,8 +153,8 @@ It sets up the following Components/Apps:
 
 2. **Option 2: Installation via Git**
    ```bash
-   git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
-   cd ~/Hyprland_Simple_Setup
+   git clone https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
+   cd ~/Hyprland-Simple-Setup
    ./setup.sh
    ```
    - The script will:
@@ -167,7 +167,7 @@ It sets up the following Components/Apps:
 
 4. **Deploy dotfiles using GNU stow:**
    ```bash
-   cd ~/Hyprland_Simple_Setup/dotfiles
+   cd ~/Hyprland-Simple-Setup/dotfiles
    bash .local/scripts/Start_stow_solve.sh
    ```
 
@@ -217,7 +217,7 @@ It sets up the following Components/Apps:
 
 To install and configure Hyprland along with its dependencies, run:
 ```bash
-cd ~/Hyprland_Simple_Setup
+cd ~/Hyprland-Simple-Setup
 ./setup.sh
 ```
 This script automatically updates Pacman, installs the necessary packages, and configures Hyprland tools.
@@ -324,11 +324,11 @@ This script automatically updates Pacman, installs the necessary packages, and c
 
 1. Clone or copy this repository to your machine.
   ```bash
-  git clone https://github.com/firstp1ck/Hyprland_Simple_Setup.git ~/Hyprland_Simple_Setup
+  git clone https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
   ```
 2. Copy the dotfiles to the Home directory
   ```bash
-  cd ~/Hyprland_Simple_Setup
+  cd ~/Hyprland-Simple-Setup
   cp dotfiles/ ~/dotfiles
   ```
 
