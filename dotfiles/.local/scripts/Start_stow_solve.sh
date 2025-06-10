@@ -55,7 +55,7 @@ if ! command -v stow >/dev/null 2>&1; then
     exit 1
 fi
 
-# Set DOTFILES_DIR to /home/firstpick/dotfiles
+# Set DOTFILES_DIR to ~/dotfiles
 DOTFILES_DIR="$HOME/dotfiles"
 log "INFO" "Using dotfiles directory: $DOTFILES_DIR"
 
@@ -87,7 +87,7 @@ while IFS= read -r relpath; do
     # Skip empty lines
     [ -z "$relpath" ] && continue
     
-    # Remove the username prefix if it exists (e.g., "firstpick/")
+    # Remove the username prefix if it exists (e.g., "username/")
     cleaned_path=${relpath#*/}
     log "DEBUG" "Processing potential symlink: $cleaned_path"
     
