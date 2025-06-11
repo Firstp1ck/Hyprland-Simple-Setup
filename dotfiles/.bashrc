@@ -211,7 +211,4 @@ export QT_QPA_PLATFORM=wayland
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 export XDG_CURRENT_DESKTOP=Hyprland
 
-export ONEDRIVE_HTTP_PROTOCOL=HTTP/1.1
-export ONEDRIVE_IP_VERSION=4
-
 [ -f ~/.fzf.bash ] && source ~/.fzf.bash

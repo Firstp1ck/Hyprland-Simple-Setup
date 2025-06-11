@@ -26,14 +26,6 @@
       <object class="GtkSeparatorMenuItem" id="separator3"/>
     </child>
     <child>
-      <object class="GtkMenuItem" id="onedrive_live">
-        <property name="label">Onedrive live view</property>
-      </object>
-    </child>
-    <child>
-      <object class="GtkSeparatorMenuItem" id="separator4"/>
-    </child>
-    <child>
       <object class="GtkMenuItem" id="snapshot">
         <property name="label">Take Snapshot</property>
       </object>

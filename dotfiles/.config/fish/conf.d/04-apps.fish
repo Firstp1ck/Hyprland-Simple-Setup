@@ -20,7 +20,3 @@ set -x QT_QPA_PLATFORM wayland
 # Hyprland DBus
 set -x DBUS_SESSION_BUS_ADDRESS "unix:path=$XDG_RUNTIME_DIR/bus"
 set -x XDG_CURRENT_DESKTOP Hyprland
-
-# Onedrive Connection Settings
-set -x ONEDRIVE_HTTP_PROTOCOL HTTP/1.1
-set -x ONEDRIVE_IP_VERSION 4 
