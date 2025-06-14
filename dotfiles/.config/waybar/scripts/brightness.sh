@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Usage: brightness.sh +10  (or -10, or 50 for absolute)
-for bus in 7 8; do
+for bus in 8 9; do
     if [[ "$1" =~ ^[+-] ]]; then
         # Get current brightness
         current=$(ddcutil -b $bus getvcp 10 -t | awk '{print $4}')

@@ -165,7 +165,7 @@
     },
 
     "custom/brightness": {
-    "exec": "ddcutil -b 7 getvcp 10 -t | awk '{print $4}'",
+    "exec": "ddcutil -b 8 getvcp 10 -t | awk '{print $4}'",
     "interval": 1,
     "format": " {}%",
     "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
