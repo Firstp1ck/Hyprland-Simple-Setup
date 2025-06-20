@@ -14,7 +14,7 @@
         "wlr/taskbar",
         "custom/weather",
         "pulseaudio",
-        "custom/brightness",
+        // "custom/brightness",
         "network",
         "power-profiles-daemon",
         "temperature",
@@ -164,22 +164,23 @@
         "on-click": "$HOME/.config/waybar/scripts/weather.sh"
     },
 
-    "custom/brightness": {
-    "exec": "ddcutil -b 8 getvcp 10 -t | awk '{print $4}'",
-    "interval": 1,
-    "format": " {}%",
-    "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
-    "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
-    "menu": "on-click-right",
-    "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
-    "menu-actions": {
-        "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
-        "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
-        "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
-        "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
-        "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
-        }
-    },
+    // TODO: Could lead to freezes and crashes due to ddcutil checking monitors through a loop
+    // "custom/brightness": {
+    // "exec": "ddcutil -b 8 getvcp 10 -t | awk '{print $4}'",
+    // "interval": 1,
+    // "format": " {}%",
+    // "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
+    // "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
+    // "menu": "on-click-right",
+    // "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
+    // "menu-actions": {
+    //     "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
+    //     "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
+    //     "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
+    //     "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
+    //     "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
+    //     }
+    // },
 
     "custom/updates": {
         "format": "{}{icon}",
