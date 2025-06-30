@@ -4,6 +4,9 @@
 # shellcheck disable=SC2012
 # Use find instead of ls to better handle non-alphanumeric filenames.
 
+# shellcheck disable=SC1091
+# Not following: /etc/os-release: openBinaryFile: does not exist (No such file or directory)
+
 ##############################################################
 # Hyprland Setup Script
 # Based on your Start_system_setup.sh, this script installs
