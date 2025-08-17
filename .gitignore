@@ -13,3 +13,4 @@ pkg/
 src/
 dotfiles/.config/hypr/sources
 RELEASE.md
+.DS_Store
