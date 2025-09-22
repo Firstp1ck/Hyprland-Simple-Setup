@@ -188,6 +188,28 @@ distro_install() {
     esac
 }
 
+# Check if all packages of a pacman group are installed (e.g., base-devel)
+is_pacman_group_installed() {
+    local group="$1"
+    # Only applicable on Arch-based systems with pacman
+    if ! command -v pacman >/dev/null 2>&1; then
+        return 1
+    fi
+    # Get group members
+    local pkgs
+    pkgs=$(pacman -Sgq "$group" 2>/dev/null) || return 1
+    # If no packages found for the group, treat as not installed
+    [ -z "$pkgs" ] && return 1
+    # Verify each package is installed
+    local pkg
+    for pkg in $pkgs; do
+        if ! pacman -Qq "$pkg" &>/dev/null; then
+            return 1
+        fi
+    done
+    return 0
+}
+
 ############################################################## Verbosity and Error Handling Functions ##############################################################
 
 print_verbose() {
@@ -455,10 +477,10 @@ check_yay() {
 
         # Check for required packages
         local missing_packages=()
-        if ! pacman -Qq base-devel &>/dev/null; then
+        if ! is_pacman_group_installed "base-devel"; then
             missing_packages+=("base-devel")
         fi
-        if ! pacman -Qq debugedit &>/dev/null; then
+        if ! command -v debugedit &>/dev/null; then
             missing_packages+=("debugedit")
         fi
         if ! command -v git &> /dev/null; then
@@ -499,14 +521,21 @@ check_disk_space() {
 }
 
 check_dependencies() {
-    local deps=("git" "sudo" "base-devel" "debugedit")
+    local deps_cmds=("git" "sudo" "debugedit")
     local missing_deps=()
 
-    for dep in "${deps[@]}"; do
+    for dep in "${deps_cmds[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             missing_deps+=("$dep")
         fi
     done
+
+    # Properly verify pacman group base-devel instead of using command -v
+    if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
+        if ! is_pacman_group_installed "base-devel"; then
+            missing_deps+=("base-devel")
+        fi
+    fi
 
     # Check for yay
     if ! command -v yay >/dev/null 2>&1; then
@@ -753,9 +782,16 @@ update_configs() {
     fi
 
     # Update the wallpaper configuration file
-    local wallpaper_conf="$HOME/dotfiles/.config/hypr/sources/change_wallpaper.conf"
+    # Use the active runtime config under ~/.config; if symlinked to dotfiles, it will update there too
+    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
     execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory"
-    execute_command "echo '# Wallpaper Configuration' > '$wallpaper_conf' && echo 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'" "Write wallpaper config"
+    # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
+    if [ -f "$wallpaper_conf" ]; then
+        execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS"
+    else
+        # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
+        execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config"
+    fi
     
     print_message "Configuration files updated with user input."
 }
@@ -832,7 +868,6 @@ hyprland_packages=(
 
     # Installed by "archinstall"-script: Desktop Type
     "dolphin"
-    "dunst"
     "grim"
     "htop"
     "hyprland"
@@ -1019,7 +1054,7 @@ install_pacman_packages() {
 
 # Array of AUR packages
 aur_extras=(
-    "xwaylandvideobridge-git"
+    "xwaylandvideobridge"
     "hyprshot"
     "visual-studio-code-bin"
     "lsplug"
@@ -1487,7 +1522,7 @@ configure_monitor() {
         # Update workspace assignments in monitors.conf
         awk -F, -v p="$primary" -v s="$secondary" 'BEGIN { OFS="," }
             /^workspace=/ {
-                split($1, arr, "=");
+                split($1, arr, "");
                 ws=arr[2];
                 if (ws % 2 == 1) { $2="monitor:" s } else { $2="monitor:" p }
                 print
@@ -1626,7 +1661,7 @@ user_confirmation() {
     echo "     - waybar, hyprpaper, hyprcursor, hyprlock, hypridle"
     echo "     - hyprpolkitagent, hyprpicker, wl-clipboard"
     echo "   • Desktop Environment:"
-    echo "     - dolphin, dunst, kitty, polkit-kde-agent"
+    echo "     - dolphin, swaync, kitty, polkit-kde-agent"
     echo "     - qt5/6-wayland, slurp, wofi"
     echo "   • Graphics & Display:"
     echo "     - mesa, vulkan drivers, xorg-server"
@@ -1761,6 +1796,9 @@ main() {
     configure_fish
     configure_environment
     configure_network_manager
+
+
+
     configure_wifi
     configure_bluetooth
     configure_gnome_keyring

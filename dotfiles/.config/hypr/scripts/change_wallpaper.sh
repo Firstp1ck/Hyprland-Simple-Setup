@@ -2,19 +2,42 @@
 
 # shellcheck disable=SC1090
 
-# Load system-specific configuration file
-CONFIG_FILE="${HOME}/dotfiles/.config/hypr/sources/change_wallpaper.conf"
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
+# Load system-specific configuration file (prefer runtime config)
+CONFIG_FILE_RUNTIME="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+CONFIG_FILE_DOTFILES="${HOME}/dotfiles/.config/hypr/sources/change_wallpaper.conf"
+if [ -f "$CONFIG_FILE_RUNTIME" ]; then
+    CONFIG_FILE="$CONFIG_FILE_RUNTIME"
+elif [ -f "$CONFIG_FILE_DOTFILES" ]; then
+    CONFIG_FILE="$CONFIG_FILE_DOTFILES"
 else
-    echo "Config file not found: $CONFIG_FILE"
+    echo "Config file not found in ~/.config or dotfiles"
     exit 1
 fi
+source "$CONFIG_FILE"
 
 # Ensure hyprpaper is running
 if ! hyprctl clients | grep -q hyprpaper; then
   hyprpaper &
-  sleep 0.3 # Allow socket initialization
+  sleep 1.0 # Allow socket initialization
+fi
+
+# Auto-detect monitors if MONITORS is unset, empty, or contains placeholder
+if [ -z "${MONITORS+x}" ] || [ ${#MONITORS[@]} -eq 0 ] || printf '%s' "${MONITORS[*]}" | grep -q "^MONITOR$"; then
+  readarray -t DETECTED_MONITORS < <(hyprctl monitors | awk '/^Monitor/{print $2}')
+  if [ ${#DETECTED_MONITORS[@]} -eq 0 ]; then
+    echo "No monitors detected via hyprctl"
+    exit 1
+  fi
+  MONITORS=("${DETECTED_MONITORS[@]}")
+  # Persist detected monitors back into the config, preserving other lines
+  TMPCFG=$(mktemp)
+  if grep -q '^MONITORS=' "$CONFIG_FILE"; then
+    awk -v repl="MONITORS=(\"${MONITORS[*]}\")" '{if ($0 ~ /^MONITORS=/) print repl; else print}' "$CONFIG_FILE" > "$TMPCFG"
+  else
+    cat "$CONFIG_FILE" > "$TMPCFG"
+    printf '\nMONITORS=("%s")\n' "${MONITORS[*]}" >> "$TMPCFG"
+  fi
+  mv "$TMPCFG" "$CONFIG_FILE"
 fi
 
 # Get current wallpaper (if any)
