@@ -506,7 +506,8 @@ check_yay() {
 
         # Check for required packages
         local missing_packages=()
-        if ! is_pacman_group_installed "base-devel"; then
+        # Simple base-devel presence check (handles modern Arch where it's a meta-package)
+        if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
             missing_packages+=("base-devel")
         fi
         if ! command -v debugedit &>/dev/null; then
@@ -559,10 +560,10 @@ check_dependencies() {
         fi
     done
 
-    # Determine Arch-based and check base-devel group properly
+    # Determine Arch-based and check base-devel via pacman -Qq
     local need_base_devel=false
     if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
-        if ! is_pacman_group_installed "base-devel"; then
+        if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
             need_base_devel=true
         fi
     fi
@@ -593,7 +594,7 @@ check_dependencies() {
     done
     need_base_devel=false
     if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
-        if ! is_pacman_group_installed "base-devel"; then
+        if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
             need_base_devel=true
         fi
     fi
