@@ -393,8 +393,9 @@ verify_installed_packages() {
     fi
 
     local missing_packages=()
+    local missing_pacman=()
+    local missing_aur=()
     local total_checked=0
-    local total_missing=0
 
     # Check standard packages
     if [ -n "$user_pkg_file" ]; then
@@ -406,7 +407,7 @@ verify_installed_packages() {
             ((total_checked++))
             if ! pacman -Qi "$package" &>/dev/null; then
                 missing_packages+=("$package (Pacman)")
-                ((total_missing++))
+                missing_pacman+=("$package")
             fi
         done < "$user_pkg_file"
     fi
@@ -421,9 +422,37 @@ verify_installed_packages() {
             ((total_checked++))
             if ! pacman -Qi "$package" &>/dev/null; then
                 missing_packages+=("$package (AUR)")
-                ((total_missing++))
+                missing_aur+=("$package")
             fi
         done < "$aur_pkg_file"
+    fi
+
+    # Attempt auto-install of missing packages (Arch-based only)
+    if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
+        if [ ${#missing_pacman[@]} -gt 0 ] || [ ${#missing_aur[@]} -gt 0 ]; then
+            print_warning "Found missing packages. Attempting to install them automatically."
+            if [ ${#missing_pacman[@]} -gt 0 ]; then
+                execute_command "sudo pacman -S --needed --noconfirm ${missing_pacman[*]}" "Install missing repo packages"
+            fi
+            if [ ${#missing_aur[@]} -gt 0 ]; then
+                check_yay
+                execute_command "yay -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
+            fi
+
+            # Re-verify post-install
+            local still_missing=()
+            for pkg in "${missing_pacman[@]}"; do
+                if ! pacman -Qi "$pkg" &>/dev/null; then
+                    still_missing+=("$pkg (Pacman)")
+                fi
+            done
+            for pkg in "${missing_aur[@]}"; do
+                if ! pacman -Qi "$pkg" &>/dev/null; then
+                    still_missing+=("$pkg (AUR)")
+                fi
+            done
+            missing_packages=("${still_missing[@]}")
+        fi
     fi
 
     # Report results
@@ -432,7 +461,7 @@ verify_installed_packages() {
         print_message "Total packages checked: $total_checked"
         track_config_status "Package Verification" "$CHECK_MARK"
     else
-        print_warning "Missing packages ($total_missing out of $total_checked total packages):"
+        print_warning "Missing packages (${#missing_packages[@]} out of $total_checked total packages):"
         printf '\n%s\n' "Missing Packages:"
         printf '=====================================\n'
         printf '%s\n' "${missing_packages[@]}" | column
@@ -522,22 +551,59 @@ check_disk_space() {
 
 check_dependencies() {
     local deps_cmds=("git" "sudo" "debugedit")
-    local missing_deps=()
+    local missing_cmds=()
 
     for dep in "${deps_cmds[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
-            missing_deps+=("$dep")
+            missing_cmds+=("$dep")
         fi
     done
 
-    # Properly verify pacman group base-devel instead of using command -v
+    # Determine Arch-based and check base-devel group properly
+    local need_base_devel=false
     if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
         if ! is_pacman_group_installed "base-devel"; then
-            missing_deps+=("base-devel")
+            need_base_devel=true
         fi
     fi
 
-    # Check for yay
+    # Install missing core deps first (so building yay works later)
+    local to_install=()
+    if [ ${#missing_cmds[@]} -gt 0 ]; then
+        to_install+=("${missing_cmds[@]}")
+    fi
+    if [ "$need_base_devel" = true ]; then
+        to_install+=("base-devel")
+    fi
+
+    if [ ${#to_install[@]} -gt 0 ]; then
+        print_message "Installing missing dependencies: ${to_install[*]}"
+        if ! distro_install "${to_install[@]}"; then
+            print_error "Failed to install: ${to_install[*]}"
+            exit 1
+        fi
+    fi
+
+    # Re-verify core deps
+    missing_cmds=()
+    for dep in "${deps_cmds[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            missing_cmds+=("$dep")
+        fi
+    done
+    need_base_devel=false
+    if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
+        if ! is_pacman_group_installed "base-devel"; then
+            need_base_devel=true
+        fi
+    fi
+
+    if [ ${#missing_cmds[@]} -gt 0 ] || [ "$need_base_devel" = true ]; then
+        print_error "Missing dependencies after install attempt: ${missing_cmds[*]}${need_base_devel:+ base-devel}"
+        exit 1
+    fi
+
+    # Ensure yay exists (after base-devel/debugedit/git are present)
     if ! command -v yay >/dev/null 2>&1; then
         print_warning "YAY is not installed. Installing YAY..."
         (
@@ -549,11 +615,6 @@ check_dependencies() {
             print_error "Failed to install YAY"
             exit 1
         }
-    fi
-
-    if [ ${#missing_deps[@]} -ne 0 ]; then
-        print_error "Missing dependencies: ${missing_deps[*]}"
-        exit 1
     fi
 }
 
@@ -1649,84 +1710,59 @@ configure_sddm_theme() {
     track_config_status "SDDM Theme Setup" "$CHECK_MARK"
 }
 
-user_confirmation() {
-    echo -e "\n${GREEN}=== Hyprland Setup Overview ===${NC}\n"
-    
-    echo -e "${YELLOW}1. Backup Configuration${NC}"
-    echo "   • Creates backup of entire .config directory"
-    echo "   • Backup will be stored in: ~/.config.bak.[timestamp]"
-    
-    echo -e "\n${YELLOW}2. Package Installation${NC}"
-    echo "   • Core Hyprland packages:"
-    echo "     - waybar, hyprpaper, hyprcursor, hyprlock, hypridle"
-    echo "     - hyprpolkitagent, hyprpicker, wl-clipboard"
-    echo "   • Desktop Environment:"
-    echo "     - dolphin, swaync, kitty, polkit-kde-agent"
-    echo "     - qt5/6-wayland, slurp, wofi"
-    echo "   • Graphics & Display:"
-    echo "     - mesa, vulkan drivers, xorg-server"
-    echo "     - various video drivers (intel, amd, nvidia)"
-    echo "   • System Tools:"
-    echo "     - pipewire (audio), sddm (login manager)"
-    echo "     - linux kernel and firmware"
-    echo "   • File Management:"
-    echo "     - xdg-user-dirs, git, fd, fzf, stow"
-    echo "     - nvim, ark, 7zip, timeshift"
-    echo "   • Shell & Terminal:"
-    echo "     - fish shell with language configuration"
-    echo "     - various CLI tools (bat, lsd, btop, etc.)"
-    echo "   • AUR Packages:"
-    echo "     - xwaylandvideobridge, hyprshot, waypaper"
-    echo "     - visual-studio-code-bin, github-desktop"
-    echo "     - various Hyprland-related tools"
-    
-    echo -e "\n${YELLOW}3. Environment Configuration${NC}"
-    echo "   • Fish Shell Setup:"
-    echo "     - Set as default shell"
-    echo "     - Configure language settings"
-    echo "     - Install fzf integration"
-    echo "   • Editor Configuration:"
-    echo "     - Set nvim as default editor"
-    echo "   • Network Setup:"
-    echo "     - Configure NetworkManager"
-    echo "     - Setup WiFi and Bluetooth"
-    echo "   • Security:"
-    echo "     - Configure gnome-keyring"
-    echo "     - Setup file picker integration"
-    
-    echo -e "\n${YELLOW}4. System Settings${NC}"
-    echo "   • Update pacman mirrors:"
-    echo "     - Configure fastest mirrors from DE, CH, AT"
-    echo "     - Sort by download speed"
-    echo "   • Package cache cleanup"
-    echo "   • Display Manager:"
-    echo "     - Configure SDDM with Eucalyptus Drop theme"
-    echo "   • Boot Configuration:"
-    echo "     - Setup grub-btrfsd (if using GRUB and BTRFS)"
-    echo "     - Setup Timeshift for system snapshots"
-    echo "   • System Maintenance:"
-    echo "     - Configure pacman color and ILoveCandy"
-    echo "   • Monitor Configuration:"
-    echo "     - Setup display settings"
-    echo "     - Configure workspace distribution across monitors"
-    echo "     - Setup wallpaper configuration"
-    
-    echo -e "\n${YELLOW}5. End Report${NC}"
-
-    echo "   • System status verification"
-    echo "   • Installation summary report"
-    echo "   • Create Log file in $HOME"
-    
-    echo -e "\n${RED}Note:${NC} This script will modify system settings and install packages."
-    echo "      A backup of your configuration will be created before making changes."
-    echo "      The Script will run about 7 minutes to complete and will prompt you for monitor setup. Afterwards the system will log you out"
-    
-    if ! prompt_yes_no "Do you want to proceed with the installation?"; then
-        print_error "Installation aborted by user"
-        exit 1
-    fi
+# Restart Waybar to ensure only one instance with latest config is running
+restart_waybar() {
+    announce_step "Restarting Waybar"
+    execute_command "pkill -x waybar || true" "Stop Waybar if running"
+    execute_command "sleep 0.3" "Wait a moment"
+    # Start Waybar detached
+    execute_command "nohup waybar >/dev/null 2>&1 &" "Start Waybar in background"
 }
 
+# Verify configs do not pre-create workspace 11
+verify_workspace_config() {
+    announce_step "Verifying workspace 11 is not forced by config"
+    local issues=0
+    local files=(
+        "$HOME/.config/hypr/sources/monitors.conf"
+        "$HOME/.config/hypr/sources/windows_and_workspaces.conf"
+        "$HOME/dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+        "$HOME/.dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/.dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+        "$HOME/.config/waybar/config"
+        "$HOME/.config/waybar/config.jsonc"
+        "$HOME/.dotfiles/.config/waybar/config"
+        "$HOME/.dotfiles/.config/waybar/config.jsonc"
+    )
+    for f in "${files[@]}"; do
+        [ -f "$f" ] || continue
+        if grep -Eiq '\bworkspace[ =,]+1[1-9]|\bworkspace\s+11\b|\bworkspace=11\b' "$f"; then
+            print_warning "Found explicit workspace 11 mapping in: $f"
+            issues=$((issues+1))
+        fi
+        if [[ "$f" == *"waybar/"* ]] || [[ "$f" == *"waybar"* ]]; then
+            if grep -qi 'persistent_workspaces' "$f" && grep -Eiq '"11"|: 11' "$f"; then
+                print_warning "Waybar persistent_workspaces includes 11 in: $f"
+                issues=$((issues+1))
+            fi
+        fi
+    done
+
+    if [ $issues -eq 0 ]; then
+        print_message "No configuration found that pre-creates workspace 11."
+    else
+        print_warning "Please review the above files and remove workspace 11 entries."
+    fi
+
+    if command -v hyprctl >/dev/null 2>&1; then
+        if hyprctl workspaces -j 2>/dev/null | grep -q '"id": 11'; then
+            print_warning "Workspace 11 currently exists (active or with windows). Switch away and close apps to hide it."
+        else
+            print_message "Workspace 11 is not present in the current Hyprland state."
+        fi
+    fi
+}
 ##############################################################
 # Main Execution Flow
 ##############################################################
@@ -1787,6 +1823,7 @@ main() {
 
     update_arch_mirrors
     update_pacman
+
     update_yay
     remove_cache
     install_pacman_packages
@@ -1811,6 +1848,9 @@ main() {
 
     print_dry_run_summary
     print_status_summary
+
+    restart_waybar
+    verify_workspace_config
 
     print_message "Hyprland setup completed successfully! Reloading Hyprland..."
     hyprctl reload
