@@ -210,6 +210,47 @@ is_pacman_group_installed() {
     return 0
 }
 
+# Detect first Hyprland monitor name from `hyprctl monitors`
+get_first_hypr_monitor() {
+    command -v hyprctl >/dev/null 2>&1 || return 1
+    hyprctl monitors 2>/dev/null | awk '/^Monitor /{print $2; exit}'
+}
+
+# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor
+ensure_wallpaper_monitors() {
+    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    [ -f "$wallpaper_conf" ] || return 0
+
+    # Read existing MONITORS line if any
+    local current_line
+    current_line=$(grep -E '^[[:space:]]*MONITORS=' "$wallpaper_conf" 2>/dev/null || true)
+
+    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR)
+    local need_set=false
+    if [ -z "$current_line" ]; then
+        need_set=true
+    elif echo "$current_line" | grep -q 'MONITOR'; then
+        need_set=true
+    elif echo "$current_line" | grep -q 'MONITORS=()'; then
+        need_set=true
+    fi
+
+    if [ "$need_set" = true ]; then
+        local first_mon
+        first_mon=$(get_first_hypr_monitor || true)
+        if [ -z "$first_mon" ]; then
+            print_warning "Could not auto-detect a monitor via hyprctl; leaving MONITORS unchanged."
+            return 0
+        fi
+        print_message "Auto-detected monitor: $first_mon"
+        if echo "$current_line" | grep -q 'MONITORS='; then
+            execute_command "sed -i -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
+        else
+            execute_command "printf '%s\n' 'MONITORS=(\"$first_mon\")' >> '$wallpaper_conf'" "Append MONITORS to wallpaper config"
+        fi
+    fi
+}
+
 ############################################################## Verbosity and Error Handling Functions ##############################################################
 
 print_verbose() {
@@ -854,6 +895,9 @@ update_configs() {
         # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
         execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config"
     fi
+
+    # Ensure MONITORS is set (auto-detect first monitor if user did not set)
+    ensure_wallpaper_monitors
     
     print_message "Configuration files updated with user input."
 }
