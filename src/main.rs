@@ -90,6 +90,7 @@ enum EditKind {
     None,
     Text,
     MonitorWizard,
+    Info,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -846,6 +847,52 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         );
         f.render_widget(bottom_help, rows[3]);
     }
+
+    // Simple info popup (dismiss with Enter/Esc)
+    if app.editing && app.edit_kind == EditKind::Info {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 5).max(28) as u16;
+        let popup_h = 5u16; // title + message + tip
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
+
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Info")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
+        let inner_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Length(1)])
+            .split(inner);
+
+        let msg = Paragraph::new(Text::from(vec![Line::from(
+            "Password is required to run unattended setup.",
+        )]))
+        .style(Style::default().fg(app.theme.text));
+        f.render_widget(msg, inner_chunks[0]);
+
+        let tip = Paragraph::new(Text::from(vec![Line::from(
+            "Press Enter or Esc to close",
+        )]))
+        .style(Style::default().fg(app.theme.subtext0));
+        f.render_widget(tip, inner_chunks[1]);
+    }
 }
 
 // removed: old line-based preflight rendering helper; replaced by Table-based layout
@@ -1185,6 +1232,15 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 _ => {}
             }
             return Ok(false);
+        } else if app.edit_kind == EditKind::Info {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                _ => {}
+            }
+            return Ok(false);
         }
         match key.code {
             KeyCode::Esc => {
@@ -1241,7 +1297,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             match app.preflight_focus {
                 PreflightField::Start => {
                     if app.preflight.password.is_empty() {
-                        app.push_log_line("Password is required to continue.");
+                        // Show small info popup instead of only logging
+                        app.editing = true;
+                        app.edit_kind = EditKind::Info;
                         return Ok(false);
                     }
                     app.ui_mode = UiMode::Menu; // return to menu for logs visibility
