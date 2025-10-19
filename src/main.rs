@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, BufReader};
+use std::io::{self};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -19,6 +19,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use std::fs::OpenOptions;
+use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
@@ -827,30 +828,43 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    app.push_log_line(format!("$ {:?}", &cmd));
+    // Log sanitized command (avoid dumping env, especially password)
+    let mut display_cmd = String::new();
+    if dry_run_flag {
+        display_cmd.push_str("bash ./setup.sh --dry-run");
+    } else {
+        display_cmd.push_str("bash ./setup.sh");
+    }
+    app.push_log_line(format!("$ {}", display_cmd));
     let mut child = cmd.spawn().context("spawn setup.sh")?;
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let tx_out = app.tx.clone();
-    if let Some(stdout) = stdout {
+    if let Some(mut stdout) = stdout {
         thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            let mut buf = Vec::new();
+            let mut buf = [0u8; 8192];
+            let mut acc = String::new();
             loop {
-                buf.clear();
-                match reader.read_until(b'\n', &mut buf) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        let mut s = String::from_utf8_lossy(&buf).to_string();
-                        if s.contains('\r')
-                            && let Some(seg) = s.rsplit('\r').find(|seg| !seg.is_empty())
-                        {
-                            s = seg.to_string();
-                        }
-                        let s = strip_ansi_sequences(&s);
-                        if !s.trim().is_empty() {
+                match stdout.read(&mut buf) {
+                    Ok(0) => {
+                        if !acc.is_empty() {
+                            let s = strip_ansi_sequences(&acc);
                             let _ = tx_out.send(s);
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        // Treat \r as line breaks to flush progress lines
+                        acc = acc.replace('\r', "\n");
+                        while let Some(pos) = acc.find('\n') {
+                            let mut line = acc[..pos].to_string();
+                            acc = acc[pos + 1..].to_string();
+                            if !line.trim().is_empty() {
+                                line = strip_ansi_sequences(&line);
+                                let _ = tx_out.send(line);
+                            }
                         }
                     }
                     Err(_) => break,
@@ -859,24 +873,29 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         });
     }
     let tx_err = app.tx.clone();
-    if let Some(stderr) = stderr {
+    if let Some(mut stderr) = stderr {
         thread::spawn(move || {
-            let mut reader = BufReader::new(stderr);
-            let mut buf = Vec::new();
+            let mut buf = [0u8; 4096];
+            let mut acc = String::new();
             loop {
-                buf.clear();
-                match reader.read_until(b'\n', &mut buf) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        let mut s = String::from_utf8_lossy(&buf).to_string();
-                        if s.contains('\r')
-                            && let Some(seg) = s.rsplit('\r').find(|seg| !seg.is_empty())
-                        {
-                            s = seg.to_string();
-                        }
-                        let s = strip_ansi_sequences(&s);
-                        if !s.trim().is_empty() {
+                match stderr.read(&mut buf) {
+                    Ok(0) => {
+                        if !acc.is_empty() {
+                            let s = strip_ansi_sequences(&acc);
                             let _ = tx_err.send(s);
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        acc.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        acc = acc.replace('\r', "\n");
+                        while let Some(pos) = acc.find('\n') {
+                            let mut line = acc[..pos].to_string();
+                            acc = acc[pos + 1..].to_string();
+                            if !line.trim().is_empty() {
+                                line = strip_ansi_sequences(&line);
+                                let _ = tx_err.send(line);
+                            }
                         }
                     }
                     Err(_) => break,
