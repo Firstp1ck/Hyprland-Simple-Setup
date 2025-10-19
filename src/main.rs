@@ -519,7 +519,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             app.mw_selected_monitor
                 .min(app.mw_monitors.len().saturating_sub(1)),
         ));
-        let mon_list = List::new(mon_items).block(
+        let mon_list = List::new(mon_items)
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ")
+        .block(
             Block::default()
                 .title("Monitors")
                 .borders(Borders::ALL)
@@ -539,13 +542,22 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .unwrap_or_default();
         let mode_items: Vec<ListItem> = modes
             .iter()
-            .map(|s| ListItem::new(Line::from(s.clone())))
+            .map(|s| {
+                let label = match aspect_ratio_label(s) {
+                    Some(r) => format!("{} ({})", s, r),
+                    None => s.clone(),
+                };
+                ListItem::new(Line::from(label))
+            })
             .collect();
         let mut mode_state = ListState::default();
         mode_state.select(Some(
             app.mw_selected_mode.min(modes.len().saturating_sub(1)),
         ));
-        let mode_list = List::new(mode_items).block(
+        let mode_list = List::new(mode_items)
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ")
+        .block(
             Block::default()
                 .title("Modes")
                 .borders(Borders::ALL)
@@ -568,7 +580,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             app.mw_selected_scale
                 .min(scale_opts.len().saturating_sub(1)),
         ));
-        let scale_list = List::new(scale_items).block(
+        let scale_list = List::new(scale_items)
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ")
+        .block(
             Block::default()
                 .title("Scale")
                 .borders(Borders::ALL)
@@ -625,11 +640,11 @@ fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Lin
 fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     match app.ui_mode {
         UiMode::Menu => match key.code {
-            KeyCode::Char('q') => return Ok(true),
+        KeyCode::Char('q') => return Ok(true),
             KeyCode::Enter => {
                 app.ui_mode = UiMode::Preflight;
-            }
-            _ => {}
+        }
+        _ => {}
         },
         UiMode::Preflight => return handle_preflight_keys(app, key),
     }
@@ -680,10 +695,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             .arg("/dev/null");
     } else {
         cmd = Command::new("bash");
-        cmd.arg(script);
-        for f in flags {
-            cmd.arg(f);
-        }
+    cmd.arg(script);
+    for f in flags {
+        cmd.arg(f);
+    }
     }
     // Non-interactive env config from preflight
     let pf = &app.preflight;
@@ -1054,4 +1069,20 @@ fn discover_hypr_monitors() -> Vec<MonitorInfo> {
         monitors.push(mi);
     }
     monitors
+}
+
+fn aspect_ratio_label(mode: &str) -> Option<String> {
+    // Expect formats like "2560x1440@144" or "1920x1080"
+    let res_part = mode.split('@').next()?;
+    let mut it = res_part.split('x');
+    let w: i64 = it.next()?.parse().ok()?;
+    let h: i64 = it.next()?.parse().ok()?;
+    if w == 0 || h == 0 { return None; }
+    let g = gcd_i64(w, h);
+    Some(format!("{}:{}", w / g, h / g))
+}
+
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 { let t = b; b = a % b; a = t; }
+    a.abs()
 }
