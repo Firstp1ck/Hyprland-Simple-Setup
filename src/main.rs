@@ -127,6 +127,7 @@ struct AppState {
     mw_buffer: String,
     theme: Theme,
     child: Option<std::process::Child>,
+    install_started_at: Option<Instant>,
 }
 
 impl AppState {
@@ -178,6 +179,7 @@ impl AppState {
             mw_buffer: String::new(),
             theme: Theme::catppuccin_mocha(),
             child: None,
+            install_started_at: None,
         }
     }
 
@@ -268,10 +270,17 @@ fn run_app<B: ratatui::backend::Backend>(
         if let Some(child) = app.child.as_mut() {
             if let Ok(Some(status)) = child.try_wait() {
                 let code = status.code().unwrap_or(-1);
-                if status.success() {
-                    app.push_log_line(format!("setup.sh finished successfully (exit {code})"));
+                // Compute elapsed time if timer was started
+                let elapsed_msg = if let Some(start) = app.install_started_at.take() {
+                    let d = start.elapsed();
+                    format!(" in {}", format_duration(d))
                 } else {
-                    app.push_log_line(format!("setup.sh exited with status {code}"));
+                    String::new()
+                };
+                if status.success() {
+                    app.push_log_line(format!("setup.sh finished successfully (exit {code}){}", elapsed_msg));
+                } else {
+                    app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
                 }
                 app.child = None;
             }
@@ -939,6 +948,10 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 if let Some(mut child) = app.child.take() {
                     let _ = child.kill();
                 }
+                if let Some(start) = app.install_started_at.take() {
+                    let d = start.elapsed();
+                    app.push_log_line(format!("Install aborted after {}", format_duration(d)));
+                }
             }
             _ => {}
         },
@@ -1048,6 +1061,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     app.child = Some(child);
+    // Start install timer and log start
+    app.install_started_at = Some(Instant::now());
+    app.push_log_line("Install started");
     let tx_out = app.tx.clone();
     if let Some(mut stdout) = stdout {
         thread::spawn(move || {
@@ -1579,4 +1595,19 @@ fn strip_ansi_sequences(s: &str) -> String {
         out.push(ch);
     }
     out
+}
+
+fn format_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    let ms = d.subsec_millis();
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{}h {:02}m {:02}.{:03}s", h, m, s, ms)
+    } else if m > 0 {
+        format!("{}m {:02}.{:03}s", m, s, ms)
+    } else {
+        format!("{}.{:03}s", s, ms)
+    }
 }
