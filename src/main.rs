@@ -426,10 +426,17 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let field = match app.preflight_focus {
             PreflightField::EnvWallpaperDirOverride => "WALLPAPER_DIR_OVERRIDE",
             PreflightField::EnvMonitorConfig => "MONITOR_CONFIG",
+            PreflightField::Password => "PASSWORD",
             _ => "",
         };
         let caret = "▏";
-        let buffer_with_caret = format!("{}{}", app.edit_buffer, caret);
+        let is_password = matches!(app.preflight_focus, PreflightField::Password);
+        let display_value = if is_password {
+            "•".repeat(app.edit_buffer.chars().count())
+        } else {
+            app.edit_buffer.clone()
+        };
+        let buffer_with_caret = format!("{}{}", display_value, caret);
 
         // Clear area under popup
         f.render_widget(Clear, popup_rect);
@@ -457,8 +464,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let title = Paragraph::new(Text::from(vec![Line::from(field.to_string())]));
         f.render_widget(title, inner_chunks[0]);
 
+        let input_title = if matches!(app.preflight_focus, PreflightField::Password) {
+            "Input (hidden)"
+        } else {
+            "Input"
+        };
         let input = Paragraph::new(Text::from(vec![Line::from(buffer_with_caret)]))
-            .block(Block::default().title("Input").borders(Borders::ALL));
+            .block(Block::default().title(input_title).borders(Borders::ALL));
         f.render_widget(input, inner_chunks[1]);
 
         let tip = Paragraph::new(Text::from(vec![Line::from(

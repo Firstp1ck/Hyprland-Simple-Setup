@@ -775,14 +775,23 @@ check_environment() {
     if ! command -v sudo >/dev/null; then
         handle_error "'sudo' is not installed. Please install sudo and re-run the script."
     else
-        if [ "$NON_INTERACTIVE" = "true" ] || is_dry_run; then
-            # Non-interactive/dry-run: prefer a non-blocking sudo check
-            if ! sudo -n -l &>/dev/null; then
-                handle_error "Sudo privileges are required but not available without a password prompt (non-interactive mode)."
-            fi
+        # In dry-run we don't need to validate sudo
+        if is_dry_run; then
+            : # skip
         else
-            if ! sudo -l &>/dev/null; then
-                handle_error "Current user does not have sudo privileges. Please add your user to the sudoers file."
+            if [ -n "$SUDO_PASSWORD" ]; then
+                # Validate provided password; -k ignores any cached creds; -v validates only
+                if ! echo "$SUDO_PASSWORD" | sudo -S -k -v &>/dev/null; then
+                    handle_error "Invalid sudo password or sudo not configured for this user."
+                fi
+            else
+                if [ "$NON_INTERACTIVE" = "true" ]; then
+                    handle_error "SUDO_PASSWORD not provided in non-interactive mode."
+                fi
+                # Interactive validation (may prompt)
+                if ! sudo -v &>/dev/null; then
+                    handle_error "Unable to validate sudo credentials."
+                fi
             fi
         fi
     fi
