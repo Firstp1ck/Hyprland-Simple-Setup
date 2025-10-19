@@ -1839,14 +1839,6 @@ configure_sddm_theme() {
         return 1
     fi
 
-    # Restart SDDM service
-    print_message "Restarting SDDM service..."
-    if ! execute_command "sudo systemctl restart sddm.service"; then
-        print_error "Failed to restart SDDM service."
-        track_config_status "SDDM Theme Setup" "$CROSS_MARK"
-        return 1
-    fi
-
     # Clean up downloaded theme
     if ! execute_command "rm -rf '$downloads_dir/eucalyptus-drop'"; then
         print_warning "Failed to clean up downloaded theme from Downloads directory."
@@ -1863,6 +1855,20 @@ restart_waybar() {
     execute_command "sleep 0.3" "Wait a moment"
     # Start Waybar detached
     execute_command "nohup waybar >/dev/null 2>&1 &" "Start Waybar in background"
+}
+
+# Enable and start SDDM as the final step of installation
+enable_sddm_last() {
+    announce_step "Enabling SDDM display manager"
+    if command -v systemctl >/dev/null 2>&1; then
+        if execute_command "sudo systemctl enable --now sddm" "Enable and start SDDM"; then
+            print_message "SDDM has been enabled and started. You may be returned to the login screen."
+        else
+            print_warning "Failed to enable/start SDDM. You can try manually: sudo systemctl enable --now sddm"
+        fi
+    else
+        print_warning "systemctl not available; skipping SDDM enable."
+    fi
 }
 
 # Verify configs do not pre-create workspace 11
@@ -2014,8 +2020,10 @@ main() {
     restart_waybar
     verify_workspace_config
 
-    print_message "Hyprland setup completed successfully! Reloading Hyprland..."
-    hyprctl reload
+    # As the very last step, enable and start SDDM (may end current session)
+    enable_sddm_last
+
+    print_message "Hyprland setup completed successfully!"
 }
 
 # Add command line argument handling
