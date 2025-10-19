@@ -336,10 +336,25 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .wrap(Wrap { trim: false });
     f.render_widget(body, chunks[1]);
 
-    let help = Paragraph::new(Text::from(vec![
-        Line::from("Keys: Tab/Shift-Tab move  ←/→ change  Space toggle  e edit  Esc cancel  Enter start  q back"),
-        Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
-    ]))
+    // Bottom help or editing prompt
+    let help_lines: Vec<Line> = if app.editing {
+        let field = match app.preflight_focus {
+            PreflightField::WallpaperDir => "Wallpaper dir",
+            PreflightField::MonitorConfig => "Monitor config",
+            _ => "",
+        };
+        vec![
+            Line::from(format!("Editing {}: {}", field, app.edit_buffer)),
+            Line::from("Keys: Enter save  Esc cancel  (type to edit, Backspace deletes)"),
+        ]
+    } else {
+        vec![
+            Line::from("Keys: Tab/Shift-Tab move  ←/→ change  Space toggle  e edit  Enter start  q back"),
+            Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
+        ]
+    };
+
+    let help = Paragraph::new(Text::from(help_lines))
     .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
 }
@@ -566,17 +581,24 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         KeyCode::Char(' ') => toggle_boolean_field(app),
         KeyCode::Char('e') => begin_editing(app),
         KeyCode::Enter => {
-            // Start
-            app.ui_mode = UiMode::Menu; // return to menu for logs visibility
-            // Determine which menu action was selected when opening preflight
-            let idx = app.selected_index();
-            let item = &app.items[idx];
-            match item.action {
-                MenuAction::FullSetup => run_selected_action(app)?,
-                MenuAction::DryRun => run_selected_action(app)?,
-                MenuAction::ConfigureMonitorOnly => run_selected_action(app)?,
-                MenuAction::ConfigureSddmOnly => run_selected_action(app)?,
-                MenuAction::Quit => {}
+            // Enter: start only if Start is focused; otherwise, begin editing if field is editable
+            match app.preflight_focus {
+                PreflightField::Start => {
+                    app.ui_mode = UiMode::Menu; // return to menu for logs visibility
+                    let idx = app.selected_index();
+                    let item = &app.items[idx];
+                    match item.action {
+                        MenuAction::FullSetup => run_selected_action(app)?,
+                        MenuAction::DryRun => run_selected_action(app)?,
+                        MenuAction::ConfigureMonitorOnly => run_selected_action(app)?,
+                        MenuAction::ConfigureSddmOnly => run_selected_action(app)?,
+                        MenuAction::Quit => {}
+                    }
+                }
+                PreflightField::WallpaperDir | PreflightField::MonitorConfig => {
+                    begin_editing(app);
+                }
+                _ => {}
             }
         }
         _ => {}
