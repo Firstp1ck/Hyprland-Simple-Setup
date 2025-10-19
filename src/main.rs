@@ -830,32 +830,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     }
 }
 
-fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Line<'static> {
-    let selected = app.preflight_focus == field;
-    if selected {
-        if app.editing {
-            Line::from(vec![
-                Span::styled(
-                    text,
-                    Style::default()
-                        .fg(app.theme.yellow)
-                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-                ),
-                Span::raw("  "),
-                Span::styled("[editing]", Style::default().fg(app.theme.yellow)),
-            ])
-        } else {
-            Line::from(Span::styled(
-                text,
-                Style::default()
-                    .fg(app.theme.blue)
-                    .add_modifier(Modifier::BOLD),
-            ))
-        }
-    } else {
-        Line::from(Span::styled(text, Style::default().fg(app.theme.text)))
-    }
-}
+// removed: old line-based preflight rendering helper; replaced by Table-based layout
 
 fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     match app.ui_mode {
@@ -1101,6 +1076,25 @@ fn guess_default_wallpaper_dir(setup_script: &Option<PathBuf>) -> Option<String>
     {
         let wp = root.join("Wallpaper");
         return Some(wp.display().to_string());
+    }
+    // Try to locate repo root via setup.sh if not provided
+    if let Some(script) = resolve_setup_script_path() {
+        if let Some(root) = script.parent() {
+            let wp = root.join("Wallpaper");
+            return Some(wp.display().to_string());
+        }
+    }
+    // Walk upwards from current dir to find a Wallpaper directory
+    if let Ok(mut dir) = std::env::current_dir() {
+        for _ in 0..5 {
+            let candidate = dir.join("Wallpaper");
+            if candidate.exists() {
+                return Some(candidate.display().to_string());
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
     }
     Some("./Wallpaper".to_string())
 }
