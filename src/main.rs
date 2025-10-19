@@ -210,7 +210,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Split vertically to create a footer for keybind help
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .constraints([Constraint::Min(1), Constraint::Length(5)])
         .split(area);
 
     let chunks = Layout::default()
