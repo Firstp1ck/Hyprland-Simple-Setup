@@ -17,7 +17,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap, Table, Row, Cell};
+use ratatui::widgets::{
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+};
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
@@ -433,7 +435,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let sel = |field: PreflightField| app.preflight_focus == field;
     let mk = |action: &str, name: &str, value: String, selected: bool| {
         let base = if selected {
-            Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(app.theme.blue)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(app.theme.text)
         };
@@ -465,25 +469,43 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     rows.push(mk(
         "Toggle",
         "MONITOR_SETUP_ENABLED",
-        if pf.monitor_setup_enabled { "true" } else { "false" }.to_string(),
+        if pf.monitor_setup_enabled {
+            "true"
+        } else {
+            "false"
+        }
+        .to_string(),
         sel(PreflightField::EnvMonitorSetupEnabled),
     ));
     rows.push(mk(
         "Edit",
         "MONITOR_CONFIG",
-        if pf.monitor_config.is_empty() { "<empty>".to_string() } else { pf.monitor_config.clone() },
+        if pf.monitor_config.is_empty() {
+            "<empty>".to_string()
+        } else {
+            pf.monitor_config.clone()
+        },
         sel(PreflightField::EnvMonitorConfig),
     ));
     rows.push(mk(
         "Toggle",
         "AUTO_CONTINUE_ON_WARNINGS",
-        if pf.auto_continue_on_warnings { "true" } else { "false" }.to_string(),
+        if pf.auto_continue_on_warnings {
+            "true"
+        } else {
+            "false"
+        }
+        .to_string(),
         sel(PreflightField::EnvAutoContinueOnWarnings),
     ));
     rows.push(mk(
         "Edit/required",
         "Password",
-        if pf.password.is_empty() { "<empty>".to_string() } else { "******".to_string() },
+        if pf.password.is_empty() {
+            "<empty>".to_string()
+        } else {
+            "******".to_string()
+        },
         sel(PreflightField::Password),
     ));
     rows.push(mk(
@@ -507,19 +529,19 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             Constraint::Min(10),
         ],
     )
-        .header(Row::new(vec![
-            Cell::from("Action").style(Style::default().fg(app.theme.mauve)),
-            Cell::from("Name").style(Style::default().fg(app.theme.mauve)),
-            Cell::from("Value").style(Style::default().fg(app.theme.mauve)),
-        ]))
-        .column_spacing(2)
-        .block(
-            Block::default()
-                .title("Values")
-                .borders(Borders::ALL)
-                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                .border_style(Style::default().fg(app.theme.surface1)),
-        );
+    .header(Row::new(vec![
+        Cell::from("Action").style(Style::default().fg(app.theme.mauve)),
+        Cell::from("Name").style(Style::default().fg(app.theme.mauve)),
+        Cell::from("Value").style(Style::default().fg(app.theme.mauve)),
+    ]))
+    .column_spacing(2)
+    .block(
+        Block::default()
+            .title("Values")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.surface1)),
+    );
     f.render_widget(table, chunks[1]);
 
     // Bottom help (when not editing)
