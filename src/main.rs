@@ -13,7 +13,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap, Clear};
 use ratatui::Terminal;
 
 #[derive(Clone, Copy, Debug)]
@@ -336,8 +336,24 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .wrap(Wrap { trim: false });
     f.render_widget(body, chunks[1]);
 
-    // Bottom help or editing prompt
-    let help_lines: Vec<Line> = if app.editing {
+    // Bottom help (when not editing)
+    let help_lines: Vec<Line> = vec![
+        Line::from("Keys: Tab/Shift-Tab or j/k or ↑/↓ move  ←/→ change  Space toggle  e edit  Enter start  q back"),
+        Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
+    ];
+    let help = Paragraph::new(Text::from(help_lines))
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(help, chunks[2]);
+
+    // Center popup for editing
+    if app.editing {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 4).max(30) as u16; // 75% width, min 30
+        let popup_h = 7u16; // title + input + help
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+
         let field = match app.preflight_focus {
             PreflightField::EnvWallpaperDirOverride => "WALLPAPER_DIR_OVERRIDE",
             PreflightField::EnvMonitorConfig => "MONITOR_CONFIG",
@@ -345,20 +361,43 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         };
         let caret = "▏";
         let buffer_with_caret = format!("{}{}", app.edit_buffer, caret);
-        vec![
-            Line::from(format!("Editing {}: {}", field, buffer_with_caret)),
-            Line::from("Keys: Enter save  Esc cancel  (type to edit, Backspace deletes)"),
-        ]
-    } else {
-        vec![
-            Line::from("Keys: Tab/Shift-Tab move  ←/→ change  Space toggle  e edit  Enter start  q back"),
-            Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
-        ]
-    };
 
-    let help = Paragraph::new(Text::from(help_lines))
-    .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[2]);
+        // Clear area under popup
+        f.render_widget(Clear, popup_rect);
+
+        // Draw popup content
+        let popup_block = Block::default().title("Edit value").borders(Borders::ALL);
+        f.render_widget(popup_block, popup_rect);
+
+        // Split popup into lines
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
+        let inner_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+
+        let title = Paragraph::new(Text::from(vec![Line::from(format!("{}", field))]));
+        f.render_widget(title, inner_chunks[0]);
+
+        let input = Paragraph::new(Text::from(vec![Line::from(buffer_with_caret)])).block(
+            Block::default().title("Input").borders(Borders::ALL),
+        );
+        f.render_widget(input, inner_chunks[1]);
+
+        let tip = Paragraph::new(Text::from(vec![
+            Line::from("Enter save  Esc cancel  (type to edit, Backspace deletes)"),
+        ]));
+        f.render_widget(tip, inner_chunks[2]);
+    }
 }
 
 fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Line<'static> {
@@ -592,8 +631,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         KeyCode::Char('q') => {
             app.ui_mode = UiMode::Menu;
         }
-        KeyCode::Tab => preflight_focus_next(app),
-        KeyCode::BackTab => preflight_focus_prev(app),
+        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => preflight_focus_next(app),
+        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => preflight_focus_prev(app),
         KeyCode::Left => adjust_preflight_field(app, -1),
         KeyCode::Right => adjust_preflight_field(app, 1),
         KeyCode::Char(' ') => toggle_boolean_field(app),
