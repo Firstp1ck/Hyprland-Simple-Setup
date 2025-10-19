@@ -129,8 +129,9 @@ impl AppState {
     fn new(rx: Receiver<String>, tx: Sender<String>, setup_script: Option<PathBuf>) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
-        let default_wallpaper =
-            guess_default_wallpaper_dir(&setup_script).unwrap_or_else(|| "./Wallpaper".to_string());
+        let default_wallpaper = guess_default_wallpaper_dir(&setup_script)
+            .and_then(|p| std::fs::canonicalize(&p).ok().map(|abs| abs.display().to_string()))
+            .unwrap_or_else(|| "./Wallpaper".to_string());
         let logfile_path = std::env::var("HYPRLAND_SETUP_LOG")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -1071,18 +1072,22 @@ fn install_panic_hook() {
 }
 
 fn guess_default_wallpaper_dir(setup_script: &Option<PathBuf>) -> Option<String> {
-    if let Some(script) = setup_script
-        && let Some(root) = script.parent()
-    {
-        let wp = root.join("Wallpaper");
-        return Some(wp.display().to_string());
+    if let Some(script) = setup_script {
+        if let Ok(real) = std::fs::canonicalize(script) {
+            if let Some(root) = real.parent() {
+                let wp = root.join("Wallpaper");
+                return Some(wp.display().to_string());
+            }
+        }
     }
     // Try to locate repo root via setup.sh if not provided
-    if let Some(script) = resolve_setup_script_path()
-        && let Some(root) = script.parent()
-    {
-        let wp = root.join("Wallpaper");
-        return Some(wp.display().to_string());
+    if let Some(script) = resolve_setup_script_path() {
+        if let Ok(real) = std::fs::canonicalize(script) {
+            if let Some(root) = real.parent() {
+                let wp = root.join("Wallpaper");
+                return Some(wp.display().to_string());
+            }
+        }
     }
     // Walk upwards from current dir to find a Wallpaper directory
     if let Ok(mut dir) = std::env::current_dir() {
