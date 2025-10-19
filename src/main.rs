@@ -17,7 +17,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap, Table, Row, Cell};
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
@@ -429,100 +429,98 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(header, chunks[0]);
 
     let pf = &app.preflight;
-    let mut lines: Vec<Line> = Vec::new();
-    lines.push(styled_field_line(
-        PreflightField::EnvPromptDefaultYn,
-        app,
-        format!(
-            "[Toggle] PROMPT_DEFAULT_YN: {}",
-            if pf.prompt_default_yes { "y" } else { "n" }
-        ),
+    let mut rows: Vec<Row> = Vec::new();
+    let sel = |field: PreflightField| app.preflight_focus == field;
+    let mk = |action: &str, name: &str, value: String, selected: bool| {
+        let base = if selected {
+            Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.text)
+        };
+        Row::new(vec![
+            Cell::from(action.to_string()).style(base),
+            Cell::from(name.to_string()).style(base),
+            Cell::from(value).style(base),
+        ])
+    };
+
+    rows.push(mk(
+        "Toggle",
+        "PROMPT_DEFAULT_YN",
+        if pf.prompt_default_yes { "y" } else { "n" }.to_string(),
+        sel(PreflightField::EnvPromptDefaultYn),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvFishLanguageChoiceOverride,
-        app,
-        format!(
-            "[1/2/3] FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)",
-            pf.fish_language_choice
-        ),
+    rows.push(mk(
+        "1/2/3",
+        "FISH_LANGUAGE_CHOICE_OVERRIDE",
+        format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
+        sel(PreflightField::EnvFishLanguageChoiceOverride),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvWallpaperDirOverride,
-        app,
-        format!("[Edit] WALLPAPER_DIR_OVERRIDE: {}", pf.wallpaper_dir),
+    rows.push(mk(
+        "Edit",
+        "WALLPAPER_DIR_OVERRIDE",
+        pf.wallpaper_dir.clone(),
+        sel(PreflightField::EnvWallpaperDirOverride),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvMonitorSetupEnabled,
-        app,
-        format!(
-            "[Toggle] MONITOR_SETUP_ENABLED: {}",
-            if pf.monitor_setup_enabled {
-                "true"
-            } else {
-                "false"
-            }
-        ),
+    rows.push(mk(
+        "Toggle",
+        "MONITOR_SETUP_ENABLED",
+        if pf.monitor_setup_enabled { "true" } else { "false" }.to_string(),
+        sel(PreflightField::EnvMonitorSetupEnabled),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvMonitorConfig,
-        app,
-        format!(
-            "[Edit] MONITOR_CONFIG: {}",
-            if pf.monitor_config.is_empty() {
-                "<empty>".to_string()
-            } else {
-                pf.monitor_config.clone()
-            }
-        ),
+    rows.push(mk(
+        "Edit",
+        "MONITOR_CONFIG",
+        if pf.monitor_config.is_empty() { "<empty>".to_string() } else { pf.monitor_config.clone() },
+        sel(PreflightField::EnvMonitorConfig),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvAutoContinueOnWarnings,
-        app,
-        format!(
-            "[Toggle] AUTO_CONTINUE_ON_WARNINGS: {}",
-            if pf.auto_continue_on_warnings {
-                "true"
-            } else {
-                "false"
-            }
-        ),
+    rows.push(mk(
+        "Toggle",
+        "AUTO_CONTINUE_ON_WARNINGS",
+        if pf.auto_continue_on_warnings { "true" } else { "false" }.to_string(),
+        sel(PreflightField::EnvAutoContinueOnWarnings),
     ));
-    lines.push(styled_field_line(
-        PreflightField::Password,
-        app,
-        format!(
-            "[Edit/required] Password: {}",
-            if pf.password.is_empty() {
-                "<empty>"
-            } else {
-                "******"
-            }
-        ),
+    rows.push(mk(
+        "Edit/required",
+        "Password",
+        if pf.password.is_empty() { "<empty>".to_string() } else { "******".to_string() },
+        sel(PreflightField::Password),
     ));
-    lines.push(styled_field_line(
-        PreflightField::EnvDryRun,
-        app,
-        format!(
-            "[Toggle] DRY_RUN (--dry-run): {}",
-            if pf.dry_run { "true" } else { "false" }
-        ),
+    rows.push(mk(
+        "Toggle",
+        "DRY_RUN (--dry-run)",
+        if pf.dry_run { "true" } else { "false" }.to_string(),
+        sel(PreflightField::EnvDryRun),
     ));
-    lines.push(styled_field_line(
-        PreflightField::Start,
-        app,
-        "Start unattended install (Enter)".to_string(),
+    rows.push(mk(
+        "Enter",
+        "Start unattended install",
+        "".to_string(),
+        sel(PreflightField::Start),
     ));
 
-    let body = Paragraph::new(Text::from(lines))
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(14),
+            Constraint::Length(34),
+            Constraint::Min(10),
+        ],
+    )
+        .header(Row::new(vec![
+            Cell::from("Action").style(Style::default().fg(app.theme.mauve)),
+            Cell::from("Name").style(Style::default().fg(app.theme.mauve)),
+            Cell::from("Value").style(Style::default().fg(app.theme.mauve)),
+        ]))
+        .column_spacing(2)
         .block(
             Block::default()
                 .title("Values")
                 .borders(Borders::ALL)
                 .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
                 .border_style(Style::default().fg(app.theme.surface1)),
-        )
-        .wrap(Wrap { trim: false });
-    f.render_widget(body, chunks[1]);
+        );
+    f.render_widget(table, chunks[1]);
 
     // Bottom help (when not editing)
     let help_lines: Vec<Line> = vec![
