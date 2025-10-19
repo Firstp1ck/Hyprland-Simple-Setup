@@ -207,10 +207,16 @@ fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
 }
 
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
+    // Split vertically to create a footer for keybind help
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .split(area);
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(area);
+        .split(vchunks[0]);
 
     let items: Vec<ListItem> = app
         .items
@@ -259,6 +265,15 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .scroll((app.scroll, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
+
+    // Footer with keybind help
+    let footer = Paragraph::new(Text::from(vec![
+        Line::from(
+            "Keys: ↑/↓ select  Enter run  q quit  c clear  k kill  PgUp/PgDn scroll",
+        ),
+    ]))
+    .block(Block::default().borders(Borders::ALL));
+    f.render_widget(footer, vchunks[1]);
 }
 
 fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
@@ -322,7 +337,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(body, chunks[1]);
 
     let help = Paragraph::new(Text::from(vec![
-        Line::from("MONITOR_CONFIG format: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
+        Line::from("Keys: Tab/Shift-Tab move  ←/→ change  Space toggle  e edit  Esc cancel  Enter start  q back"),
+        Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
     ]))
     .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
