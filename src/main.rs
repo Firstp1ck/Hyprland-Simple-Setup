@@ -130,7 +130,7 @@ impl AppState {
 }
 
 fn main() -> Result<()> {
-    let setup_script = resolve_setup_script_path().ok();
+    let setup_script = resolve_setup_script_path();
 
     let (tx, rx) = mpsc::channel::<String>();
     let app_tx = tx.clone();
@@ -199,7 +199,7 @@ fn run_app<B: ratatui::backend::Backend>(
 }
 
 fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
-    let area = f.size();
+    let area = f.area();
     match app.ui_mode {
         UiMode::Menu => draw_menu_ui(f, app, area),
         UiMode::Preflight => draw_preflight_ui(f, app, area),
@@ -229,7 +229,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     let selected = app.selected_index();
     let desc = app.items.get(selected).map(|i| i.description).unwrap_or("");
-    let mut right_chunks = Layout::default()
+    let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(1)])
         .split(chunks[1]);
