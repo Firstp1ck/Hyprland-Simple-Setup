@@ -35,6 +35,7 @@ struct PreflightConfig {
     monitor_config: String,
     auto_continue_on_warnings: bool,
     dry_run: bool,
+    password: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +47,7 @@ enum PreflightField {
     EnvMonitorConfig,
     EnvAutoContinueOnWarnings,
     EnvDryRun,
+    Password,
     Start,
 }
 
@@ -108,6 +110,7 @@ impl AppState {
                 monitor_config: String::new(),
                 auto_continue_on_warnings: true,
                 dry_run: false,
+                password: String::new(),
             },
             preflight_focus: PreflightField::Start,
             editing: false,
@@ -364,6 +367,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 "false"
             }
         ),
+    ));
+    lines.push(styled_field_line(
+        PreflightField::Password,
+        app,
+        format!("[Edit/required] Password: {}", if pf.password.is_empty() { "<empty>" } else { "******" }),
     ));
     lines.push(styled_field_line(
         PreflightField::EnvDryRun,
@@ -685,7 +693,8 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         s
     };
 
-    if which::which("script").is_ok() {
+    let dry_run_flag = app.preflight.dry_run;
+    if which::which("script").is_ok() && !dry_run_flag {
         // script -q (quiet) -f (flush) -c "<cmd>" /dev/null
         cmd = Command::new("script");
         cmd.arg("-q")
@@ -703,6 +712,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     // Non-interactive env config from preflight
     let pf = &app.preflight;
     cmd.env("NON_INTERACTIVE", "true");
+    if !pf.password.is_empty() {
+        cmd.env("SUDO_PASSWORD", pf.password.clone());
+    }
     cmd.env(
         "PROMPT_DEFAULT_YN",
         if pf.prompt_default_yes { "y" } else { "n" },
@@ -903,6 +915,10 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             // Enter: start only if Start is focused; otherwise, begin editing if field is editable
             match app.preflight_focus {
                 PreflightField::Start => {
+                    if app.preflight.password.is_empty() {
+                        app.push_log_line("Password is required to continue.");
+                        return Ok(false);
+                    }
                     app.ui_mode = UiMode::Menu; // return to menu for logs visibility
                     if app.preflight.dry_run {
                         spawn_setup(app, &["--dry-run"])?;
@@ -912,6 +928,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 }
                 PreflightField::EnvWallpaperDirOverride => begin_editing(app),
                 PreflightField::EnvMonitorConfig => begin_editing(app),
+                PreflightField::Password => begin_editing(app),
                 _ => {}
             }
         }
@@ -929,6 +946,7 @@ fn preflight_focus_next(app: &mut AppState) {
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvDryRun,
         PreflightField::EnvDryRun => PreflightField::Start,
+        PreflightField::Password => PreflightField::EnvPromptDefaultYn,
         PreflightField::Start => PreflightField::EnvPromptDefaultYn,
     };
 }
@@ -942,6 +960,7 @@ fn preflight_focus_prev(app: &mut AppState) {
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
         PreflightField::EnvDryRun => PreflightField::EnvAutoContinueOnWarnings,
+        PreflightField::Password => PreflightField::EnvDryRun,
         PreflightField::Start => PreflightField::EnvDryRun,
     };
 }
@@ -1012,6 +1031,11 @@ fn begin_editing(app: &mut AppState) {
             app.mw_selected_mode = 0;
             app.mw_selected_scale = 1;
         }
+        PreflightField::Password => {
+            app.editing = true;
+            app.edit_kind = EditKind::Text;
+            app.edit_buffer = String::new();
+        }
         _ => {}
     }
 }
@@ -1027,6 +1051,10 @@ fn apply_edit_buffer(app: &mut AppState) {
             if app.edit_kind == EditKind::Text {
                 app.preflight.monitor_config = app.edit_buffer.clone();
             }
+            app.edit_kind = EditKind::None;
+        }
+        PreflightField::Password => {
+            app.preflight.password = app.edit_buffer.clone();
             app.edit_kind = EditKind::None;
         }
         _ => {}
@@ -1057,11 +1085,12 @@ fn discover_hypr_monitors() -> Vec<MonitorInfo> {
             && let Some(mi) = current.as_mut()
         {
             let modes_str = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
-            let parsed: Vec<String> = modes_str
+            let mut parsed: Vec<String> = modes_str
                 .split_whitespace()
                 .filter(|s| s.contains('x'))
                 .map(|s| s.trim_matches(',').to_string())
                 .collect();
+            parsed.sort_by(|a, b| compare_modes_by_aspect_then_size(a, b));
             mi.modes = parsed;
         }
     }
@@ -1085,4 +1114,44 @@ fn aspect_ratio_label(mode: &str) -> Option<String> {
 fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
     while b != 0 { let t = b; b = a % b; a = t; }
     a.abs()
+}
+
+fn compare_modes_by_aspect_then_size(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (aw, ah, ar) = parse_mode_numbers(a);
+    let (bw, bh, br) = parse_mode_numbers(b);
+
+    let apr = ratio_priority(&ar);
+    let bpr = ratio_priority(&br);
+    match apr.cmp(&bpr) {
+        Ordering::Equal => match bw.cmp(&aw) { // width desc
+            Ordering::Equal => match bh.cmp(&ah) { // height desc
+                Ordering::Equal => a.cmp(b),
+                other => other,
+            },
+            other => other,
+        },
+        other => other,
+    }
+}
+
+fn parse_mode_numbers(mode: &str) -> (u32, u32, String) {
+    let res_part = mode.split('@').next().unwrap_or("");
+    let mut it = res_part.split('x');
+    let w: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let h: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let ratio = aspect_ratio_label(mode).unwrap_or_default();
+    (w, h, ratio)
+}
+
+fn ratio_priority(r: &str) -> u32 {
+    match r {
+        "16:9" => 0,
+        "16:10" => 1,
+        "21:9" => 2,
+        "32:9" => 3,
+        "4:3" => 4,
+        "5:4" => 5,
+        _ => 100,
+    }
 }

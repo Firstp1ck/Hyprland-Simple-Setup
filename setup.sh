@@ -87,9 +87,19 @@ execute_command() {
         log_dry_run_operation "$caller_function" "$description"
         return 0
     else
-        bash -c "$cmd"
+        # Prefer using provided SUDO_PASSWORD to avoid prompts; fallback to -n in NON_INTERACTIVE
+        local adjusted_cmd="$cmd"
+        if [ -n "$SUDO_PASSWORD" ]; then
+            # Define a shell sudo() that feeds the password to sudo -S
+            bash -c 'sudo() { echo -n "$SUDO_PASSWORD" | command sudo -S "$@"; }; '"$adjusted_cmd"
+        else
+            if [ "$NON_INTERACTIVE" = "true" ]; then
+                adjusted_cmd="${adjusted_cmd//sudo /sudo -n }"
+            fi
+            bash -c "$adjusted_cmd"
+        fi
         local exit_code=$?
-        print_verbose "Command executed: $cmd (Exit code: $exit_code)"
+        print_verbose "Command executed: ${adjusted_cmd} (Exit code: $exit_code)"
         if [ $exit_code -ne 0 ]; then
             print_warning "Command for '$description' failed."
         fi
@@ -131,6 +141,18 @@ user_confirmation() {
     else
         print_error "Setup aborted by user"
         exit 1
+    fi
+}
+
+# Capture or validate sudo password once; in NON_INTERACTIVE mode a password must be provided via SUDO_PASSWORD
+setup_sudo_password() {
+    if [ -z "$SUDO_PASSWORD" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            handle_error "SUDO_PASSWORD not provided in non-interactive mode."
+        fi
+        read -rsp "Enter sudo password (used for this setup only): " SUDO_PASSWORD
+        echo ""
+        export SUDO_PASSWORD
     fi
 }
 
@@ -752,8 +774,17 @@ check_environment() {
     # Check if sudo is available and user has sudo rights
     if ! command -v sudo >/dev/null; then
         handle_error "'sudo' is not installed. Please install sudo and re-run the script."
-    elif ! sudo -l &>/dev/null; then
-        handle_error "Current user does not have sudo privileges. Please add your user to the sudoers file."
+    else
+        if [ "$NON_INTERACTIVE" = "true" ] || is_dry_run; then
+            # Non-interactive/dry-run: prefer a non-blocking sudo check
+            if ! sudo -n -l &>/dev/null; then
+                handle_error "Sudo privileges are required but not available without a password prompt (non-interactive mode)."
+            fi
+        else
+            if ! sudo -l &>/dev/null; then
+                handle_error "Current user does not have sudo privileges. Please add your user to the sudoers file."
+            fi
+        fi
     fi
 
     # Validate log directory and permissions
@@ -1875,6 +1906,8 @@ verify_workspace_config() {
 
 main() {
     print_message "Starting Hyprland Setup..."
+
+    setup_sudo_password
 
     get_fish_language_choice
     check_disk_space
