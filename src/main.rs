@@ -1078,11 +1078,11 @@ fn guess_default_wallpaper_dir(setup_script: &Option<PathBuf>) -> Option<String>
         return Some(wp.display().to_string());
     }
     // Try to locate repo root via setup.sh if not provided
-    if let Some(script) = resolve_setup_script_path() {
-        if let Some(root) = script.parent() {
-            let wp = root.join("Wallpaper");
-            return Some(wp.display().to_string());
-        }
+    if let Some(script) = resolve_setup_script_path()
+        && let Some(root) = script.parent()
+    {
+        let wp = root.join("Wallpaper");
+        return Some(wp.display().to_string());
     }
     // Walk upwards from current dir to find a Wallpaper directory
     if let Ok(mut dir) = std::env::current_dir() {
