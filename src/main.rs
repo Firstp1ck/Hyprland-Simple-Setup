@@ -506,10 +506,24 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         }
     };
 
-    let mut cmd = Command::new("bash");
-    cmd.arg(script);
-    for f in flags {
-        cmd.arg(f);
+    // Use a PTY via `script` to keep all outputs contained in the TUI area (progress bars, sudo prompts, etc.)
+    // Fallback to direct bash execution if `script` is unavailable.
+    let mut cmd;
+    let cmdline = {
+        let mut s = String::from("bash ");
+        s.push_str(&script.display().to_string());
+        for f in flags { s.push(' '); s.push_str(f); }
+        s
+    };
+
+    if which::which("script").is_ok() {
+        // script -q (quiet) -f (flush) -c "<cmd>" /dev/null
+        cmd = Command::new("script");
+        cmd.arg("-q").arg("-f").arg("-c").arg(cmdline).arg("/dev/null");
+    } else {
+        cmd = Command::new("bash");
+        cmd.arg(script);
+        for f in flags { cmd.arg(f); }
     }
     // Non-interactive env config from preflight
     let pf = &app.preflight;
@@ -526,7 +540,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         if pf.auto_continue_on_warnings { "true" } else { "false" },
     );
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     app.push_log_line(format!("$ {:?}", &cmd));
     let mut child = cmd.spawn().context("spawn setup.sh")?;

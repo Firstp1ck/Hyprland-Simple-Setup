@@ -43,6 +43,7 @@
 ## Table of Contents
 - [Introduction](#introduction)
   - [Quick Start](#quick-start)
+  - [TUI Testing](#tui-testing)
 - [Environment Setup](#environment-setup)
 - [Prerequisites](#prerequisites)
 - [Setup Script Execution](#setup-script-execution)
@@ -176,6 +177,44 @@ It sets up the following Components/Apps:
 6. **Log out and log in to Hyprland, or start it from a TTY.**
 
 7. **After Relogging the Environment should be updated and a Keybind App should be opened (if the App did not open, you can open it via Right-click on the Menu Button in the Bar)**
+
+## TUI Testing
+
+You can test-drive a Rust TUI that configures options up front and runs `setup.sh` unattended.
+
+Install Rust dependencies:
+
+```bash
+sudo pacman -S rustup
+rustup install stable
+rustup update
+rustup component add rust-analyzer
+```
+
+Clone and run the TUI:
+
+```bash
+git clone -b Rust-TUI-Setup https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
+cd ~/Hyprland-Simple-Setup
+cargo run --release
+```
+
+If the script path cannot be auto-detected, pass it explicitly:
+
+```bash
+HYPR_SETUP_PATH=~/Hyprland-Simple-Setup/setup.sh cargo run --release
+```
+
+Usage (Preflight screen):
+- Navigate: Tab/Shift-Tab or j/k or ↑/↓
+- Change booleans: Space or ←/→
+- Change language (1/2/3): ←/→
+- Edit text fields (wallpaper dir, monitor config): press e or Enter; Enter saves; Esc cancels
+- Start: focus “Start unattended install (Enter)” and press Enter
+
+Notes:
+- The TUI sets environment variables for a non-interactive run (e.g., `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, `AUTO_CONTINUE_ON_WARNINGS`).
+- The installer will still use `sudo` for privileged operations when needed.
 
 ## Environment Setup
 
