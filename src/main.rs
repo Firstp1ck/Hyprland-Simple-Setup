@@ -24,6 +24,34 @@ use std::io::Write as IoWrite;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
 
+// Catppuccin Mocha theme
+#[derive(Clone, Copy, Debug)]
+struct Theme {
+    base: Color,
+    surface0: Color,
+    surface1: Color,
+    text: Color,
+    subtext0: Color,
+    yellow: Color,
+    mauve: Color,
+    blue: Color,
+}
+
+impl Theme {
+    fn catppuccin_mocha() -> Self {
+        Self {
+            base: Color::Rgb(30, 30, 46),        // #1e1e2e
+            surface0: Color::Rgb(49, 50, 68),    // #313244
+            surface1: Color::Rgb(69, 71, 90),    // #45475a
+            text: Color::Rgb(205, 214, 244),     // #cdd6f4
+            subtext0: Color::Rgb(166, 173, 200), // #a6adc8
+            yellow: Color::Rgb(249, 226, 175),   // #f9e2af
+            mauve: Color::Rgb(203, 166, 247),    // #cba6f7
+            blue: Color::Rgb(137, 180, 250),     // #89b4fa
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UiMode {
     Menu,
@@ -91,6 +119,7 @@ struct AppState {
     mw_selected_scale: usize,
     mw_active_col: u8,
     mw_buffer: String,
+    theme: Theme,
 }
 
 impl AppState {
@@ -137,6 +166,7 @@ impl AppState {
             mw_selected_scale: 1, // default 1.0
             mw_active_col: 0,
             mw_buffer: String::new(),
+            theme: Theme::catppuccin_mocha(),
         }
     }
 
@@ -248,6 +278,13 @@ fn run_app<B: ratatui::backend::Backend>(
 
 fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let area = f.area();
+
+    // Background fill
+    let bg = Block::default()
+        .borders(Borders::NONE)
+        .style(Style::default().bg(app.theme.base));
+    f.render_widget(bg, area);
+
     match app.ui_mode {
         UiMode::Menu => draw_menu_ui(f, app, area),
         UiMode::Preflight => draw_preflight_ui(f, app, area),
@@ -266,16 +303,21 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(vchunks[0]);
 
-    let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::raw("Run Hyprland setup")))];
+    let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
+        "Run Hyprland setup",
+        Style::default().fg(app.theme.text),
+    )))];
     let menu = List::new(items)
         .block(
             Block::default()
                 .title("Hyprland Setup Actions")
-                .borders(Borders::ALL),
+                .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.mauve)),
         )
         .highlight_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(app.theme.blue)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -295,16 +337,22 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     let header = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled("Selected: ", Style::default().fg(Color::Yellow)),
+            Span::styled("Selected: ", Style::default().fg(app.theme.yellow)),
             Span::raw(desc),
         ]),
         Line::from(vec![
-            Span::styled("Script: ", Style::default().fg(Color::Yellow)),
+            Span::styled("Script: ", Style::default().fg(app.theme.yellow)),
             Span::raw(script_path_text),
         ]),
-        Line::from("q=quit  c=clear  k=kill  ↑↓=navigate  Enter=run  PgUp/PgDn=scroll"),
+        Line::from("q quit  Enter run  ↑↓ navigate  PgUp/PgDn scroll"),
     ])
-    .block(Block::default().title("Info").borders(Borders::ALL))
+    .block(
+        Block::default()
+            .title("Info")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve)),
+    )
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
@@ -325,8 +373,14 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let logs = Paragraph::new(log_text)
         .block(
             Block::default()
-                .title("Output (PgUp/PgDn scroll, End follow, Home top)")
-                .borders(Borders::ALL),
+                .title("Output")
+                .borders(Borders::ALL)
+                .style(
+                    Style::default()
+                        .bg(app.theme.surface0)
+                        .fg(app.theme.subtext0),
+                )
+                .border_style(Style::default().fg(app.theme.surface1)),
         )
         .scroll((y_offset as u16, 0))
         .wrap(Wrap { trim: false });
@@ -334,9 +388,18 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     // Footer with keybind help
     let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Keys: Enter open preflight  q quit",
+        "Enter: open preflight   q: quit",
     )]))
-    .block(Block::default().borders(Borders::ALL));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .style(
+                Style::default()
+                    .bg(app.theme.surface0)
+                    .fg(app.theme.subtext0),
+            )
+            .border_style(Style::default().fg(app.theme.surface1)),
+    );
     f.render_widget(footer, vchunks[1]);
 }
 
@@ -351,11 +414,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Text::from(vec![
-        Line::from("Preflight configuration - set values, then press Enter to start"),
-        Line::from("Tab/Shift-Tab: move  Space/Left/Right: change  1/2/3: set language  e/Enter: edit text  Esc: cancel edit  q: back"),
-        Line::from("Left label shows how to change each option: [Toggle] or [Edit]"),
+        Line::from("Preflight – set values, Enter to start"),
+        Line::from("Tab/Shift-Tab move  ←/→ change  Space toggle  e edit  q back"),
     ]))
-    .block(Block::default().title("Preflight").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title("Preflight")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve)),
+    );
     f.render_widget(header, chunks[0]);
 
     let pf = &app.preflight;
@@ -444,7 +512,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
 
     let body = Paragraph::new(Text::from(lines))
-        .block(Block::default().title("Values").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Values")
+                .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.surface1)),
+        )
         .wrap(Wrap { trim: false });
     f.render_widget(body, chunks[1]);
 
@@ -455,7 +529,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         ),
         Line::from("MONITOR_CONFIG: name:1920x1080@60:1.0;name2:2560x1440@144:1.25"),
     ];
-    let help = Paragraph::new(Text::from(help_lines)).block(Block::default().borders(Borders::ALL));
+    let help = Paragraph::new(Text::from(help_lines)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .style(
+                Style::default()
+                    .bg(app.theme.surface0)
+                    .fg(app.theme.subtext0),
+            )
+            .border_style(Style::default().fg(app.theme.surface1)),
+    );
     f.render_widget(help, chunks[2]);
 
     // Center popup for editing
@@ -491,7 +574,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(Clear, popup_rect);
 
         // Draw popup content
-        let popup_block = Block::default().title("Edit value").borders(Borders::ALL);
+        let popup_block = Block::default()
+            .title("Edit value")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
         // Split popup into lines
@@ -518,8 +605,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         } else {
             "Input"
         };
-        let input = Paragraph::new(Text::from(vec![Line::from(buffer_with_caret)]))
-            .block(Block::default().title(input_title).borders(Borders::ALL));
+        let input = Paragraph::new(Text::from(vec![Line::from(buffer_with_caret)])).block(
+            Block::default()
+                .title(input_title)
+                .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.surface1)),
+        );
         f.render_widget(input, inner_chunks[1]);
 
         let tip = Paragraph::new(Text::from(vec![Line::from(
@@ -543,7 +635,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
             .title("Monitor Config Wizard")
-            .borders(Borders::ALL);
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
         let inner = Rect {
@@ -598,7 +692,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let mon_list = List::new(mon_items)
             .highlight_style(
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.blue)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("▶ ")
@@ -606,10 +700,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 Block::default()
                     .title("Monitors")
                     .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
                     .border_style(if app.mw_active_col == 0 {
-                        Style::default().fg(Color::Yellow)
+                        Style::default().fg(app.theme.yellow)
                     } else {
-                        Style::default()
+                        Style::default().fg(app.theme.surface1)
                     }),
             );
         f.render_stateful_widget(mon_list, cols[0], &mut mon_state);
@@ -637,7 +732,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let mode_list = List::new(mode_items)
             .highlight_style(
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.blue)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("▶ ")
@@ -645,10 +740,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 Block::default()
                     .title("Modes")
                     .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
                     .border_style(if app.mw_active_col == 1 {
-                        Style::default().fg(Color::Yellow)
+                        Style::default().fg(app.theme.yellow)
                     } else {
-                        Style::default()
+                        Style::default().fg(app.theme.surface1)
                     }),
             );
         f.render_stateful_widget(mode_list, cols[1], &mut mode_state);
@@ -667,7 +763,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let scale_list = List::new(scale_items)
             .highlight_style(
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.blue)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("▶ ")
@@ -675,10 +771,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 Block::default()
                     .title("Scale")
                     .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
                     .border_style(if app.mw_active_col == 2 {
-                        Style::default().fg(Color::Yellow)
+                        Style::default().fg(app.theme.yellow)
                     } else {
-                        Style::default()
+                        Style::default().fg(app.theme.surface1)
                     }),
             );
         f.render_stateful_widget(scale_list, cols[2], &mut scale_state);
@@ -688,12 +785,25 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             "Current: {}",
             app.mw_buffer
         ))]))
-        .block(Block::default().title("Selection").borders(Borders::ALL));
+        .block(
+            Block::default()
+                .title("Selection")
+                .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.surface1)),
+        );
         f.render_widget(current, rows[2]);
 
         let bottom_help = Paragraph::new(Text::from(vec![Line::from(
-            "Enter adds: name:WxH@Hz:scale;   s saves to MONITOR_CONFIG   x removes last",
-        )]));
+            "Enter add   s save   x remove last",
+        )]))
+        .block(
+            Block::default().style(
+                Style::default()
+                    .bg(app.theme.surface0)
+                    .fg(app.theme.subtext0),
+            ),
+        );
         f.render_widget(bottom_help, rows[3]);
     }
 }
@@ -706,22 +816,22 @@ fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Lin
                 Span::styled(
                     text,
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(app.theme.yellow)
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
                 ),
                 Span::raw("  "),
-                Span::styled("[editing]", Style::default().fg(Color::Yellow)),
+                Span::styled("[editing]", Style::default().fg(app.theme.yellow)),
             ])
         } else {
             Line::from(Span::styled(
                 text,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.blue)
                     .add_modifier(Modifier::BOLD),
             ))
         }
     } else {
-        Line::from(Span::raw(text))
+        Line::from(Span::styled(text, Style::default().fg(app.theme.text)))
     }
 }
 
