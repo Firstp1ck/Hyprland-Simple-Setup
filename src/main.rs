@@ -256,6 +256,19 @@ fn run_app<B: ratatui::backend::Backend>(
             app.push_log_line(line);
         }
 
+        // Detect setup.sh completion and report once
+        if let Some(child) = app.child.as_mut() {
+            if let Ok(Some(status)) = child.try_wait() {
+                let code = status.code().unwrap_or(-1);
+                if status.success() {
+                    app.push_log_line(format!("setup.sh finished successfully (exit {code})"));
+                } else {
+                    app.push_log_line(format!("setup.sh exited with status {code}"));
+                }
+                app.child = None;
+            }
+        }
+
         terminal.draw(|f| draw_ui(f, app)).context("draw ui")?;
 
         let timeout = tick_rate.saturating_sub(app.last_tick.elapsed());
@@ -361,20 +374,25 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
-    let log_text: Vec<Line> = app.logs.iter().map(|l| Line::from(l.clone())).collect();
-    // Calculate scroll so that new output is anchored at the bottom when following
-    let mut y_offset = app.scroll as usize;
+    // Calculate visible slice to avoid cloning thousands of lines every frame
+    let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
+    let total_lines = app.logs.len();
+    let mut start_idx = app.scroll as usize;
     if app.follow_tail {
-        let visible = right_chunks[1].height.saturating_sub(2) as usize; // approx: border lines
-        let total = app.logs.len();
-        y_offset = total.saturating_sub(visible);
+        start_idx = total_lines.saturating_sub(visible_lines);
     } else {
         // Clamp when not following
-        let max_scroll = app.logs.len().saturating_sub(1);
-        if y_offset > max_scroll {
-            y_offset = max_scroll;
+        let max_scroll = total_lines.saturating_sub(1);
+        if start_idx > max_scroll {
+            start_idx = max_scroll;
         }
     }
+    let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
+    let log_text: Vec<Line> = app.logs[start_idx..end_idx]
+        .iter()
+        .map(|l| Line::from(l.clone()))
+        .collect();
+
     let logs = Paragraph::new(log_text)
         .block(
             Block::default()
@@ -387,7 +405,6 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 )
                 .border_style(Style::default().fg(app.theme.surface1)),
         )
-        .scroll((y_offset as u16, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
 
