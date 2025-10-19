@@ -53,12 +53,12 @@ struct PreflightConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreflightField {
-    PromptDefault,
-    FishLanguage,
-    WallpaperDir,
-    MonitorEnabled,
-    MonitorConfig,
-    AutoContinue,
+    EnvPromptDefaultYn,
+    EnvFishLanguageChoiceOverride,
+    EnvWallpaperDirOverride,
+    EnvMonitorSetupEnabled,
+    EnvMonitorConfig,
+    EnvAutoContinueOnWarnings,
     Start,
 }
 
@@ -296,34 +296,34 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let pf = &app.preflight;
     let mut lines: Vec<Line> = Vec::new();
     lines.push(styled_field_line(
-        PreflightField::PromptDefault,
+        PreflightField::EnvPromptDefaultYn,
         app,
-        format!("Default yes to prompts: {}", if pf.prompt_default_yes { "Yes" } else { "No" }),
+        format!("PROMPT_DEFAULT_YN: {}", if pf.prompt_default_yes { "y" } else { "n" }),
     ));
     lines.push(styled_field_line(
-        PreflightField::FishLanguage,
+        PreflightField::EnvFishLanguageChoiceOverride,
         app,
-        format!("Fish language: {}", match pf.fish_language_choice { 1 => "de_CH", 2 => "de_DE", 3 => "en_US", _ => "de_CH" }),
+        format!("FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
     ));
     lines.push(styled_field_line(
-        PreflightField::WallpaperDir,
+        PreflightField::EnvWallpaperDirOverride,
         app,
-        format!("Wallpaper dir: {}", pf.wallpaper_dir),
+        format!("WALLPAPER_DIR_OVERRIDE: {}", pf.wallpaper_dir),
     ));
     lines.push(styled_field_line(
-        PreflightField::MonitorEnabled,
+        PreflightField::EnvMonitorSetupEnabled,
         app,
-        format!("Monitor setup enabled: {}", if pf.monitor_setup_enabled { "Yes" } else { "No" }),
+        format!("MONITOR_SETUP_ENABLED: {}", if pf.monitor_setup_enabled { "true" } else { "false" }),
     ));
     lines.push(styled_field_line(
-        PreflightField::MonitorConfig,
+        PreflightField::EnvMonitorConfig,
         app,
-        format!("Monitor config: {}", if pf.monitor_config.is_empty() { "<empty>".to_string() } else { pf.monitor_config.clone() }),
+        format!("MONITOR_CONFIG: {}", if pf.monitor_config.is_empty() { "<empty>".to_string() } else { pf.monitor_config.clone() }),
     ));
     lines.push(styled_field_line(
-        PreflightField::AutoContinue,
+        PreflightField::EnvAutoContinueOnWarnings,
         app,
-        format!("Auto-continue on warnings: {}", if pf.auto_continue_on_warnings { "Yes" } else { "No" }),
+        format!("AUTO_CONTINUE_ON_WARNINGS: {}", if pf.auto_continue_on_warnings { "true" } else { "false" }),
     ));
     lines.push(styled_field_line(
         PreflightField::Start,
@@ -339,12 +339,14 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Bottom help or editing prompt
     let help_lines: Vec<Line> = if app.editing {
         let field = match app.preflight_focus {
-            PreflightField::WallpaperDir => "Wallpaper dir",
-            PreflightField::MonitorConfig => "Monitor config",
+            PreflightField::EnvWallpaperDirOverride => "WALLPAPER_DIR_OVERRIDE",
+            PreflightField::EnvMonitorConfig => "MONITOR_CONFIG",
             _ => "",
         };
+        let caret = "▏";
+        let buffer_with_caret = format!("{}{}", app.edit_buffer, caret);
         vec![
-            Line::from(format!("Editing {}: {}", field, app.edit_buffer)),
+            Line::from(format!("Editing {}: {}", field, buffer_with_caret)),
             Line::from("Keys: Enter save  Esc cancel  (type to edit, Backspace deletes)"),
         ]
     } else {
@@ -362,7 +364,23 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Line<'static> {
     let selected = app.preflight_focus == field;
     if selected {
-        Line::from(Span::styled(text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+        if app.editing {
+            Line::from(vec![
+                Span::styled(
+                    text,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ),
+                Span::raw("  "),
+                Span::styled("[editing]", Style::default().fg(Color::Yellow)),
+            ])
+        } else {
+            Line::from(Span::styled(
+                text,
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ))
+        }
     } else {
         Line::from(Span::raw(text))
     }
@@ -595,7 +613,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         MenuAction::Quit => {}
                     }
                 }
-                PreflightField::WallpaperDir | PreflightField::MonitorConfig => {
+                PreflightField::EnvWallpaperDirOverride | PreflightField::EnvMonitorConfig => {
                     begin_editing(app);
                 }
                 _ => {}
@@ -608,37 +626,37 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
-        PreflightField::PromptDefault => PreflightField::FishLanguage,
-        PreflightField::FishLanguage => PreflightField::WallpaperDir,
-        PreflightField::WallpaperDir => PreflightField::MonitorEnabled,
-        PreflightField::MonitorEnabled => PreflightField::MonitorConfig,
-        PreflightField::MonitorConfig => PreflightField::AutoContinue,
-        PreflightField::AutoContinue => PreflightField::Start,
-        PreflightField::Start => PreflightField::PromptDefault,
+        PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
+        PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
+        PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
+        PreflightField::EnvAutoContinueOnWarnings => PreflightField::Start,
+        PreflightField::Start => PreflightField::EnvPromptDefaultYn,
     };
 }
 
 fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
-        PreflightField::PromptDefault => PreflightField::Start,
-        PreflightField::FishLanguage => PreflightField::PromptDefault,
-        PreflightField::WallpaperDir => PreflightField::FishLanguage,
-        PreflightField::MonitorEnabled => PreflightField::WallpaperDir,
-        PreflightField::MonitorConfig => PreflightField::MonitorEnabled,
-        PreflightField::AutoContinue => PreflightField::MonitorConfig,
-        PreflightField::Start => PreflightField::AutoContinue,
+        PreflightField::EnvPromptDefaultYn => PreflightField::Start,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
+        PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
+        PreflightField::Start => PreflightField::EnvAutoContinueOnWarnings,
     };
 }
 
 fn adjust_preflight_field(app: &mut AppState, delta: i32) {
     match app.preflight_focus {
-        PreflightField::FishLanguage => {
+        PreflightField::EnvFishLanguageChoiceOverride => {
             let mut v = app.preflight.fish_language_choice as i32 + delta;
             if v < 1 { v = 3; }
             if v > 3 { v = 1; }
             app.preflight.fish_language_choice = v as u8;
         }
-        PreflightField::PromptDefault => {
+        PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
         }
         _ => {}
@@ -647,20 +665,20 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
 
 fn toggle_boolean_field(app: &mut AppState) {
     match app.preflight_focus {
-        PreflightField::PromptDefault => app.preflight.prompt_default_yes = !app.preflight.prompt_default_yes,
-        PreflightField::MonitorEnabled => app.preflight.monitor_setup_enabled = !app.preflight.monitor_setup_enabled,
-        PreflightField::AutoContinue => app.preflight.auto_continue_on_warnings = !app.preflight.auto_continue_on_warnings,
+        PreflightField::EnvPromptDefaultYn => app.preflight.prompt_default_yes = !app.preflight.prompt_default_yes,
+        PreflightField::EnvMonitorSetupEnabled => app.preflight.monitor_setup_enabled = !app.preflight.monitor_setup_enabled,
+        PreflightField::EnvAutoContinueOnWarnings => app.preflight.auto_continue_on_warnings = !app.preflight.auto_continue_on_warnings,
         _ => {}
     }
 }
 
 fn begin_editing(app: &mut AppState) {
     match app.preflight_focus {
-        PreflightField::WallpaperDir => {
+        PreflightField::EnvWallpaperDirOverride => {
             app.editing = true;
             app.edit_buffer = app.preflight.wallpaper_dir.clone();
         }
-        PreflightField::MonitorConfig => {
+        PreflightField::EnvMonitorConfig => {
             app.editing = true;
             app.edit_buffer = app.preflight.monitor_config.clone();
         }
@@ -670,10 +688,10 @@ fn begin_editing(app: &mut AppState) {
 
 fn apply_edit_buffer(app: &mut AppState) {
     match app.preflight_focus {
-        PreflightField::WallpaperDir => {
+        PreflightField::EnvWallpaperDirOverride => {
             app.preflight.wallpaper_dir = app.edit_buffer.clone();
         }
-        PreflightField::MonitorConfig => {
+        PreflightField::EnvMonitorConfig => {
             app.preflight.monitor_config = app.edit_buffer.clone();
         }
         _ => {}
