@@ -34,6 +34,7 @@ struct PreflightConfig {
     monitor_setup_enabled: bool,
     monitor_config: String,
     auto_continue_on_warnings: bool,
+    dry_run: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +45,7 @@ enum PreflightField {
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
     EnvAutoContinueOnWarnings,
+    EnvDryRun,
     Start,
 }
 
@@ -84,6 +86,7 @@ impl AppState {
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
                 auto_continue_on_warnings: true,
+                dry_run: false,
             },
             preflight_focus: PreflightField::Start,
             editing: false,
@@ -269,7 +272,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     let header = Paragraph::new(Text::from(vec![
         Line::from("Preflight configuration - set values, then press Enter to start"),
-        Line::from("Tab/Shift-Tab: move  Space/Left/Right: change  e: edit text  Esc: cancel edit  q: back"),
+        Line::from("Tab/Shift-Tab: move  Space/Left/Right: change  1/2/3: set language  e/Enter: edit text  Esc: cancel edit  q: back"),
+        Line::from("Left label shows how to change each option: [Toggle] or [Edit]"),
     ]))
     .block(Block::default().title("Preflight").borders(Borders::ALL));
     f.render_widget(header, chunks[0]);
@@ -280,7 +284,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         PreflightField::EnvPromptDefaultYn,
         app,
         format!(
-            "PROMPT_DEFAULT_YN: {}",
+            "[Toggle] PROMPT_DEFAULT_YN: {}",
             if pf.prompt_default_yes { "y" } else { "n" }
         ),
     ));
@@ -288,20 +292,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         PreflightField::EnvFishLanguageChoiceOverride,
         app,
         format!(
-            "FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)",
+            "[Toggle/1/2/3] FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)",
             pf.fish_language_choice
         ),
     ));
     lines.push(styled_field_line(
         PreflightField::EnvWallpaperDirOverride,
         app,
-        format!("WALLPAPER_DIR_OVERRIDE: {}", pf.wallpaper_dir),
+        format!("[Edit] WALLPAPER_DIR_OVERRIDE: {}", pf.wallpaper_dir),
     ));
     lines.push(styled_field_line(
         PreflightField::EnvMonitorSetupEnabled,
         app,
         format!(
-            "MONITOR_SETUP_ENABLED: {}",
+            "[Toggle] MONITOR_SETUP_ENABLED: {}",
             if pf.monitor_setup_enabled {
                 "true"
             } else {
@@ -313,7 +317,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         PreflightField::EnvMonitorConfig,
         app,
         format!(
-            "MONITOR_CONFIG: {}",
+            "[Edit] MONITOR_CONFIG: {}",
             if pf.monitor_config.is_empty() {
                 "<empty>".to_string()
             } else {
@@ -325,12 +329,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         PreflightField::EnvAutoContinueOnWarnings,
         app,
         format!(
-            "AUTO_CONTINUE_ON_WARNINGS: {}",
+            "[Toggle] AUTO_CONTINUE_ON_WARNINGS: {}",
             if pf.auto_continue_on_warnings {
                 "true"
             } else {
                 "false"
             }
+        ),
+    ));
+    lines.push(styled_field_line(
+        PreflightField::EnvDryRun,
+        app,
+        format!(
+            "[Toggle] DRY_RUN (--dry-run): {}",
+            if pf.dry_run { "true" } else { "false" }
         ),
     ));
     lines.push(styled_field_line(
@@ -634,6 +646,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => preflight_focus_prev(app),
         KeyCode::Left => adjust_preflight_field(app, -1),
         KeyCode::Right => adjust_preflight_field(app, 1),
+        KeyCode::Char('1') => set_language_choice(app, 1),
+        KeyCode::Char('2') => set_language_choice(app, 2),
+        KeyCode::Char('3') => set_language_choice(app, 3),
         KeyCode::Char(' ') => toggle_boolean_field(app),
         KeyCode::Char('e') => begin_editing(app),
         KeyCode::Enter => {
@@ -641,7 +656,11 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             match app.preflight_focus {
                 PreflightField::Start => {
                     app.ui_mode = UiMode::Menu; // return to menu for logs visibility
-                    spawn_setup(app, &[])?;
+                    if app.preflight.dry_run {
+                        spawn_setup(app, &["--dry-run"])?;
+                    } else {
+                        spawn_setup(app, &[])?;
+                    }
                 }
                 PreflightField::EnvWallpaperDirOverride | PreflightField::EnvMonitorConfig => {
                     begin_editing(app);
@@ -661,7 +680,8 @@ fn preflight_focus_next(app: &mut AppState) {
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
-        PreflightField::EnvAutoContinueOnWarnings => PreflightField::Start,
+        PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvDryRun,
+        PreflightField::EnvDryRun => PreflightField::Start,
         PreflightField::Start => PreflightField::EnvPromptDefaultYn,
     };
 }
@@ -674,7 +694,8 @@ fn preflight_focus_prev(app: &mut AppState) {
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
-        PreflightField::Start => PreflightField::EnvAutoContinueOnWarnings,
+        PreflightField::EnvDryRun => PreflightField::EnvAutoContinueOnWarnings,
+        PreflightField::Start => PreflightField::EnvDryRun,
     };
 }
 
@@ -693,7 +714,18 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
         }
+        PreflightField::EnvDryRun => {
+            app.preflight.dry_run = delta >= 0;
+        }
         _ => {}
+    }
+}
+
+fn set_language_choice(app: &mut AppState, choice: u8) {
+    if app.preflight_focus == PreflightField::EnvFishLanguageChoiceOverride
+        && (1..=3).contains(&choice)
+    {
+        app.preflight.fish_language_choice = choice;
     }
 }
 
@@ -708,6 +740,7 @@ fn toggle_boolean_field(app: &mut AppState) {
         PreflightField::EnvAutoContinueOnWarnings => {
             app.preflight.auto_continue_on_warnings = !app.preflight.auto_continue_on_warnings
         }
+        PreflightField::EnvDryRun => app.preflight.dry_run = !app.preflight.dry_run,
         _ => {}
     }
 }
