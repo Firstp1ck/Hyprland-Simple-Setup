@@ -49,6 +49,19 @@ enum PreflightField {
     Start,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditKind {
+    None,
+    Text,
+    MonitorWizard,
+}
+
+#[derive(Clone, Debug, Default)]
+struct MonitorInfo {
+    name: String,
+    modes: Vec<String>,
+}
+
 struct AppState {
     list_state: ListState,
     logs: Vec<String>,
@@ -62,6 +75,13 @@ struct AppState {
     preflight_focus: PreflightField,
     editing: bool,
     edit_buffer: String,
+    edit_kind: EditKind,
+    // Monitor wizard state
+    mw_monitors: Vec<MonitorInfo>,
+    mw_selected_monitor: usize,
+    mw_selected_mode: usize,
+    mw_selected_scale: usize,
+    mw_buffer: String,
 }
 
 impl AppState {
@@ -91,6 +111,12 @@ impl AppState {
             preflight_focus: PreflightField::Start,
             editing: false,
             edit_buffer: String::new(),
+            edit_kind: EditKind::None,
+            mw_monitors: Vec::new(),
+            mw_selected_monitor: 0,
+            mw_selected_mode: 0,
+            mw_selected_scale: 1, // default 1.0
+            mw_buffer: String::new(),
         }
     }
 
@@ -367,7 +393,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(help, chunks[2]);
 
     // Center popup for editing
-    if app.editing {
+    if app.editing && app.edit_kind == EditKind::Text {
         let area_w = area.width as i32;
         let popup_w = (area_w * 3 / 4).max(30) as u16; // 75% width, min 30
         let popup_h = 7u16; // title + input + help
@@ -422,6 +448,118 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             "Enter save  Esc cancel  (type to edit, Backspace deletes)",
         )]));
         f.render_widget(tip, inner_chunks[2]);
+    } else if app.editing && app.edit_kind == EditKind::MonitorWizard {
+        // Dropdown-like wizard to compose MONITOR_CONFIG
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 4 / 5).max(50) as u16;
+        let popup_h = (area.height.saturating_sub(6)).max(12);
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
+
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Monitor Config Wizard")
+            .borders(Borders::ALL);
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(5),
+                Constraint::Length(3),
+                Constraint::Length(2),
+            ])
+            .split(inner);
+
+        // Title/help
+        let help_top = Paragraph::new(Text::from(vec![Line::from(
+            "Tab switch column  j/k/↑/↓ move  Enter add selection  x remove last  s save  Esc cancel",
+        )]));
+        f.render_widget(help_top, rows[0]);
+
+        // 3 columns: monitors, modes, scales
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(35),
+                Constraint::Percentage(45),
+                Constraint::Percentage(20),
+            ])
+            .split(rows[1]);
+
+        // Monitors list
+        let mon_items: Vec<ListItem> = app
+            .mw_monitors
+            .iter()
+            .map(|m| ListItem::new(Line::from(m.name.clone())))
+            .collect();
+        let mut mon_state = ListState::default();
+        mon_state.select(Some(
+            app.mw_selected_monitor
+                .min(app.mw_monitors.len().saturating_sub(1)),
+        ));
+        let mon_list =
+            List::new(mon_items).block(Block::default().title("Monitors").borders(Borders::ALL));
+        f.render_stateful_widget(mon_list, cols[0], &mut mon_state);
+
+        // Modes for selected monitor
+        let modes: Vec<String> = app
+            .mw_monitors
+            .get(app.mw_selected_monitor)
+            .map(|m| m.modes.clone())
+            .unwrap_or_default();
+        let mode_items: Vec<ListItem> = modes
+            .iter()
+            .map(|s| ListItem::new(Line::from(s.clone())))
+            .collect();
+        let mut mode_state = ListState::default();
+        mode_state.select(Some(
+            app.mw_selected_mode.min(modes.len().saturating_sub(1)),
+        ));
+        let mode_list =
+            List::new(mode_items).block(Block::default().title("Modes").borders(Borders::ALL));
+        f.render_stateful_widget(mode_list, cols[1], &mut mode_state);
+
+        // Scales
+        let scale_opts = ["0.75", "1.0", "1.25", "1.5", "2.0"];
+        let scale_items: Vec<ListItem> = scale_opts
+            .iter()
+            .map(|s| ListItem::new(Line::from((*s).to_string())))
+            .collect();
+        let mut scale_state = ListState::default();
+        scale_state.select(Some(
+            app.mw_selected_scale
+                .min(scale_opts.len().saturating_sub(1)),
+        ));
+        let scale_list =
+            List::new(scale_items).block(Block::default().title("Scale").borders(Borders::ALL));
+        f.render_stateful_widget(scale_list, cols[2], &mut scale_state);
+
+        // Current buffer and tips
+        let current = Paragraph::new(Text::from(vec![Line::from(format!(
+            "Current: {}",
+            app.mw_buffer
+        ))]))
+        .block(Block::default().title("Selection").borders(Borders::ALL));
+        f.render_widget(current, rows[2]);
+
+        let bottom_help = Paragraph::new(Text::from(vec![Line::from(
+            "Enter adds: name:WxH@Hz:scale;   s saves to MONITOR_CONFIG   x removes last",
+        )]));
+        f.render_widget(bottom_help, rows[3]);
     }
 }
 
@@ -619,6 +757,73 @@ fn guess_default_wallpaper_dir(setup_script: &Option<PathBuf>) -> Option<String>
 
 fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     if app.editing {
+        if app.edit_kind == EditKind::MonitorWizard {
+            // Wizard navigation and operations
+            match key.code {
+                KeyCode::Esc => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                    app.mw_monitors.clear();
+                    app.mw_buffer.clear();
+                }
+                KeyCode::Tab => {
+                    // cycle columns: monitor -> mode -> scale -> monitor
+                    if app.mw_selected_scale < usize::MAX { /* noop just for lint */ }
+                    // Use edit_buffer length as a cheap column index flag: 0=mon,1=mode,2=scale
+                    let col = app.mw_selected_scale % 3; // reuse field for cycling marker
+                    app.mw_selected_scale = (col + 1) % 3;
+                }
+                KeyCode::Char('j') | KeyCode::Down => match app.mw_selected_scale % 3 {
+                    0 => {
+                        app.mw_selected_monitor = app
+                            .mw_selected_monitor
+                            .saturating_add(1)
+                            .min(app.mw_monitors.len().saturating_sub(1))
+                    }
+                    1 => app.mw_selected_mode = app.mw_selected_mode.saturating_add(1),
+                    _ => app.mw_selected_scale = app.mw_selected_scale.saturating_add(1),
+                },
+                KeyCode::Char('k') | KeyCode::Up => match app.mw_selected_scale % 3 {
+                    0 => app.mw_selected_monitor = app.mw_selected_monitor.saturating_sub(1),
+                    1 => app.mw_selected_mode = app.mw_selected_mode.saturating_sub(1),
+                    _ => app.mw_selected_scale = app.mw_selected_scale.saturating_sub(1),
+                },
+                KeyCode::Char('x') => {
+                    // remove last semicolon-delimited entry
+                    if let Some(idx) = app.mw_buffer.rfind(';') {
+                        app.mw_buffer.truncate(idx);
+                    } else {
+                        app.mw_buffer.clear();
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(mon) = app.mw_monitors.get(app.mw_selected_monitor) {
+                        let name = &mon.name;
+                        let modes = &mon.modes;
+                        let mode = modes
+                            .get(app.mw_selected_mode)
+                            .cloned()
+                            .unwrap_or_else(|| "1920x1080@60".to_string());
+                        let scales = ["0.75", "1.0", "1.25", "1.5", "2.0"];
+                        let scale = scales
+                            .get(app.mw_selected_scale.min(scales.len() - 1))
+                            .unwrap_or(&"1.0");
+                        if !app.mw_buffer.is_empty() && !app.mw_buffer.ends_with(';') {
+                            app.mw_buffer.push(';');
+                        }
+                        app.mw_buffer
+                            .push_str(&format!("{}:{}:{}", name, mode, scale));
+                    }
+                }
+                KeyCode::Char('s') => {
+                    app.preflight.monitor_config = app.mw_buffer.clone();
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                _ => {}
+            }
+            return Ok(false);
+        }
         match key.code {
             KeyCode::Esc => {
                 app.editing = false;
@@ -662,9 +867,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         spawn_setup(app, &[])?;
                     }
                 }
-                PreflightField::EnvWallpaperDirOverride | PreflightField::EnvMonitorConfig => {
-                    begin_editing(app);
-                }
+                PreflightField::EnvWallpaperDirOverride => begin_editing(app),
+                PreflightField::EnvMonitorConfig => begin_editing(app),
                 _ => {}
             }
         }
@@ -749,11 +953,21 @@ fn begin_editing(app: &mut AppState) {
     match app.preflight_focus {
         PreflightField::EnvWallpaperDirOverride => {
             app.editing = true;
+            app.edit_kind = EditKind::Text;
             app.edit_buffer = app.preflight.wallpaper_dir.clone();
         }
         PreflightField::EnvMonitorConfig => {
+            if !app.preflight.monitor_setup_enabled {
+                return;
+            }
             app.editing = true;
-            app.edit_buffer = app.preflight.monitor_config.clone();
+            app.edit_kind = EditKind::MonitorWizard;
+            app.mw_buffer = app.preflight.monitor_config.clone();
+            // Try to discover monitors/modes via hyprctl (best-effort)
+            app.mw_monitors = discover_hypr_monitors();
+            app.mw_selected_monitor = 0;
+            app.mw_selected_mode = 0;
+            app.mw_selected_scale = 1;
         }
         _ => {}
     }
@@ -763,10 +977,53 @@ fn apply_edit_buffer(app: &mut AppState) {
     match app.preflight_focus {
         PreflightField::EnvWallpaperDirOverride => {
             app.preflight.wallpaper_dir = app.edit_buffer.clone();
+            app.edit_kind = EditKind::None;
         }
         PreflightField::EnvMonitorConfig => {
-            app.preflight.monitor_config = app.edit_buffer.clone();
+            // When using wizard, saving is handled by 's' key; keep here for text fallback
+            if app.edit_kind == EditKind::Text {
+                app.preflight.monitor_config = app.edit_buffer.clone();
+            }
+            app.edit_kind = EditKind::None;
         }
         _ => {}
     }
+}
+
+fn discover_hypr_monitors() -> Vec<MonitorInfo> {
+    // Fallback to empty list if hyprctl not present or parsing fails
+    let output = Command::new("hyprctl").arg("monitors").output();
+    let text = match output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
+        _ => return Vec::new(),
+    };
+
+    let mut monitors: Vec<MonitorInfo> = Vec::new();
+    let mut current: Option<MonitorInfo> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("Monitor ") {
+            if let Some(mi) = current.take() {
+                monitors.push(mi);
+            }
+            let name = rest.split_whitespace().next().unwrap_or("").to_string();
+            current = Some(MonitorInfo {
+                name,
+                modes: Vec::new(),
+            });
+        } else if line.trim_start().starts_with("availableModes:")
+            && let Some(mi) = current.as_mut()
+        {
+            let modes_str = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
+            let parsed: Vec<String> = modes_str
+                .split_whitespace()
+                .filter(|s| s.contains('x'))
+                .map(|s| s.trim_matches(',').to_string())
+                .collect();
+            mi.modes = parsed;
+        }
+    }
+    if let Some(mi) = current.take() {
+        monitors.push(mi);
+    }
+    monitors
 }
