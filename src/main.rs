@@ -39,6 +39,12 @@ struct Theme {
     blue: Color,
 }
 
+#[derive(Clone, Debug)]
+struct SetupSection {
+    title: String,
+    done: bool,
+}
+
 impl Theme {
     fn catppuccin_mocha() -> Self {
         Self {
@@ -102,9 +108,6 @@ struct MonitorInfo {
 struct AppState {
     list_state: ListState,
     logs: Vec<String>,
-    // Cache of logs converted to ratatui Lines to avoid per-frame allocations
-    cached_log_lines: Vec<ratatui::text::Line<'static>>,
-    last_log_count: usize,
     last_tick: Instant,
     scroll: u16,
     follow_tail: bool,
@@ -128,6 +131,9 @@ struct AppState {
     theme: Theme,
     child: Option<std::process::Child>,
     install_started_at: Option<Instant>,
+    // Live sections parsed from setup.sh output
+    sections: Vec<SetupSection>,
+    current_section: Option<usize>,
 }
 
 impl AppState {
@@ -147,8 +153,6 @@ impl AppState {
         Self {
             list_state,
             logs: Vec::new(),
-            cached_log_lines: Vec::new(),
-            last_log_count: 0,
             last_tick: Instant::now(),
             scroll: 0,
             follow_tail: true,
@@ -180,6 +184,8 @@ impl AppState {
             theme: Theme::catppuccin_mocha(),
             child: None,
             install_started_at: None,
+            sections: Vec::new(),
+            current_section: None,
         }
     }
 
@@ -193,11 +199,11 @@ impl AppState {
         if raw.trim().is_empty() {
             return;
         }
+        // Update live section tracking based on raw (pre-timestamp) line
+        update_sections_from_line(self, &raw);
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let s = format!("[{}] {}", ts, raw);
         self.logs.push(s.clone());
-        // Invalidate cache
-        self.last_log_count = 0;
         // Append to file
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
@@ -338,25 +344,44 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(vchunks[0]);
 
-    let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
-        "Run Hyprland setup",
-        Style::default().fg(app.theme.text),
-    )))];
-    let menu = List::new(items)
-        .block(
-            Block::default()
-                .title("Hyprland Setup Actions")
-                .borders(Borders::ALL)
-                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                .border_style(Style::default().fg(app.theme.mauve)),
-        )
-        .highlight_style(
-            Style::default()
-                .fg(app.theme.blue)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
-    f.render_stateful_widget(menu, chunks[0], &mut app.list_state);
+    // Left pane shows either action or live sections when running
+    let left_block = Block::default()
+        .title("Hyprland Setup Actions")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+        .border_style(Style::default().fg(app.theme.mauve));
+
+    if app.child.is_some() && !app.sections.is_empty() {
+        // Render sections with color: green=done, white=pending, blue=current
+        let mut lines: Vec<Line> = Vec::new();
+        for (idx, sec) in app.sections.iter().enumerate() {
+            let style = if Some(idx) == app.current_section {
+                Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD)
+            } else if sec.done {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(app.theme.text)
+            };
+            lines.push(Line::from(Span::styled(format!("• {}", sec.title), style)));
+        }
+        let left_widget = Paragraph::new(Text::from(lines)).block(left_block);
+        f.render_widget(left_widget, chunks[0]);
+    } else {
+        let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
+            "Run Hyprland setup",
+            Style::default().fg(app.theme.text),
+        )))];
+        let menu = List::new(items)
+            .block(left_block)
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ");
+        // Use List for selection when idle
+        f.render_stateful_widget(menu, chunks[0], &mut app.list_state);
+    }
 
     let desc = "Execute setup.sh with full flow";
     let right_chunks = Layout::default()
@@ -391,25 +416,25 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
-    // Rebuild cached lines only when new logs arrive or after clear
-    if app.last_log_count != app.logs.len() {
-        app.cached_log_lines = app.logs.iter().cloned().map(Line::from).collect();
-        app.last_log_count = app.logs.len();
-    }
-    // Row-based scroll so wrapped lines render fully; anchor to bottom when following
-    let mut y_offset = app.scroll as usize;
+    // Calculate visible slice to avoid cloning thousands of lines every frame
+    let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
+    let total_lines = app.logs.len();
+    let mut start_idx = app.scroll as usize;
     if app.follow_tail {
-        let visible_rows = right_chunks[1].height.saturating_sub(2) as usize; // approx border
-        let total_rows = app.cached_log_lines.len();
-        y_offset = total_rows.saturating_sub(visible_rows);
+        start_idx = total_lines.saturating_sub(visible_lines);
     } else {
-        let max_scroll = app.cached_log_lines.len().saturating_sub(1);
-        if y_offset > max_scroll {
-            y_offset = max_scroll;
+        let max_scroll = total_lines.saturating_sub(1);
+        if start_idx > max_scroll {
+            start_idx = max_scroll;
         }
     }
+    let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
+    let log_text: Vec<Line> = app.logs[start_idx..end_idx]
+        .iter()
+        .map(|l| Line::from(l.clone()))
+        .collect();
 
-    let logs = Paragraph::new(app.cached_log_lines.clone())
+    let logs = Paragraph::new(log_text)
         .block(
             Block::default()
                 .title("Output")
@@ -421,7 +446,6 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 )
                 .border_style(Style::default().fg(app.theme.surface1)),
         )
-        .scroll((y_offset as u16, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
 
@@ -940,8 +964,6 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             }
             KeyCode::Char('c') => {
                 app.logs.clear();
-                app.cached_log_lines.clear();
-                app.last_log_count = 0;
                 app.scroll = 0;
             }
             KeyCode::Char('k') => {
@@ -1061,7 +1083,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     app.child = Some(child);
-    // Start install timer and log start
+    // Reset sections, start install timer and log start
+    app.sections.clear();
+    app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
     let tx_out = app.tx.clone();
@@ -1276,8 +1300,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 apply_edit_buffer(app);
                 app.editing = false;
                 app.edit_buffer.clear();
-                // Invalidate cache for any edit that may affect logs (safety no-op for now)
-                app.last_log_count = 0;
+                // no-op
             }
             KeyCode::Backspace => {
                 app.edit_buffer.pop();
@@ -1609,5 +1632,38 @@ fn format_duration(d: Duration) -> String {
         format!("{}m {:02}.{:03}s", m, s, ms)
     } else {
         format!("{}.{:03}s", s, ms)
+    }
+}
+
+fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
+    // Detect headings like "=== Step ===" or "========= Step ========="
+    let trimmed = raw_line.trim();
+    let is_heading = (trimmed.starts_with("=== ") && trimmed.ends_with(" ==="))
+        || (trimmed.starts_with("=========") && trimmed.ends_with("========="));
+    if is_heading {
+        // Extract title without '=' and spaces
+        let title = trimmed.trim_matches('=').trim().to_string();
+        // Mark previous as done
+        if let Some(idx) = app.current_section {
+            if let Some(prev) = app.sections.get_mut(idx) {
+                prev.done = true;
+            }
+        }
+        // Push new current section
+        app.sections.push(SetupSection { title: title.clone(), done: false });
+        app.current_section = Some(app.sections.len() - 1);
+        return;
+    }
+
+    // Summary markers that imply completion
+    if trimmed.contains("All configurations completed successfully!")
+        || trimmed.contains("Hyprland setup completed successfully!")
+    {
+        if let Some(idx) = app.current_section {
+            if let Some(prev) = app.sections.get_mut(idx) {
+                prev.done = true;
+            }
+            app.current_section = None;
+        }
     }
 }
