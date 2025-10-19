@@ -17,6 +17,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use chrono::Local;
+use std::fs::{OpenOptions};
+use std::io::Write as IoWrite;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
 
@@ -73,6 +76,7 @@ struct AppState {
     rx: Receiver<String>,
     tx: Sender<String>,
     setup_script: Option<PathBuf>,
+    logfile_path: PathBuf,
     ui_mode: UiMode,
     preflight: PreflightConfig,
     preflight_focus: PreflightField,
@@ -94,6 +98,13 @@ impl AppState {
         list_state.select(Some(0));
         let default_wallpaper =
             guess_default_wallpaper_dir(&setup_script).unwrap_or_else(|| "./Wallpaper".to_string());
+        let logfile_path = std::env::var("HYPRLAND_SETUP_LOG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+                p.push("Hyprland-Setup.log");
+                p
+            });
         Self {
             list_state,
             logs: Vec::new(),
@@ -103,6 +114,7 @@ impl AppState {
             rx,
             tx,
             setup_script,
+            logfile_path,
             ui_mode: UiMode::Preflight,
             preflight: PreflightConfig {
                 prompt_default_yes: true,
@@ -133,7 +145,13 @@ impl AppState {
     }
 
     fn push_log_line(&mut self, line: impl Into<String>) {
-        self.logs.push(line.into());
+        let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let s = format!("[{}] {}", ts, line.into());
+        self.logs.push(s.clone());
+        // Append to file
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&self.logfile_path) {
+            let _ = writeln!(f, "{}", s);
+        }
         if self.logs.len() > 5000 {
             let drop = self.logs.len() - 5000;
             self.logs.drain(0..drop);
