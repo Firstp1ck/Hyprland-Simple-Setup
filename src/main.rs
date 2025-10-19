@@ -796,18 +796,45 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     let tx_out = app.tx.clone();
     if let Some(stdout) = stdout {
         thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().map_while(Result::ok) {
-                let _ = tx_out.send(line);
+            let mut reader = BufReader::new(stdout);
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let mut s = String::from_utf8_lossy(&buf).to_string();
+                        // Normalize carriage returns (\r) by taking the last segment
+                        if s.contains('\r') {
+                            s = s.split('\r').next_back().unwrap_or("").to_string();
+                        }
+                        let s = strip_ansi_sequences(&s);
+                        let _ = tx_out.send(s);
+                    }
+                    Err(_) => break,
+                }
             }
         });
     }
     let tx_err = app.tx.clone();
     if let Some(stderr) = stderr {
         thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                let _ = tx_err.send(line);
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let mut s = String::from_utf8_lossy(&buf).to_string();
+                        if s.contains('\r') {
+                            s = s.split('\r').next_back().unwrap_or("").to_string();
+                        }
+                        let s = strip_ansi_sequences(&s);
+                        let _ = tx_err.send(s);
+                    }
+                    Err(_) => break,
+                }
             }
         });
     }
@@ -1202,4 +1229,27 @@ fn ratio_priority(r: &str) -> u32 {
         "5:4" => 5,
         _ => 100,
     }
+}
+
+// Very small ANSI/CSI escape stripper to keep logs readable while respecting carriage returns
+fn strip_ansi_sequences(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut iter = s.chars();
+    while let Some(ch) = iter.next() {
+        if ch == '\u{1b}' {
+            // ESC
+            if let Some('[') = iter.next() {
+                // consume until final byte (0x40-0x7E)
+                for c in iter.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
