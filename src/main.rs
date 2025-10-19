@@ -102,6 +102,9 @@ struct MonitorInfo {
 struct AppState {
     list_state: ListState,
     logs: Vec<String>,
+    // Cache of logs converted to ratatui Lines to avoid per-frame allocations
+    cached_log_lines: Vec<ratatui::text::Line<'static>>,
+    last_log_count: usize,
     last_tick: Instant,
     scroll: u16,
     follow_tail: bool,
@@ -143,6 +146,8 @@ impl AppState {
         Self {
             list_state,
             logs: Vec::new(),
+            cached_log_lines: Vec::new(),
+            last_log_count: 0,
             last_tick: Instant::now(),
             scroll: 0,
             follow_tail: true,
@@ -189,6 +194,8 @@ impl AppState {
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let s = format!("[{}] {}", ts, raw);
         self.logs.push(s.clone());
+        // Invalidate cache
+        self.last_log_count = 0;
         // Append to file
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
@@ -375,26 +382,25 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
-    // Calculate visible slice to avoid cloning thousands of lines every frame
-    let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
-    let total_lines = app.logs.len();
-    let mut start_idx = app.scroll as usize;
+    // Rebuild cached lines only when new logs arrive or after clear
+    if app.last_log_count != app.logs.len() {
+        app.cached_log_lines = app.logs.iter().cloned().map(Line::from).collect();
+        app.last_log_count = app.logs.len();
+    }
+    // Row-based scroll so wrapped lines render fully; anchor to bottom when following
+    let mut y_offset = app.scroll as usize;
     if app.follow_tail {
-        start_idx = total_lines.saturating_sub(visible_lines);
+        let visible_rows = right_chunks[1].height.saturating_sub(2) as usize; // approx border
+        let total_rows = app.cached_log_lines.len();
+        y_offset = total_rows.saturating_sub(visible_rows);
     } else {
-        // Clamp when not following
-        let max_scroll = total_lines.saturating_sub(1);
-        if start_idx > max_scroll {
-            start_idx = max_scroll;
+        let max_scroll = app.cached_log_lines.len().saturating_sub(1);
+        if y_offset > max_scroll {
+            y_offset = max_scroll;
         }
     }
-    let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
-    let log_text: Vec<Line> = app.logs[start_idx..end_idx]
-        .iter()
-        .map(|l| Line::from(l.clone()))
-        .collect();
 
-    let logs = Paragraph::new(log_text)
+    let logs = Paragraph::new(app.cached_log_lines.clone())
         .block(
             Block::default()
                 .title("Output")
@@ -406,6 +412,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 )
                 .border_style(Style::default().fg(app.theme.surface1)),
         )
+        .scroll((y_offset as u16, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
 
@@ -924,6 +931,8 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             }
             KeyCode::Char('c') => {
                 app.logs.clear();
+                app.cached_log_lines.clear();
+                app.last_log_count = 0;
                 app.scroll = 0;
             }
             KeyCode::Char('k') => {
@@ -1251,6 +1260,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 apply_edit_buffer(app);
                 app.editing = false;
                 app.edit_buffer.clear();
+                // Invalidate cache for any edit that may affect logs (safety no-op for now)
+                app.last_log_count = 0;
             }
             KeyCode::Backspace => {
                 app.edit_buffer.pop();
