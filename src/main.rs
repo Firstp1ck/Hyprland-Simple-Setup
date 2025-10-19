@@ -81,6 +81,7 @@ struct AppState {
     mw_selected_monitor: usize,
     mw_selected_mode: usize,
     mw_selected_scale: usize,
+    mw_active_col: u8,
     mw_buffer: String,
 }
 
@@ -116,6 +117,7 @@ impl AppState {
             mw_selected_monitor: 0,
             mw_selected_mode: 0,
             mw_selected_scale: 1, // default 1.0
+            mw_active_col: 0,
             mw_buffer: String::new(),
         }
     }
@@ -318,7 +320,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         PreflightField::EnvFishLanguageChoiceOverride,
         app,
         format!(
-            "[Toggle/1/2/3] FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)",
+            "[1/2/3] FISH_LANGUAGE_CHOICE_OVERRIDE: {} (1=de_CH,2=de_DE,3=en_US)",
             pf.fish_language_choice
         ),
     ));
@@ -485,9 +487,15 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .split(inner);
 
         // Title/help
-        let help_top = Paragraph::new(Text::from(vec![Line::from(
-            "Tab switch column  j/k/↑/↓ move  Enter add selection  x remove last  s save  Esc cancel",
-        )]));
+        let active = match app.mw_active_col {
+            0 => "Monitors",
+            1 => "Modes",
+            _ => "Scale",
+        };
+        let help_top = Paragraph::new(Text::from(vec![Line::from(format!(
+            "Active: {}   Tab switch column  j/k/↑/↓ move  Enter add selection  x remove last  s save  Esc cancel",
+            active
+        ))]));
         f.render_widget(help_top, rows[0]);
 
         // 3 columns: monitors, modes, scales
@@ -511,8 +519,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             app.mw_selected_monitor
                 .min(app.mw_monitors.len().saturating_sub(1)),
         ));
-        let mon_list =
-            List::new(mon_items).block(Block::default().title("Monitors").borders(Borders::ALL));
+        let mon_list = List::new(mon_items).block(
+            Block::default()
+                .title("Monitors")
+                .borders(Borders::ALL)
+                .border_style(if app.mw_active_col == 0 {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                }),
+        );
         f.render_stateful_widget(mon_list, cols[0], &mut mon_state);
 
         // Modes for selected monitor
@@ -529,8 +545,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         mode_state.select(Some(
             app.mw_selected_mode.min(modes.len().saturating_sub(1)),
         ));
-        let mode_list =
-            List::new(mode_items).block(Block::default().title("Modes").borders(Borders::ALL));
+        let mode_list = List::new(mode_items).block(
+            Block::default()
+                .title("Modes")
+                .borders(Borders::ALL)
+                .border_style(if app.mw_active_col == 1 {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                }),
+        );
         f.render_stateful_widget(mode_list, cols[1], &mut mode_state);
 
         // Scales
@@ -544,8 +568,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             app.mw_selected_scale
                 .min(scale_opts.len().saturating_sub(1)),
         ));
-        let scale_list =
-            List::new(scale_items).block(Block::default().title("Scale").borders(Borders::ALL));
+        let scale_list = List::new(scale_items).block(
+            Block::default()
+                .title("Scale")
+                .borders(Borders::ALL)
+                .border_style(if app.mw_active_col == 2 {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                }),
+        );
         f.render_stateful_widget(scale_list, cols[2], &mut scale_state);
 
         // Current buffer and tips
@@ -767,13 +799,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.mw_buffer.clear();
                 }
                 KeyCode::Tab => {
-                    // cycle columns: monitor -> mode -> scale -> monitor
-                    if app.mw_selected_scale < usize::MAX { /* noop just for lint */ }
-                    // Use edit_buffer length as a cheap column index flag: 0=mon,1=mode,2=scale
-                    let col = app.mw_selected_scale % 3; // reuse field for cycling marker
-                    app.mw_selected_scale = (col + 1) % 3;
+                    app.mw_active_col = (app.mw_active_col + 1) % 3;
                 }
-                KeyCode::Char('j') | KeyCode::Down => match app.mw_selected_scale % 3 {
+                KeyCode::Char('j') | KeyCode::Down => match app.mw_active_col % 3 {
                     0 => {
                         app.mw_selected_monitor = app
                             .mw_selected_monitor
@@ -783,7 +811,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     1 => app.mw_selected_mode = app.mw_selected_mode.saturating_add(1),
                     _ => app.mw_selected_scale = app.mw_selected_scale.saturating_add(1),
                 },
-                KeyCode::Char('k') | KeyCode::Up => match app.mw_selected_scale % 3 {
+                KeyCode::Char('k') | KeyCode::Up => match app.mw_active_col % 3 {
                     0 => app.mw_selected_monitor = app.mw_selected_monitor.saturating_sub(1),
                     1 => app.mw_selected_mode = app.mw_selected_mode.saturating_sub(1),
                     _ => app.mw_selected_scale = app.mw_selected_scale.saturating_sub(1),
