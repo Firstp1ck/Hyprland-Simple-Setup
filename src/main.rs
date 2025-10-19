@@ -120,6 +120,7 @@ struct AppState {
     mw_active_col: u8,
     mw_buffer: String,
     theme: Theme,
+    child: Option<std::process::Child>,
 }
 
 impl AppState {
@@ -167,6 +168,7 @@ impl AppState {
             mw_active_col: 0,
             mw_buffer: String::new(),
             theme: Theme::catppuccin_mocha(),
+            child: None,
         }
     }
 
@@ -388,7 +390,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     // Footer with keybind help
     let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Enter: open preflight   q: quit",
+        "Enter: preflight   PgUp/PgDn: scroll   Home/End: follow   c: clear   k: kill   q: quit",
     )]))
     .block(
         Block::default()
@@ -842,6 +844,33 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             KeyCode::Enter => {
                 app.ui_mode = UiMode::Preflight;
             }
+            KeyCode::PageUp => {
+                app.follow_tail = false;
+                app.scroll = app.scroll.saturating_sub(8);
+            }
+            KeyCode::PageDown => {
+                let max = app.logs.len().saturating_sub(1) as u16;
+                app.scroll = (app.scroll.saturating_add(8)).min(max);
+                if app.scroll >= max {
+                    app.follow_tail = true;
+                }
+            }
+            KeyCode::Home => {
+                app.follow_tail = false;
+                app.scroll = 0;
+            }
+            KeyCode::End => {
+                app.follow_tail = true;
+            }
+            KeyCode::Char('c') => {
+                app.logs.clear();
+                app.scroll = 0;
+            }
+            KeyCode::Char('k') => {
+                if let Some(mut child) = app.child.take() {
+                    let _ = child.kill();
+                }
+            }
             _ => {}
         },
         UiMode::Preflight => return handle_preflight_keys(app, key),
@@ -947,9 +976,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     }
     app.push_log_line(format!("$ {}", display_cmd));
     let mut child = cmd.spawn().context("spawn setup.sh")?;
-
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    app.child = Some(child);
     let tx_out = app.tx.clone();
     if let Some(mut stdout) = stdout {
         thread::spawn(move || {
