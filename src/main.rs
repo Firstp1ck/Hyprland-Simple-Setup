@@ -282,13 +282,26 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(header, right_chunks[0]);
 
     let log_text: Vec<Line> = app.logs.iter().map(|l| Line::from(l.clone())).collect();
+    // Calculate scroll so that new output is anchored at the bottom when following
+    let mut y_offset = app.scroll as usize;
+    if app.follow_tail {
+        let visible = right_chunks[1].height.saturating_sub(2) as usize; // approx: border lines
+        let total = app.logs.len();
+        y_offset = total.saturating_sub(visible);
+    } else {
+        // Clamp when not following
+        let max_scroll = app.logs.len().saturating_sub(1);
+        if y_offset > max_scroll {
+            y_offset = max_scroll;
+        }
+    }
     let logs = Paragraph::new(log_text)
         .block(
             Block::default()
-                .title("Output (PgUp/PgDn to scroll, tail follows) ")
+                .title("Output (PgUp/PgDn scroll, End follow, Home top)")
                 .borders(Borders::ALL),
         )
-        .scroll((app.scroll, 0))
+        .scroll((y_offset as u16, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
 
@@ -968,6 +981,24 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     match key.code {
         KeyCode::Char('q') => {
             app.ui_mode = UiMode::Menu;
+        }
+        KeyCode::Home => {
+            app.follow_tail = false;
+            app.scroll = 0;
+        }
+        KeyCode::End => {
+            app.follow_tail = true;
+        }
+        KeyCode::PageUp => {
+            app.follow_tail = false;
+            app.scroll = app.scroll.saturating_sub(8);
+        }
+        KeyCode::PageDown => {
+            let max = app.logs.len().saturating_sub(1) as u16;
+            app.scroll = (app.scroll.saturating_add(8)).min(max);
+            if app.scroll >= max {
+                app.follow_tail = true;
+            }
         }
         KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => preflight_focus_next(app),
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => preflight_focus_prev(app),
