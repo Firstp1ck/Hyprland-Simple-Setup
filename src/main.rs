@@ -69,6 +69,7 @@ struct AppState {
     logs: Vec<String>,
     last_tick: Instant,
     scroll: u16,
+    follow_tail: bool,
     rx: Receiver<String>,
     tx: Sender<String>,
     setup_script: Option<PathBuf>,
@@ -98,6 +99,7 @@ impl AppState {
             logs: Vec::new(),
             last_tick: Instant::now(),
             scroll: 0,
+            follow_tail: true,
             rx,
             tx,
             setup_script,
@@ -135,6 +137,9 @@ impl AppState {
         if self.logs.len() > 5000 {
             let drop = self.logs.len() - 5000;
             self.logs.drain(0..drop);
+        }
+        if self.follow_tail {
+            self.scroll = self.logs.len().saturating_sub(1) as u16;
         }
     }
 }
@@ -278,7 +283,11 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     let log_text: Vec<Line> = app.logs.iter().map(|l| Line::from(l.clone())).collect();
     let logs = Paragraph::new(log_text)
-        .block(Block::default().title("Output").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Output (PgUp/PgDn to scroll, tail follows) ")
+                .borders(Borders::ALL),
+        )
         .scroll((app.scroll, 0))
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
