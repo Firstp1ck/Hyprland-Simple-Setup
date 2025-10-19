@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use chrono::Local;
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -17,8 +18,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
-use chrono::Local;
-use std::fs::{OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write as IoWrite;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
@@ -145,11 +145,19 @@ impl AppState {
     }
 
     fn push_log_line(&mut self, line: impl Into<String>) {
+        let raw: String = line.into();
+        if raw.trim().is_empty() {
+            return;
+        }
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
-        let s = format!("[{}] {}", ts, line.into());
+        let s = format!("[{}] {}", ts, raw);
         self.logs.push(s.clone());
         // Append to file
-        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&self.logfile_path) {
+        if let Ok(mut f) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.logfile_path)
+        {
             let _ = writeln!(f, "{}", s);
         }
         if self.logs.len() > 5000 {
@@ -835,12 +843,15 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
                     Ok(0) => break,
                     Ok(_) => {
                         let mut s = String::from_utf8_lossy(&buf).to_string();
-                        // Normalize carriage returns (\r) by taking the last segment
-                        if s.contains('\r') {
-                            s = s.split('\r').next_back().unwrap_or("").to_string();
+                        if s.contains('\r')
+                            && let Some(seg) = s.rsplit('\r').find(|seg| !seg.is_empty())
+                        {
+                            s = seg.to_string();
                         }
                         let s = strip_ansi_sequences(&s);
-                        let _ = tx_out.send(s);
+                        if !s.trim().is_empty() {
+                            let _ = tx_out.send(s);
+                        }
                     }
                     Err(_) => break,
                 }
@@ -858,11 +869,15 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
                     Ok(0) => break,
                     Ok(_) => {
                         let mut s = String::from_utf8_lossy(&buf).to_string();
-                        if s.contains('\r') {
-                            s = s.split('\r').next_back().unwrap_or("").to_string();
+                        if s.contains('\r')
+                            && let Some(seg) = s.rsplit('\r').find(|seg| !seg.is_empty())
+                        {
+                            s = seg.to_string();
                         }
                         let s = strip_ansi_sequences(&s);
-                        let _ = tx_err.send(s);
+                        if !s.trim().is_empty() {
+                            let _ = tx_err.send(s);
+                        }
                     }
                     Err(_) => break,
                 }
