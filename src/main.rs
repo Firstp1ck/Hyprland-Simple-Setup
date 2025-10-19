@@ -371,7 +371,14 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     lines.push(styled_field_line(
         PreflightField::Password,
         app,
-        format!("[Edit/required] Password: {}", if pf.password.is_empty() { "<empty>" } else { "******" }),
+        format!(
+            "[Edit/required] Password: {}",
+            if pf.password.is_empty() {
+                "<empty>"
+            } else {
+                "******"
+            }
+        ),
     ));
     lines.push(styled_field_line(
         PreflightField::EnvDryRun,
@@ -528,18 +535,22 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 .min(app.mw_monitors.len().saturating_sub(1)),
         ));
         let mon_list = List::new(mon_items)
-        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▶ ")
-        .block(
-            Block::default()
-                .title("Monitors")
-                .borders(Borders::ALL)
-                .border_style(if app.mw_active_col == 0 {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
-        );
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ")
+            .block(
+                Block::default()
+                    .title("Monitors")
+                    .borders(Borders::ALL)
+                    .border_style(if app.mw_active_col == 0 {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    }),
+            );
         f.render_stateful_widget(mon_list, cols[0], &mut mon_state);
 
         // Modes for selected monitor
@@ -563,18 +574,22 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             app.mw_selected_mode.min(modes.len().saturating_sub(1)),
         ));
         let mode_list = List::new(mode_items)
-        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▶ ")
-        .block(
-            Block::default()
-                .title("Modes")
-                .borders(Borders::ALL)
-                .border_style(if app.mw_active_col == 1 {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
-        );
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ")
+            .block(
+                Block::default()
+                    .title("Modes")
+                    .borders(Borders::ALL)
+                    .border_style(if app.mw_active_col == 1 {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    }),
+            );
         f.render_stateful_widget(mode_list, cols[1], &mut mode_state);
 
         // Scales
@@ -589,18 +604,22 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 .min(scale_opts.len().saturating_sub(1)),
         ));
         let scale_list = List::new(scale_items)
-        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▶ ")
-        .block(
-            Block::default()
-                .title("Scale")
-                .borders(Borders::ALL)
-                .border_style(if app.mw_active_col == 2 {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
-        );
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ")
+            .block(
+                Block::default()
+                    .title("Scale")
+                    .borders(Borders::ALL)
+                    .border_style(if app.mw_active_col == 2 {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    }),
+            );
         f.render_stateful_widget(scale_list, cols[2], &mut scale_state);
 
         // Current buffer and tips
@@ -648,11 +667,11 @@ fn styled_field_line(field: PreflightField, app: &AppState, text: String) -> Lin
 fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     match app.ui_mode {
         UiMode::Menu => match key.code {
-        KeyCode::Char('q') => return Ok(true),
+            KeyCode::Char('q') => return Ok(true),
             KeyCode::Enter => {
                 app.ui_mode = UiMode::Preflight;
-        }
-        _ => {}
+            }
+            _ => {}
         },
         UiMode::Preflight => return handle_preflight_keys(app, key),
     }
@@ -704,10 +723,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             .arg("/dev/null");
     } else {
         cmd = Command::new("bash");
-    cmd.arg(script);
-    for f in flags {
-        cmd.arg(f);
-    }
+        cmd.arg(script);
+        for f in flags {
+            cmd.arg(f);
+        }
     }
     // Non-interactive env config from preflight
     let pf = &app.preflight;
@@ -944,9 +963,9 @@ fn preflight_focus_next(app: &mut AppState) {
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
-        PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvDryRun,
+        PreflightField::EnvAutoContinueOnWarnings => PreflightField::Password,
+        PreflightField::Password => PreflightField::EnvDryRun,
         PreflightField::EnvDryRun => PreflightField::Start,
-        PreflightField::Password => PreflightField::EnvPromptDefaultYn,
         PreflightField::Start => PreflightField::EnvPromptDefaultYn,
     };
 }
@@ -959,8 +978,8 @@ fn preflight_focus_prev(app: &mut AppState) {
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
-        PreflightField::EnvDryRun => PreflightField::EnvAutoContinueOnWarnings,
-        PreflightField::Password => PreflightField::EnvDryRun,
+        PreflightField::Password => PreflightField::EnvAutoContinueOnWarnings,
+        PreflightField::EnvDryRun => PreflightField::Password,
         PreflightField::Start => PreflightField::EnvDryRun,
     };
 }
@@ -1106,13 +1125,19 @@ fn aspect_ratio_label(mode: &str) -> Option<String> {
     let mut it = res_part.split('x');
     let w: i64 = it.next()?.parse().ok()?;
     let h: i64 = it.next()?.parse().ok()?;
-    if w == 0 || h == 0 { return None; }
+    if w == 0 || h == 0 {
+        return None;
+    }
     let g = gcd_i64(w, h);
     Some(format!("{}:{}", w / g, h / g))
 }
 
 fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
-    while b != 0 { let t = b; b = a % b; a = t; }
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
     a.abs()
 }
 
@@ -1124,8 +1149,10 @@ fn compare_modes_by_aspect_then_size(a: &str, b: &str) -> std::cmp::Ordering {
     let apr = ratio_priority(&ar);
     let bpr = ratio_priority(&br);
     match apr.cmp(&bpr) {
-        Ordering::Equal => match bw.cmp(&aw) { // width desc
-            Ordering::Equal => match bh.cmp(&ah) { // height desc
+        Ordering::Equal => match bw.cmp(&aw) {
+            // width desc
+            Ordering::Equal => match bh.cmp(&ah) {
+                // height desc
                 Ordering::Equal => a.cmp(b),
                 other => other,
             },
