@@ -39,6 +39,11 @@ SETUP_DIR=Hyprland-Simple-Setup
 
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            # default to 1 (de_CH) if not provided in env
+            FISH_LANGUAGE_CHOICE=${FISH_LANGUAGE_CHOICE_OVERRIDE:-1}
+            return
+        fi
         echo "Select your preferred language setting for Fish Shell:"
         echo "1) de_CH (Default: LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
         echo "2) de     (German: LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
@@ -94,6 +99,13 @@ execute_command() {
 
 prompt_yes_no() {
     local prompt="$1"
+    # Non-interactive shortcut: default to PROMPT_DEFAULT_YN (defaults to 'y')
+    if [ "$NON_INTERACTIVE" = "true" ]; then
+        case "${PROMPT_DEFAULT_YN:-y}" in
+            [Yy]*) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
     while true; do
         read -rp "$prompt (y/n): " yn
         # Default to 'Yy' if nothing is entered
@@ -106,6 +118,20 @@ prompt_yes_no() {
             *) echo "Please answer yes or no." ;;
         esac
     done
+}
+
+# Global confirmation gate (auto-accept in non-interactive mode)
+user_confirmation() {
+    if [ "$NON_INTERACTIVE" = "true" ]; then
+        print_message "Non-interactive mode: auto-confirmed."
+        return 0
+    fi
+    if prompt_yes_no "Proceed with Hyprland setup?"; then
+        return 0
+    else
+        print_error "Setup aborted by user"
+        exit 1
+    fi
 }
 
 announce_step() {
@@ -776,10 +802,13 @@ check_user_input() {
 
     # Check if WALLPAPER_DIR is set, prompt if not
     if [ -z "$WALLPAPER_DIR" ]; then
-        echo "WALLPAPER_DIR is not set."
-        read -rp "Please enter the path to your wallpaper directory or use Default (Default: [$default_wallpaper_dir]): " input_wallpaper_dir
-        # Use default if no input provided
-        export WALLPAPER_DIR="${input_wallpaper_dir:-$default_wallpaper_dir}"
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            export WALLPAPER_DIR="${WALLPAPER_DIR_OVERRIDE:-$default_wallpaper_dir}"
+        else
+            echo "WALLPAPER_DIR is not set."
+            read -rp "Please enter the path to your wallpaper directory or use Default (Default: [$default_wallpaper_dir]): " input_wallpaper_dir
+            export WALLPAPER_DIR="${input_wallpaper_dir:-$default_wallpaper_dir}"
+        fi
     fi
 }
 
@@ -1475,11 +1504,24 @@ EOF"; then
 configure_monitor() {
     announce_step "Configuring monitor"
 
-    # Ask user if they want to proceed with monitor setup
-    if ! prompt_yes_no "Would you like to configure your monitor settings?"; then
-        print_message "Monitor setup skipped by user."
-        track_config_status "Monitor Setup" "$CIRCLE (Skipped by user)"
-        return 0
+    # Ask user or auto-skip/setup in non-interactive mode
+    if [ "$NON_INTERACTIVE" = "true" ]; then
+        case "${MONITOR_SETUP_ENABLED:-false}" in
+            true|1|yes|y|Y)
+                print_message "Non-interactive: proceeding with monitor setup"
+                ;;
+            *)
+                print_message "Non-interactive: skipping monitor setup"
+                track_config_status "Monitor Setup" "$CIRCLE (Skipped by config)"
+                return 0
+                ;;
+        esac
+    else
+        if ! prompt_yes_no "Would you like to configure your monitor settings?"; then
+            print_message "Monitor setup skipped by user."
+            track_config_status "Monitor Setup" "$CIRCLE (Skipped by user)"
+            return 0
+        fi
     fi
 
     if check_hyprland; then
@@ -1540,54 +1582,73 @@ configure_monitor() {
         # Function to configure a single monitor
         configure_single_monitor() {
             local monitor_name="$1"
-            local modes
-            modes=$(get_monitor_modes "$monitor_name")
-            
-            # Group modes by aspect ratio
-            declare -A ratio_modes
-            for mode in $modes; do
-                if [[ "$mode" != *x* ]]; then
-                    continue
-                fi
-                local res=${mode%%@*}
-                local width=${res%%x*}
-                local height=${res#*x}
-                if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
-                    continue
-                fi
-                local ratio
-                ratio=$(calculate_aspect_ratio "$width" "$height")
-                if [[ ! " ${ratio_modes[$ratio]} " =~ ${mode} ]]; then
-                    ratio_modes["$ratio"]+="$mode "
-                fi
-            done
+            local chosen_resolution=""
+            local scale=""
 
-            # Let user select aspect ratio
-            print_message "Available ratios for $monitor_name:"
-            local ratios=("${!ratio_modes[@]}")
-            PS3="Select ratio number: "
-            select selected_ratio in "${ratios[@]}"; do
-                if [ -n "$selected_ratio" ]; then
-                    break
-                else
-                    print_message "Invalid selection. Try again."
-                fi
-            done
+            if [ "$NON_INTERACTIVE" = "true" ] && [ -n "$MONITOR_CONFIG" ]; then
+                # Expect MONITOR_CONFIG entries like: name:1920x1080@60:1.0;name2:2560x1440@144:1.25
+                local entry
+                IFS=';' read -ra entries <<< "$MONITOR_CONFIG"
+                for entry in "${entries[@]}"; do
+                    local nm cfg sc
+                    nm="${entry%%:*}"
+                    cfg="${entry#*:}"
+                    sc="${cfg##*:}"
+                    cfg="${cfg%:*}"
+                    if [ "$nm" = "$monitor_name" ]; then
+                        chosen_resolution="$cfg"
+                        scale="$sc"
+                        break
+                    fi
+                done
+            fi
 
-            # Let user select resolution
-            read -ra resolutions <<< "${ratio_modes[$selected_ratio]}"
-            print_message "Choose a resolution for ratio $selected_ratio:"
-            PS3="Select resolution number: "
-            select chosen_resolution in "${resolutions[@]}"; do
-                if [ -n "$chosen_resolution" ]; then
-                    break
-                else
-                    print_message "Invalid selection. Try again."
-                fi
-            done
+            if [ -z "$chosen_resolution" ] || [ -z "$scale" ]; then
+                local modes
+                modes=$(get_monitor_modes "$monitor_name")
 
-            # Get scale factor
-            read -rp "Enter scale for monitor $monitor_name (1.0 - 2.0): " scale
+                declare -A ratio_modes
+                for mode in $modes; do
+                    if [[ "$mode" != *x* ]]; then
+                        continue
+                    fi
+                    local res=${mode%%@*}
+                    local width=${res%%x*}
+                    local height=${res#*x}
+                    if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+                        continue
+                    fi
+                    local ratio
+                    ratio=$(calculate_aspect_ratio "$width" "$height")
+                    if [[ ! " ${ratio_modes[$ratio]} " =~ ${mode} ]]; then
+                        ratio_modes["$ratio"]+="$mode "
+                    fi
+                done
+
+                print_message "Available ratios for $monitor_name:"
+                local ratios=("${!ratio_modes[@]}")
+                PS3="Select ratio number: "
+                select selected_ratio in "${ratios[@]}"; do
+                    if [ -n "$selected_ratio" ]; then
+                        break
+                    else
+                        print_message "Invalid selection. Try again."
+                    fi
+                done
+
+                read -ra resolutions <<< "${ratio_modes[$selected_ratio]}"
+                print_message "Choose a resolution for ratio $selected_ratio:"
+                PS3="Select resolution number: "
+                select chosen_resolution in "${resolutions[@]}"; do
+                    if [ -n "$chosen_resolution" ]; then
+                        break
+                    else
+                        print_message "Invalid selection. Try again."
+                    fi
+                done
+
+                read -rp "Enter scale for monitor $monitor_name (1.0 - 2.0): " scale
+            fi
 
             # Calculate offset
             local offset
@@ -1840,10 +1901,17 @@ main() {
     check_user_input
     
     if ! validate_wallpaper_dir; then
-        read -rp "Continue anyway? (y/N): " choice
-        if [[ ! $choice =~ ^[Yy]$ ]]; then
-            print_error "Setup aborted by user"
-            exit 1
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
+                true|1|yes|y|Y) print_warning "Continuing despite wallpaper validation failure (auto)" ;;
+                *) print_error "Setup aborted due to wallpaper validation failure (non-interactive)"; exit 1 ;;
+            esac
+        else
+            read -rp "Continue anyway? (y/N): " choice
+            if [[ ! $choice =~ ^[Yy]$ ]]; then
+                print_error "Setup aborted by user"
+                exit 1
+            fi
         fi
     fi
     
@@ -1856,10 +1924,17 @@ main() {
             print_message "Backup created successfully at: $backup_dir"
         else
             print_error "Failed to create backup of .config directory"
-            read -rp "Continue anyway? (y/N): " choice
-            if [[ ! $choice =~ ^[Yy]$ ]]; then
-                print_error "Setup aborted by user"
-                exit 1
+            if [ "$NON_INTERACTIVE" = "true" ]; then
+                case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
+                    true|1|yes|y|Y) print_warning "Continuing despite backup failure (auto)" ;;
+                    *) print_error "Setup aborted due to backup failure (non-interactive)"; exit 1 ;;
+                esac
+            else
+                read -rp "Continue anyway? (y/N): " choice
+                if [[ ! $choice =~ ^[Yy]$ ]]; then
+                    print_error "Setup aborted by user"
+                    exit 1
+                fi
             fi
         fi
     else

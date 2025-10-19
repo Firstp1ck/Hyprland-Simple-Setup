@@ -1,0 +1,15 @@
+[package]
+name = "hyprland_setup_tui"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+
+[dependencies]
+ratatui = { version = "0.29.0", default-features = false, features = ["crossterm"] }
+crossterm = "0.29.0"
+anyhow = "1"
+
