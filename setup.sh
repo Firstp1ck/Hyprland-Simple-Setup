@@ -2017,7 +2017,7 @@ main() {
     print_dry_run_summary
     print_status_summary
 
-    restart_waybar
+    # restart_waybar
     verify_workspace_config
 
     # As the very last step, enable and start SDDM (may end current session)
