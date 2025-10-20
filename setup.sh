@@ -1848,15 +1848,6 @@ configure_sddm_theme() {
     track_config_status "SDDM Theme Setup" "$CHECK_MARK"
 }
 
-# Restart Waybar to ensure only one instance with latest config is running
-restart_waybar() {
-    announce_step "Restarting Waybar"
-    execute_command "pkill -x waybar || true" "Stop Waybar if running"
-    execute_command "sleep 0.3" "Wait a moment"
-    # Start Waybar detached
-    execute_command "nohup waybar >/dev/null 2>&1 &" "Start Waybar in background"
-}
-
 # Enable and start SDDM as the final step of installation
 enable_sddm_last() {
     announce_step "Enabling SDDM display manager"
@@ -2017,7 +2008,6 @@ main() {
     print_dry_run_summary
     print_status_summary
 
-    # restart_waybar
     verify_workspace_config
 
     # As the very last step, enable and start SDDM (may end current session)
