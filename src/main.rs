@@ -1887,6 +1887,23 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         }
     }
 
+    // Fallback: if nothing was discovered from main(), derive by file order of announce_step
+    if out.is_empty() {
+        for raw in &lines {
+            let t = raw.trim();
+            if let Some(rest) = t.strip_prefix("announce_step \"")
+                .or_else(|| t.strip_prefix("extended_announce_step \""))
+            {
+                if let Some(end) = rest.find('"') {
+                    let title = rest[..end].to_string();
+                    if !title.is_empty() && !out.iter().any(|s| s.title == title) {
+                        out.push(SetupSection { title, done: false });
+                    }
+                }
+            }
+        }
+    }
+
     // 4) Ensure final marker exists at the very end
     let final_title = "Install Process finished".to_string();
     if let Some(pos) = out.iter().position(|s| s.title == final_title) {

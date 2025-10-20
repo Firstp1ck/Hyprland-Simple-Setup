@@ -2016,7 +2016,7 @@ main() {
     # As the very last step, enable and start SDDM (may end current session)
     enable_sddm_last
 
-    print_message "Hyprland setup completed successfully!"
+    announce_step "Hyprland setup completed successfully!"
 }
 
 # Add command line argument handling
