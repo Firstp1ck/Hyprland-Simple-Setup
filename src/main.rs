@@ -304,15 +304,6 @@ fn run_app<B: ratatui::backend::Backend>(
             {
                 sec.done = true;
             }
-            // Also mark the trailing "Install Process finished" section
-            if let Some(pos) = app
-                .sections
-                .iter()
-                .position(|s| s.title == "Install Process finished")
-                && let Some(s) = app.sections.get_mut(pos)
-            {
-                s.done = true;
-            }
             app.child = None;
             // Show reboot confirmation popup
             app.ui_mode = UiMode::Menu; // ensure popup on main view
@@ -1886,38 +1877,5 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
             }
         }
     }
-
-    // Fallback: if nothing was discovered from main(), derive by file order of announce_step
-    if out.is_empty() {
-        for raw in &lines {
-            let t = raw.trim();
-            if let Some(rest) = t.strip_prefix("announce_step \"")
-                .or_else(|| t.strip_prefix("extended_announce_step \""))
-            {
-                if let Some(end) = rest.find('"') {
-                    let title = rest[..end].to_string();
-                    if !title.is_empty() && !out.iter().any(|s| s.title == title) {
-                        out.push(SetupSection { title, done: false });
-                    }
-                }
-            }
-        }
-    }
-
-    // 4) Ensure final marker exists at the very end
-    let final_title = "Install Process finished".to_string();
-    if let Some(pos) = out.iter().position(|s| s.title == final_title) {
-        if pos != out.len().saturating_sub(1) {
-            let mut item = out.remove(pos);
-            item.done = false;
-            out.push(item);
-        }
-    } else {
-        out.push(SetupSection {
-            title: final_title,
-            done: false,
-        });
-    }
-
     out
 }
