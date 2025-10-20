@@ -387,7 +387,7 @@ track_config_status() {
 }
 
 list_packages() {
-    announce_step "Generating Package Lists (user-installed and AUR packages)..."
+    announce_step "Generating Package Lists"
     local date_suffix packages_file aur_file is_endeavouros is_debian_based
     date_suffix=$(date +%Y-%m-%d)
     packages_file="$HOME/user_installed_packages_${date_suffix}.txt"
@@ -460,7 +460,7 @@ list_packages() {
 }
 
 verify_installed_packages() {
-    extended_announce_step "VERIFYING INSTALLED PACKAGES"
+    extended_announce_step "Verifying installed packages"
 
     # Find the newest package list files
     local user_pkg_file
@@ -1867,7 +1867,7 @@ enable_sddm_last() {
 
 # Verify configs do not pre-create workspace 11
 verify_workspace_config() {
-    announce_step "Verifying workspace 11 is not forced by config"
+    print_message "Verifying workspace 11 is not forced by config"
     local issues=0
     local files=(
         "$HOME/.config/hypr/sources/monitors.conf"

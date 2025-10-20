@@ -1870,12 +1870,11 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
             if t.contains('{') {
                 depth += 1; // nested blocks inside main (if/else)
             }
-            // very simple call detection: token followed by '(' that is a known function
-            if let Some(pos) = t.find('(') {
-                let name = t[..pos].trim();
-                if fn_starts.contains_key(name) {
-                    called.push(name.to_string());
-                }
+            // very simple call detection for shell: a line starting with a known function name
+            // (functions are invoked as plain identifiers like: update_pacman)
+            let token = t.split_whitespace().next().unwrap_or("");
+            if fn_starts.contains_key(token) {
+                called.push(token.to_string());
             }
         }
         // 3) Map to titles and build sections
