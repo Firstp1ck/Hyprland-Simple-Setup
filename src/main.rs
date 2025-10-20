@@ -1768,9 +1768,7 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
     // 3) For each called function, look up the first announce_step title in its body.
     // 4) Build the sections vector in that order, and append the final marker.
     let mut out: Vec<SetupSection> = Vec::new();
-    let Ok(content) = fs::read_to_string(script_path) else {
-        return out;
-    };
+    let Ok(content) = fs::read_to_string(script_path) else { return out };
 
     let lines: Vec<&str> = content.lines().collect();
 
@@ -1782,12 +1780,16 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         if let Some(paren) = t.find("(){") {
             // rough; many functions are formatted as "name() {"
             let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
+            if !name.is_empty()
+                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+            {
                 fn_starts.insert(name.to_string(), i);
             }
         } else if let Some(paren) = t.find("() {") {
             let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
+            if !name.is_empty()
+                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+            {
                 fn_starts.insert(name.to_string(), i);
             }
         }
@@ -1814,14 +1816,14 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
             }
             // check for announce_step
             let t = s.trim();
-            if let Some(rest) = t
-                .strip_prefix("announce_step \"")
+            if let Some(rest) = t.strip_prefix("announce_step \"")
                 .or_else(|| t.strip_prefix("extended_announce_step \""))
-                && let Some(end) = rest.find('"')
             {
-                let title = rest[..end].to_string();
-                title_cache.insert(fname.to_string(), title.clone());
-                return Some(title);
+                if let Some(end) = rest.find('"') {
+                    let title = rest[..end].to_string();
+                    title_cache.insert(fname.to_string(), title.clone());
+                    return Some(title);
+                }
             }
             if s.contains('{') {
                 depth += 1;
@@ -1877,24 +1879,8 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         }
         // 3) Map to titles and build sections
         for fname in called {
-            if let Some(title) = get_title_for_fn(&fname)
-                && !out.iter().any(|s| s.title == title)
-            {
-                out.push(SetupSection { title, done: false });
-            }
-        }
-    }
-    // Fallback: if none discovered (formatting edge cases), scan announce_step order
-    if out.is_empty() {
-        for raw in &lines {
-            let t = raw.trim();
-            if let Some(rest) = t
-                .strip_prefix("announce_step \"")
-                .or_else(|| t.strip_prefix("extended_announce_step \""))
-                && let Some(end) = rest.find('"')
-            {
-                let title = rest[..end].to_string();
-                if !title.is_empty() && !out.iter().any(|s| s.title == title) {
+            if let Some(title) = get_title_for_fn(&fname) {
+                if !out.iter().any(|s| s.title == title) {
                     out.push(SetupSection { title, done: false });
                 }
             }
