@@ -1737,16 +1737,18 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         for line in content.lines() {
             let t = line.trim();
             // match announce_step "..."
-            if t.starts_with("announce_step \"") {
-                if let Some(end) = t[16..].find('\"') { // 16 = len("announce_step \"")
-                    let title = t[16..16+end].to_string();
+            let p1 = "announce_step \"";
+            let p2 = "extended_announce_step \"";
+            if t.starts_with(p1) {
+                if let Some(end) = t[p1.len()..].find('\"') {
+                    let title = t[p1.len()..p1.len()+end].to_string();
                     if !title.is_empty() {
                         out.push(SetupSection { title, done: false });
                     }
                 }
-            } else if t.starts_with("extended_announce_step \"") {
-                if let Some(end) = t[25..].find('\"') { // 25 = len("extended_announce_step \"")
-                    let title = t[25..25+end].to_string();
+            } else if t.starts_with(p2) {
+                if let Some(end) = t[p2.len()..].find('\"') {
+                    let title = t[p2.len()..p2.len()+end].to_string();
                     if !title.is_empty() {
                         out.push(SetupSection { title, done: false });
                     }
