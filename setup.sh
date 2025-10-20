@@ -338,7 +338,7 @@ print_error() {
 }
 
 print_status_summary() {
-    echo -e "\n${GREEN}========= INSTALLATION SUMMARY =========${NC}"
+    echo -e "\n${GREEN}========= Installation Summary =========${NC}"
     echo "Log file: $LOG_FILE"
 
     # Package installation results
