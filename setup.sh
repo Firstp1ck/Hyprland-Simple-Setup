@@ -376,8 +376,6 @@ print_status_summary() {
     # Package verification
     echo -e "\n${GREEN}Package Verification:${NC}"
     verify_installed_packages
-
-    echo -e "\n${GREEN}========================================${NC}\n"
 }
 
 track_config_status() {
@@ -1867,7 +1865,7 @@ enable_sddm_last() {
 
 # Verify configs do not pre-create workspace 11
 verify_workspace_config() {
-    announce_step "Verifying workspace"
+    print_message "Verifying workspace configuration"
     local issues=0
     local files=(
         "$HOME/.config/hypr/sources/monitors.conf"
@@ -2007,10 +2005,8 @@ main() {
     configure_grub_btrfsd
     configure_monitor
     configure_sddm_theme
-
     print_dry_run_summary
     print_status_summary
-
     verify_workspace_config
 
     # As the very last step, enable and start SDDM (may end current session)
