@@ -1726,29 +1726,6 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         }
     }
 
-    // Mark special sections based on key log lines
-    if trimmed.starts_with("Updating pacman database...")
-        || trimmed.contains("Installing Hyprland packages...")
-    {
-        mark_section_done_by_title(app, "Install pacman packages");
-    }
-    if trimmed.starts_with("Installing Hyprland AUR extras:") {
-        mark_section_done_by_title(app, "Install AUR extras");
-    }
-    if trimmed.starts_with("Create wallpaper config directory")
-        || trimmed.contains("Update WALLPAPER_DIR")
-        || trimmed.contains("Create initial wallpaper config")
-    {
-        mark_section_done_by_title(app, "Update configs");
-    }
-}
-
-fn mark_section_done_by_title(app: &mut AppState, title: &str) {
-    if let Some(pos) = app.sections.iter().position(|s| s.title == title) {
-        if let Some(s) = app.sections.get_mut(pos) {
-            s.done = true;
-        }
-    }
 }
 
 fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
@@ -1779,16 +1756,7 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
                 }
             }
         }
-        // Append special sections that don't use announce_step but are important milestones
-        if content.contains("install_pacman_packages()") {
-            out.push(SetupSection { title: "Install pacman packages".to_string(), done: false });
-        }
-        if content.contains("install_aur_extras()") {
-            out.push(SetupSection { title: "Install AUR extras".to_string(), done: false });
-        }
-        if content.contains("update_configs()") {
-            out.push(SetupSection { title: "Update configs".to_string(), done: false });
-        }
+        // No extra injected sections: everything is announced directly in setup.sh
     }
     out
 }

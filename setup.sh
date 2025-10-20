@@ -884,6 +884,7 @@ find_hyprland_setup_dir() {
 
 # Function to update configuration files with user input
 update_configs() {
+    announce_step "Update configs"
     if is_dry_run; then
         log_dry_run_operation "update_configs" "Would update Hyprland sources and wallpaper config with WALLPAPER_DIR=$WALLPAPER_DIR"
         return 0
@@ -1212,6 +1213,7 @@ remove_cache() {
 }
 
 install_pacman_packages() {
+    announce_step "Install pacman packages"
     print_message "Updating pacman database..."
     execute_command "sudo pacman -Sy" "Update pacman database" || exit 1
 
@@ -1245,6 +1247,7 @@ aur_extras=(
 )
 
 install_aur_extras() {
+    announce_step "Install AUR extras"
     print_message "Installing Hyprland AUR extras: ${aur_extras[*]}"
     for pkg in "${aur_extras[@]}"; do
         if ! execute_command "yay -S --needed --noconfirm $pkg" "Install $pkg"; then
