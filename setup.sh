@@ -1861,10 +1861,10 @@ restart_waybar() {
 enable_sddm_last() {
     announce_step "Enabling SDDM display manager"
     if command -v systemctl >/dev/null 2>&1; then
-        if execute_command "sudo systemctl enable --now sddm" "Enable and start SDDM"; then
-            print_message "SDDM has been enabled and started. You may be returned to the login screen."
+        if execute_command "sudo systemctl enable sddm" "Enable SDDM"; then
+            print_message "SDDM has been enabled."
         else
-            print_warning "Failed to enable/start SDDM. You can try manually: sudo systemctl enable --now sddm"
+            print_warning "Failed to enable SDDM. You can try manually: sudo systemctl enable sddm"
         fi
     else
         print_warning "systemctl not available; skipping SDDM enable."

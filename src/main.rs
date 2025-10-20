@@ -23,6 +23,7 @@ use ratatui::widgets::{
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
+use std::fs;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
 
@@ -97,6 +98,7 @@ enum EditKind {
     Text,
     MonitorWizard,
     Info,
+    ConfirmReboot,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -288,7 +290,17 @@ fn run_app<B: ratatui::backend::Backend>(
                 } else {
                     app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
                 }
+                // Mark the final section as done when the process ends
+                if let Some(idx) = app.current_section.take() {
+                    if let Some(sec) = app.sections.get_mut(idx) {
+                        sec.done = true;
+                    }
+                }
                 app.child = None;
+                // Show reboot confirmation popup
+                app.ui_mode = UiMode::Menu; // ensure popup on main view
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmReboot;
             }
         }
 
@@ -351,7 +363,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
         .border_style(Style::default().fg(app.theme.mauve));
 
-    if app.child.is_some() && !app.sections.is_empty() {
+    if !app.sections.is_empty() {
         // Render sections with color: green=done, white=pending, blue=current
         let mut lines: Vec<Line> = Vec::new();
         for (idx, sec) in app.sections.iter().enumerate() {
@@ -933,6 +945,34 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, inner_chunks[1]);
     }
+    // Confirm reboot popup
+    if app.editing && app.edit_kind == EditKind::ConfirmReboot {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_h = 6u16;
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Setup Complete")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Length(2), Constraint::Length(1)])
+            .split(inner);
+        let msg = Paragraph::new(Text::from(vec![Line::from("Do you want to Reboot to finish the Setup?"),]))
+            .style(Style::default().fg(app.theme.text));
+        f.render_widget(msg, rows[0]);
+        let tip = Paragraph::new(Text::from(vec![Line::from("Enter/Y: reboot   N/Esc: cancel"),]))
+            .style(Style::default().fg(app.theme.subtext0));
+        f.render_widget(tip, rows[1]);
+    }
 }
 
 // removed: old line-based preflight rendering helper; replaced by Table-based layout
@@ -1027,7 +1067,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             .arg("/dev/null");
     } else {
         cmd = Command::new("bash");
-        cmd.arg(script);
+        cmd.arg(&script);
         for f in flags {
             cmd.arg(f);
         }
@@ -1083,8 +1123,8 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     app.child = Some(child);
-    // Reset sections, start install timer and log start
-    app.sections.clear();
+    // Reset sections and pre-load expected steps from script so the full list is visible from the start
+    app.sections = preload_sections_from_script(&script);
     app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
@@ -1284,6 +1324,21 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         } else if app.edit_kind == EditKind::Info {
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                _ => {}
+            }
+            return Ok(false);
+        } else if app.edit_kind == EditKind::ConfirmReboot {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    // Try to reboot non-interactively
+                    let _ = Command::new("systemctl").arg("reboot").spawn();
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }
@@ -1649,9 +1704,13 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
                 prev.done = true;
             }
         }
-        // Push new current section
-        app.sections.push(SetupSection { title: title.clone(), done: false });
-        app.current_section = Some(app.sections.len() - 1);
+        // If we preloaded, try to move focus to matching title; otherwise append
+        if let Some(pos) = app.sections.iter().position(|s| s.title == title) {
+            app.current_section = Some(pos);
+        } else {
+            app.sections.push(SetupSection { title: title.clone(), done: false });
+            app.current_section = Some(app.sections.len() - 1);
+        }
         return;
     }
 
@@ -1666,4 +1725,34 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
             app.current_section = None;
         }
     }
+}
+
+fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
+    let mut out: Vec<SetupSection> = Vec::new();
+    if let Ok(content) = fs::read_to_string(script_path) {
+        for line in content.lines() {
+            let _ = line; // suppress warnings from exploratory code
+        }
+        // Simple regex-free extraction of step titles from direct calls
+        for line in content.lines() {
+            let t = line.trim();
+            // match announce_step "..."
+            if t.starts_with("announce_step \"") {
+                if let Some(end) = t[16..].find('\"') { // 16 = len("announce_step \"")
+                    let title = t[16..16+end].to_string();
+                    if !title.is_empty() {
+                        out.push(SetupSection { title, done: false });
+                    }
+                }
+            } else if t.starts_with("extended_announce_step \"") {
+                if let Some(end) = t[25..].find('\"') { // 25 = len("extended_announce_step \"")
+                    let title = t[25..25+end].to_string();
+                    if !title.is_empty() {
+                        out.push(SetupSection { title, done: false });
+                    }
+                }
+            }
+        }
+    }
+    out
 }
