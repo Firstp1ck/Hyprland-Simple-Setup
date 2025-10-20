@@ -1887,11 +1887,20 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         }
     }
 
-    // 4) Append final marker
-    out.push(SetupSection {
-        title: "Install Process finished".to_string(),
-        done: false,
-    });
+    // 4) Ensure final marker exists at the very end
+    let final_title = "Install Process finished".to_string();
+    if let Some(pos) = out.iter().position(|s| s.title == final_title) {
+        if pos != out.len().saturating_sub(1) {
+            let mut item = out.remove(pos);
+            item.done = false;
+            out.push(item);
+        }
+    } else {
+        out.push(SetupSection {
+            title: final_title,
+            done: false,
+        });
+    }
 
     out
 }
