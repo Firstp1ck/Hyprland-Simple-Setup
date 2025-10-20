@@ -156,6 +156,15 @@ impl AppState {
                 p.push("Hyprland-Setup.log");
                 p
             });
+        // Preload sections so they are visible from the start
+        let sections_init: Vec<SetupSection> = if let Some(p) = &setup_script {
+            preload_sections_from_script(p)
+        } else if let Some(p) = resolve_setup_script_path() {
+            preload_sections_from_script(&p)
+        } else {
+            Vec::new()
+        };
+
         Self {
             list_state,
             logs: Vec::new(),
@@ -190,7 +199,7 @@ impl AppState {
             theme: Theme::catppuccin_mocha(),
             child: None,
             install_started_at: None,
-            sections: Vec::new(),
+            sections: sections_init,
             current_section: None,
         }
     }
