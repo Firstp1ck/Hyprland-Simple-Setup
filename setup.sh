@@ -1867,7 +1867,7 @@ enable_sddm_last() {
 
 # Verify configs do not pre-create workspace 11
 verify_workspace_config() {
-    print_message "Verifying workspace"
+    announce_step "Verifying workspace"
     local issues=0
     local files=(
         "$HOME/.config/hypr/sources/monitors.conf"
