@@ -1762,35 +1762,137 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
 }
 
 fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
+    // Strategy: derive order from the main() call sequence.
+    // 1) Collect function definitions present in the script.
+    // 2) Scan the main() block, extract called function names in order.
+    // 3) For each called function, look up the first announce_step title in its body.
+    // 4) Build the sections vector in that order, and append the final marker.
     let mut out: Vec<SetupSection> = Vec::new();
-    if let Ok(content) = fs::read_to_string(script_path) {
-        // Simple regex-free extraction of step titles from direct calls
-        for line in content.lines() {
-            let t = line.trim();
-            // match announce_step "..."
-            let p1 = "announce_step \"";
-            let p2 = "extended_announce_step \"";
-            if let Some(rest) = t.strip_prefix(p1) {
-                if let Some(end) = rest.find('\"') {
-                    let title = rest[..end].to_string();
-                    if !title.is_empty() {
-                        out.push(SetupSection { title, done: false });
-                    }
-                }
-            } else if let Some(rest) = t.strip_prefix(p2)
-                && let Some(end) = rest.find('\"')
+    let Ok(content) = fs::read_to_string(script_path) else { return out };
+
+    let lines: Vec<&str> = content.lines().collect();
+
+    // 1) Find function definitions: pattern "name() {"
+    use std::collections::HashMap;
+    let mut fn_starts: HashMap<String, usize> = HashMap::new();
+    for (i, raw) in lines.iter().enumerate() {
+        let t = raw.trim();
+        if let Some(paren) = t.find("(){") {
+            // rough; many functions are formatted as "name() {"
+            let name = t[..paren].trim();
+            if !name.is_empty()
+                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
             {
-                let title = rest[..end].to_string();
-                if !title.is_empty() {
+                fn_starts.insert(name.to_string(), i);
+            }
+        } else if let Some(paren) = t.find("() {") {
+            let name = t[..paren].trim();
+            if !name.is_empty()
+                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+            {
+                fn_starts.insert(name.to_string(), i);
+            }
+        }
+    }
+
+    // Helper: extract first announce title inside a function body starting at index
+    let mut title_cache: HashMap<String, String> = HashMap::new();
+    let mut get_title_for_fn = |fname: &str| -> Option<String> {
+        if let Some(t) = title_cache.get(fname) {
+            return Some(t.clone());
+        }
+        let start = *fn_starts.get(fname)?;
+        // find body range by brace counting from the line containing "{" forward
+        let mut depth: i32 = 0;
+        let mut in_body = false;
+        for raw in &lines[start..] {
+            let s = *raw;
+            if !in_body {
+                if s.contains('{') {
+                    in_body = true;
+                    depth = 1;
+                }
+                continue;
+            }
+            // check for announce_step
+            let t = s.trim();
+            if let Some(rest) = t.strip_prefix("announce_step \"")
+                .or_else(|| t.strip_prefix("extended_announce_step \""))
+            {
+                if let Some(end) = rest.find('"') {
+                    let title = rest[..end].to_string();
+                    title_cache.insert(fname.to_string(), title.clone());
+                    return Some(title);
+                }
+            }
+            if s.contains('{') {
+                depth += 1;
+            }
+            if s.contains('}') {
+                depth -= 1;
+                if depth <= 0 {
+                    break;
+                }
+            }
+        }
+        None
+    };
+
+    // 2) Extract the main() block lines
+    let mut main_start = None;
+    for (i, raw) in lines.iter().enumerate() {
+        if raw.trim_start().starts_with("main() {") {
+            main_start = Some(i);
+            break;
+        }
+    }
+    if let Some(start_idx) = main_start {
+        let mut depth: i32 = 0;
+        let mut in_body = false;
+        let mut called: Vec<String> = Vec::new();
+        for raw in &lines[start_idx..] {
+            let s = *raw;
+            if !in_body {
+                if s.contains('{') {
+                    in_body = true;
+                    depth = 1;
+                }
+                continue;
+            }
+            let t = s.trim();
+            // stop at end of main
+            if t.contains('}') {
+                depth -= 1;
+                if depth <= 0 {
+                    break;
+                }
+            }
+            if t.contains('{') {
+                depth += 1; // nested blocks inside main (if/else)
+            }
+            // very simple call detection: token followed by '(' that is a known function
+            if let Some(pos) = t.find('(') {
+                let name = t[..pos].trim();
+                if fn_starts.contains_key(name) {
+                    called.push(name.to_string());
+                }
+            }
+        }
+        // 3) Map to titles and build sections
+        for fname in called {
+            if let Some(title) = get_title_for_fn(&fname) {
+                if !out.iter().any(|s| s.title == title) {
                     out.push(SetupSection { title, done: false });
                 }
             }
         }
-        // Always append a final completion section that triggers the reboot prompt
-        out.push(SetupSection {
-            title: "Install Process finished".to_string(),
-            done: false,
-        });
     }
+
+    // 4) Append final marker
+    out.push(SetupSection {
+        title: "Install Process finished".to_string(),
+        done: false,
+    });
+
     out
 }
