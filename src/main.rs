@@ -20,10 +20,10 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
 };
+use std::fs;
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
-use std::fs;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
 
@@ -143,7 +143,11 @@ impl AppState {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let default_wallpaper = guess_default_wallpaper_dir(&setup_script)
-            .and_then(|p| std::fs::canonicalize(&p).ok().map(|abs| abs.display().to_string()))
+            .and_then(|p| {
+                std::fs::canonicalize(&p)
+                    .ok()
+                    .map(|abs| abs.display().to_string())
+            })
             .unwrap_or_else(|| "./Wallpaper".to_string());
         let logfile_path = std::env::var("HYPRLAND_SETUP_LOG")
             .map(PathBuf::from)
@@ -275,33 +279,45 @@ fn run_app<B: ratatui::backend::Backend>(
         }
 
         // Detect setup.sh completion and report once
-        if let Some(child) = app.child.as_mut() {
-            if let Ok(Some(status)) = child.try_wait() {
-                let code = status.code().unwrap_or(-1);
-                // Compute elapsed time if timer was started
-                let elapsed_msg = if let Some(start) = app.install_started_at.take() {
-                    let d = start.elapsed();
-                    format!(" in {}", format_duration(d))
-                } else {
-                    String::new()
-                };
-                if status.success() {
-                    app.push_log_line(format!("setup.sh finished successfully (exit {code}){}", elapsed_msg));
-                } else {
-                    app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
-                }
-                // Mark the final section as done when the process ends
-                if let Some(idx) = app.current_section.take() {
-                    if let Some(sec) = app.sections.get_mut(idx) {
-                        sec.done = true;
-                    }
-                }
-                app.child = None;
-                // Show reboot confirmation popup
-                app.ui_mode = UiMode::Menu; // ensure popup on main view
-                app.editing = true;
-                app.edit_kind = EditKind::ConfirmReboot;
+        if let Some(child) = app.child.as_mut()
+            && let Ok(Some(status)) = child.try_wait()
+        {
+            let code = status.code().unwrap_or(-1);
+            // Compute elapsed time if timer was started
+            let elapsed_msg = if let Some(start) = app.install_started_at.take() {
+                let d = start.elapsed();
+                format!(" in {}", format_duration(d))
+            } else {
+                String::new()
+            };
+            if status.success() {
+                app.push_log_line(format!(
+                    "setup.sh finished successfully (exit {code}){}",
+                    elapsed_msg
+                ));
+            } else {
+                app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
             }
+            // Mark the final section as done when the process ends
+            if let Some(idx) = app.current_section.take()
+                && let Some(sec) = app.sections.get_mut(idx)
+            {
+                sec.done = true;
+            }
+            // Also mark the trailing "Install Process finished" section
+            if let Some(pos) = app
+                .sections
+                .iter()
+                .position(|s| s.title == "Install Process finished")
+                && let Some(s) = app.sections.get_mut(pos)
+            {
+                s.done = true;
+            }
+            app.child = None;
+            // Show reboot confirmation popup
+            app.ui_mode = UiMode::Menu; // ensure popup on main view
+            app.editing = true;
+            app.edit_kind = EditKind::ConfirmReboot;
         }
 
         terminal.draw(|f| draw_ui(f, app)).context("draw ui")?;
@@ -368,7 +384,9 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let mut lines: Vec<Line> = Vec::new();
         for (idx, sec) in app.sections.iter().enumerate() {
             let style = if Some(idx) == app.current_section {
-                Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD)
             } else if sec.done {
                 Style::default().fg(Color::Green)
             } else {
@@ -939,10 +957,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .style(Style::default().fg(app.theme.text));
         f.render_widget(msg, inner_chunks[0]);
 
-        let tip = Paragraph::new(Text::from(vec![Line::from(
-            "Press Enter or Esc to close",
-        )]))
-        .style(Style::default().fg(app.theme.subtext0));
+        let tip = Paragraph::new(Text::from(vec![Line::from("Press Enter or Esc to close")]))
+            .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, inner_chunks[1]);
     }
     // Confirm reboot popup
@@ -952,7 +968,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let popup_h = 6u16;
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
             .title("Setup Complete")
@@ -961,16 +982,29 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
         let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Length(2), Constraint::Length(1)])
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(2),
+                Constraint::Length(1),
+            ])
             .split(inner);
-        let msg = Paragraph::new(Text::from(vec![Line::from("Do you want to Reboot to finish the Setup?"),]))
-            .style(Style::default().fg(app.theme.text));
+        let msg = Paragraph::new(Text::from(vec![Line::from(
+            "Do you want to Reboot to finish the Setup?",
+        )]))
+        .style(Style::default().fg(app.theme.text));
         f.render_widget(msg, rows[0]);
-        let tip = Paragraph::new(Text::from(vec![Line::from("Enter/Y: reboot   N/Esc: cancel"),]))
-            .style(Style::default().fg(app.theme.subtext0));
+        let tip = Paragraph::new(Text::from(vec![Line::from(
+            "Enter/Y: reboot   N/Esc: cancel",
+        )]))
+        .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
 }
@@ -1225,22 +1259,20 @@ fn install_panic_hook() {
 }
 
 fn guess_default_wallpaper_dir(setup_script: &Option<PathBuf>) -> Option<String> {
-    if let Some(script) = setup_script {
-        if let Ok(real) = std::fs::canonicalize(script) {
-            if let Some(root) = real.parent() {
-                let wp = root.join("Wallpaper");
-                return Some(wp.display().to_string());
-            }
-        }
+    if let Some(script) = setup_script
+        && let Ok(real) = std::fs::canonicalize(script)
+        && let Some(root) = real.parent()
+    {
+        let wp = root.join("Wallpaper");
+        return Some(wp.display().to_string());
     }
     // Try to locate repo root via setup.sh if not provided
-    if let Some(script) = resolve_setup_script_path() {
-        if let Ok(real) = std::fs::canonicalize(script) {
-            if let Some(root) = real.parent() {
-                let wp = root.join("Wallpaper");
-                return Some(wp.display().to_string());
-            }
-        }
+    if let Some(script) = resolve_setup_script_path()
+        && let Ok(real) = std::fs::canonicalize(script)
+        && let Some(root) = real.parent()
+    {
+        let wp = root.join("Wallpaper");
+        return Some(wp.display().to_string());
     }
     // Walk upwards from current dir to find a Wallpaper directory
     if let Ok(mut dir) = std::env::current_dir() {
@@ -1699,64 +1731,66 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         // Extract title without '=' and spaces
         let title = trimmed.trim_matches('=').trim().to_string();
         // Mark previous as done
-        if let Some(idx) = app.current_section {
-            if let Some(prev) = app.sections.get_mut(idx) {
-                prev.done = true;
-            }
+        if let Some(idx) = app.current_section
+            && let Some(prev) = app.sections.get_mut(idx)
+        {
+            prev.done = true;
         }
         // If we preloaded, try to move focus to matching title; otherwise append
         if let Some(pos) = app.sections.iter().position(|s| s.title == title) {
             app.current_section = Some(pos);
         } else {
-            app.sections.push(SetupSection { title: title.clone(), done: false });
+            app.sections.push(SetupSection {
+                title: title.clone(),
+                done: false,
+            });
             app.current_section = Some(app.sections.len() - 1);
         }
         return;
     }
 
     // Summary markers that imply completion
-    if trimmed.contains("All configurations completed successfully!")
-        || trimmed.contains("Hyprland setup completed successfully!")
+    if (trimmed.contains("All configurations completed successfully!")
+        || trimmed.contains("Hyprland setup completed successfully!"))
+        && let Some(idx) = app.current_section
     {
-        if let Some(idx) = app.current_section {
-            if let Some(prev) = app.sections.get_mut(idx) {
-                prev.done = true;
-            }
-            app.current_section = None;
+        if let Some(prev) = app.sections.get_mut(idx) {
+            prev.done = true;
         }
+        app.current_section = None;
     }
-
 }
 
 fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
     let mut out: Vec<SetupSection> = Vec::new();
     if let Ok(content) = fs::read_to_string(script_path) {
-        for line in content.lines() {
-            let _ = line; // suppress warnings from exploratory code
-        }
         // Simple regex-free extraction of step titles from direct calls
         for line in content.lines() {
             let t = line.trim();
             // match announce_step "..."
             let p1 = "announce_step \"";
             let p2 = "extended_announce_step \"";
-            if t.starts_with(p1) {
-                if let Some(end) = t[p1.len()..].find('\"') {
-                    let title = t[p1.len()..p1.len()+end].to_string();
+            if let Some(rest) = t.strip_prefix(p1) {
+                if let Some(end) = rest.find('\"') {
+                    let title = rest[..end].to_string();
                     if !title.is_empty() {
                         out.push(SetupSection { title, done: false });
                     }
                 }
-            } else if t.starts_with(p2) {
-                if let Some(end) = t[p2.len()..].find('\"') {
-                    let title = t[p2.len()..p2.len()+end].to_string();
-                    if !title.is_empty() {
-                        out.push(SetupSection { title, done: false });
-                    }
+            } else if let Some(rest) = t.strip_prefix(p2)
+                && let Some(end) = rest.find('\"')
+            {
+                let title = rest[..end].to_string();
+                if !title.is_empty() {
+                    out.push(SetupSection { title, done: false });
                 }
             }
         }
-        // No extra injected sections: everything is announced directly in setup.sh
+        // Always append a final completion section that triggers the reboot prompt
+        out.push(SetupSection {
+            title: "Install Process finished".to_string(),
+            done: false,
+        });
     }
     out
 }
