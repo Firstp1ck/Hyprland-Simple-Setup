@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use chrono::Local;
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::{execute, terminal};
+use crossterm::execute;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -247,7 +247,7 @@ fn main() -> Result<()> {
     enable_raw_mode().context("enable raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen).context("enter alt screen")?;
-    terminal::enable_raw_mode().ok();
+    // (Windows) Avoid duplicate raw mode enabling
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
@@ -326,8 +326,11 @@ fn run_app<B: ratatui::backend::Backend>(
         if event::poll(timeout).context("poll events")? {
             match event::read().context("read event")? {
                 Event::Key(key) => {
-                    if handle_key_event(app, key)? {
-                        break;
+                    // Process only on Press to avoid duplicate triggers from Release/Repeat (Windows)
+                    if matches!(key.kind, KeyEventKind::Press) {
+                        if handle_key_event(app, key)? {
+                            break;
+                        }
                     }
                 }
                 Event::Mouse(_)
