@@ -24,7 +24,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use serde::Deserialize;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
@@ -103,11 +103,12 @@ enum EditKind {
     Text,
     MonitorWizard,
     Info,
+    AddPackagesWarning,
     ConfirmReboot,
+    ConfirmEnableMonitorSetup,
+    ConfirmStartInstall,
     SelectPacman,
     SelectAur,
-    FilterPacman,
-    FilterAur,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -151,12 +152,24 @@ struct AppState {
     pacman_sel_map: HashMap<String, bool>,
     aur_sel_map: HashMap<String, bool>,
     ms_cursor: usize,
-    // Optional category filter (None = all). When Some, only that category is shown.
-    pacman_filter: Option<String>,
-    aur_filter: Option<String>,
+    // Right-pane focus and cursor for live category filter in package selector
+    ms_focus_right: bool,
+    ms_cursor_filter: usize,
+    // Optional category filters (None = all). When Some, only listed categories are shown. (kept for backward-compat / future persistence)
+    #[allow(dead_code)] pacman_filter_cats: Option<HashSet<String>>,
+    #[allow(dead_code)] aur_filter_cats: Option<HashSet<String>>,
+    // Working sets for live category filter in package selector
+    pacman_filter_working: HashSet<String>,
+    aur_filter_working: HashSet<String>,
     // User-added packages and their resolved source
     user_added: Vec<String>,
     user_added_src: HashMap<String, String>, // name -> "pacman" | "aur"
+    // Package descriptions loaded from packages.json
+    pkg_descs: HashMap<String, String>,
+    // Generic lines for warning popups (e.g., Add Packages validation)
+    warning_lines: Vec<String>,
+    // If true, Add Packages editor acts as append-only (opened via Enter)
+    add_packages_append_mode: bool,
 }
 
 impl AppState {
@@ -207,7 +220,7 @@ impl AppState {
                 dry_run: false,
                 password: String::new(),
             },
-            preflight_focus: PreflightField::Start,
+            preflight_focus: PreflightField::EnvPromptDefaultYn,
             editing: false,
             edit_buffer: String::new(),
             edit_kind: EditKind::None,
@@ -227,15 +240,23 @@ impl AppState {
             pacman_sel_map: HashMap::new(),
             aur_sel_map: HashMap::new(),
             ms_cursor: 0,
-            pacman_filter: None,
-            aur_filter: None,
+            ms_focus_right: false,
+            ms_cursor_filter: 0,
+            pacman_filter_cats: None,
+            aur_filter_cats: None,
+            pacman_filter_working: HashSet::new(),
+            aur_filter_working: HashSet::new(),
             user_added: Vec::new(),
             user_added_src: HashMap::new(),
+            pkg_descs: HashMap::new(),
+            warning_lines: Vec::new(),
+            add_packages_append_mode: false,
         };
         // Load packages.json if present
-        if let Some((pac_cats, aur_cats)) = load_packages_json_categorized() {
+        if let Some((pac_cats, aur_cats, descs)) = load_packages_json_categorized() {
             s.pacman_cats = pac_cats;
             s.aur_cats = aur_cats;
+            s.pkg_descs = descs;
             // default select all
             for (_, pkgs) in &s.pacman_cats { for p in pkgs { s.pacman_sel_map.insert(p.clone(), true); } }
             for (_, pkgs) in &s.aur_cats { for p in pkgs { s.aur_sel_map.insert(p.clone(), true); } }
@@ -573,33 +594,33 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             Style::default().fg(app.theme.text)
         };
         Row::new(vec![
-            Cell::from(action.to_string()).style(base),
             Cell::from(name.to_string()).style(base),
+            Cell::from(action.to_string()).style(base),
             Cell::from(value).style(base),
         ])
     };
 
     rows.push(mk(
         "Toggle",
-        "PROMPT_DEFAULT_YN",
+        "Default prompt answer (y/n)",
         if pf.prompt_default_yes { "y" } else { "n" }.to_string(),
         sel(PreflightField::EnvPromptDefaultYn),
     ));
     rows.push(mk(
         "1/2/3",
-        "FISH_LANGUAGE_CHOICE_OVERRIDE",
+        "Fish language",
         format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
         sel(PreflightField::EnvFishLanguageChoiceOverride),
     ));
     rows.push(mk(
         "Edit",
-        "WALLPAPER_DIR_OVERRIDE",
+        "Wallpaper directory",
         pf.wallpaper_dir.clone(),
         sel(PreflightField::EnvWallpaperDirOverride),
     ));
     rows.push(mk(
         "Toggle",
-        "MONITOR_SETUP_ENABLED",
+        "Enable monitor setup",
         if pf.monitor_setup_enabled {
             "true"
         } else {
@@ -610,7 +631,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     rows.push(mk(
         "Edit",
-        "MONITOR_CONFIG",
+        "Monitor configuration",
         if pf.monitor_config.is_empty() {
             "<empty>".to_string()
         } else {
@@ -620,7 +641,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     rows.push(mk(
         "Toggle",
-        "AUTO_CONTINUE_ON_WARNINGS",
+        "Auto-continue on warnings",
         if pf.auto_continue_on_warnings {
             "true"
         } else {
@@ -639,12 +660,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         },
         sel(PreflightField::Password),
     ));
-    rows.push(mk(
-        "Toggle",
-        "DRY_RUN (--dry-run)",
-        if pf.dry_run { "true" } else { "false" }.to_string(),
-        sel(PreflightField::EnvDryRun),
-    ));
+    // (moved DRY_RUN to the end, right before Start)
     // Buttons to open package selectors
     rows.push(mk(
         "Enter",
@@ -665,6 +681,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         sel(PreflightField::AddPackages),
     ));
     rows.push(mk(
+        "Toggle",
+        "DRY_RUN (--dry-run)",
+        if pf.dry_run { "true" } else { "false" }.to_string(),
+        sel(PreflightField::EnvDryRun),
+    ));
+    rows.push(mk(
         "Enter",
         "Start unattended install",
         "".to_string(),
@@ -674,14 +696,14 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(14),
             Constraint::Length(34),
+            Constraint::Length(14),
             Constraint::Min(10),
         ],
     )
     .header(Row::new(vec![
-        Cell::from("Action").style(Style::default().fg(app.theme.mauve)),
         Cell::from("Name").style(Style::default().fg(app.theme.mauve)),
+        Cell::from("Action").style(Style::default().fg(app.theme.mauve)),
         Cell::from("Value").style(Style::default().fg(app.theme.mauve)),
     ]))
     .column_spacing(2)
@@ -836,7 +858,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             _ => "Scale",
         };
         let help_top = Paragraph::new(Text::from(vec![Line::from(format!(
-            "Active: {}   Tab switch column  j/k/↑/↓ move  Enter add selection  x remove last  s save  Esc cancel",
+            "Active: {}   Tab switch column  j/k/↑/↓ move  Enter add selection  x remove last  s save  q/Esc cancel",
             active
         ))]));
         f.render_widget(help_top, rows[0]);
@@ -998,37 +1020,57 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(popup_block, popup_rect);
 
         let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        // Split vertically into help + main + footer
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Min(5), Constraint::Length(2)])
             .split(inner);
+        // Split main horizontally: left packages, right live category filter
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(rows[1]);
 
-        let help = Paragraph::new(Text::from(vec![Line::from("Space toggle   a all   n none   f filter   Enter save   Esc cancel   j/k/↑/↓ move")]))
+        let help = Paragraph::new(Text::from(vec![Line::from("Space toggle   a all   n none   Tab switch pane   changes apply live   Enter save   Esc cancel   j/k/↑/↓ move")]))
             .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(help, rows[0]);
 
+        // Prepare right pane: live category filter data and ensure working set initialized
+        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+        cats.sort();
+
         // Build categorized lines into a flat list of (is_header, label, key_opt)
+        // label includes package name and a description column
         let mut flat: Vec<(bool, String, Option<String>)> = Vec::new();
         if is_pacman {
-            let cat_filter = app.pacman_filter.as_ref();
+            let cat_filter = if app.pacman_filter_working.is_empty() { None } else { Some(&app.pacman_filter_working) };
             for (cat, pkgs) in &app.pacman_cats {
-                if let Some(cf) = cat_filter { if cf != cat { continue; } }
+                if let Some(cf) = cat_filter { if !cf.contains(cat) { continue; } }
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.pacman_sel_map.get(p).unwrap_or(&false);
                     let mark = if chosen { "[x]" } else { "[ ]" };
-                    flat.push((false, format!("{} {}", mark, p), Some(p.clone())));
+                    let desc = app.pkg_descs.get(p).cloned().unwrap_or_else(|| "".to_string());
+                    // Two-column layout: name left, desc right; pad name to fixed width
+                    let name_col = format!("{} {}", mark, p);
+                    let name_width = (popup_rect.width as usize).saturating_sub(6).min(40); // cap name width
+                    let padded = if name_col.len() < name_width { format!("{:<width$}", name_col, width=name_width) } else { name_col };
+                    flat.push((false, format!("{}  {}", padded, desc), Some(p.clone())));
                 }
             }
         } else {
-            let cat_filter = app.aur_filter.as_ref();
+            let cat_filter = if app.aur_filter_working.is_empty() { None } else { Some(&app.aur_filter_working) };
             for (cat, pkgs) in &app.aur_cats {
-                if let Some(cf) = cat_filter { if cf != cat { continue; } }
+                if let Some(cf) = cat_filter { if !cf.contains(cat) { continue; } }
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.aur_sel_map.get(p).unwrap_or(&false);
                     let mark = if chosen { "[x]" } else { "[ ]" };
-                    flat.push((false, format!("{} {}", mark, p), Some(p.clone())));
+                    let desc = app.pkg_descs.get(p).cloned().unwrap_or_else(|| "".to_string());
+                    let name_col = format!("{} {}", mark, p);
+                    let name_width = (popup_rect.width as usize).saturating_sub(6).min(40);
+                    let padded = if name_col.len() < name_width { format!("{:<width$}", name_col, width=name_width) } else { name_col };
+                    flat.push((false, format!("{}  {}", padded, desc), Some(p.clone())));
                 }
             }
         }
@@ -1051,9 +1093,30 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 Block::default()
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                    .border_style(Style::default().fg(app.theme.surface1)),
+                    .border_style(Style::default().fg(if !app.ms_focus_right { app.theme.mauve } else { app.theme.surface1 })),
             );
-        f.render_stateful_widget(list, rows[1], &mut state);
+        f.render_stateful_widget(list, cols[0], &mut state);
+
+        // Right pane: live category filter
+        let mut filter_items: Vec<ListItem> = Vec::new();
+        for c in &cats {
+            let mark = if (if is_pacman { &app.pacman_filter_working } else { &app.aur_filter_working }).contains(c) { "[x]" } else { "[ ]" };
+            filter_items.push(ListItem::new(Line::from(format!("{} {}", mark, c))));
+        }
+        let mut filter_state = ListState::default();
+        filter_state.select(Some(app.ms_cursor_filter.min(cats.len().saturating_sub(1))));
+        let filter_title = if is_pacman { "Filter pacman categories" } else { "Filter AUR categories" };
+        let filter_list = List::new(filter_items)
+            .highlight_style(Style::default().fg(app.theme.mauve).add_modifier(Modifier::BOLD))
+            .highlight_symbol("▶ ")
+            .block(
+                Block::default()
+                    .title(filter_title)
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                    .border_style(Style::default().fg(if app.ms_focus_right { app.theme.mauve } else { app.theme.surface1 })),
+            );
+        f.render_stateful_widget(filter_list, cols[1], &mut filter_state);
 
         // Footer counts
         let (selected_count, total_count) = if is_pacman {
@@ -1070,59 +1133,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(bottom, rows[2]);
     }
 
-    // Category filter popup
-    if app.editing && (app.edit_kind == EditKind::FilterPacman || app.edit_kind == EditKind::FilterAur) {
-        let is_pacman = app.edit_kind == EditKind::FilterPacman;
-        let area_w = area.width as i32;
-        let popup_w = (area_w * 2 / 5).max(30) as u16;
-        let popup_h = (area.height.saturating_sub(12)).max(8);
-        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
-        f.render_widget(Clear, popup_rect);
-        let title = if is_pacman { "Filter pacman categories" } else { "Filter AUR categories" };
-        let popup_block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-            .border_style(Style::default().fg(app.theme.mauve));
-        f.render_widget(popup_block, popup_rect);
-
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(3)])
-            .split(inner);
-
-        let help = Paragraph::new(Text::from(vec![Line::from("Enter apply   a All   Esc cancel   j/k/↑/↓ move")]))
-            .style(Style::default().fg(app.theme.subtext0));
-        f.render_widget(help, rows[0]);
-
-        let mut cats: Vec<String> = if is_pacman {
-            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
-        } else {
-            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
-        };
-        cats.sort();
-        // Prepend "All"
-        cats.insert(0, "All".to_string());
-        let mut items: Vec<ListItem> = Vec::new();
-        for c in &cats {
-            items.push(ListItem::new(Line::from(c.clone())));
-        }
-        let mut state = ListState::default();
-        state.select(Some(app.ms_cursor.min(cats.len().saturating_sub(1))));
-        let list = List::new(items)
-            .highlight_style(Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD))
-            .highlight_symbol("▶ ")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                    .border_style(Style::default().fg(app.theme.surface1)),
-            );
-        f.render_stateful_widget(list, rows[1], &mut state);
-    }
+    // Category filter popup removed (now part of split-pane in package selector)
 
     // Simple info popup (dismiss with Enter/Esc)
     if app.editing && app.edit_kind == EditKind::Info {
@@ -1166,6 +1177,93 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let tip = Paragraph::new(Text::from(vec![Line::from("Press Enter or Esc to close")]))
             .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, inner_chunks[1]);
+    }
+    // Add Packages validation warning popup
+    if app.editing && app.edit_kind == EditKind::AddPackagesWarning {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_h = (app.warning_lines.len() as u16 + 5).min(area.height.saturating_sub(4));
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Package warnings")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length((app.warning_lines.len() as u16).min(inner.height.saturating_sub(2))), Constraint::Length(1)])
+            .split(inner);
+        let mut lines: Vec<Line> = Vec::new();
+        for l in &app.warning_lines {
+            lines.push(Line::from(l.clone()));
+        }
+        let list = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+        f.render_widget(list, rows[0]);
+        let tip = Paragraph::new(Text::from(vec![Line::from("Press Enter/Esc to return and edit")]))
+            .style(Style::default().fg(app.theme.subtext0));
+        f.render_widget(tip, rows[1]);
+    }
+    // Confirm enable monitor setup popup
+    if app.editing && app.edit_kind == EditKind::ConfirmEnableMonitorSetup {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_h = 6u16;
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Enable Monitor Setup?")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Length(2)])
+            .split(inner);
+        let msg = Paragraph::new(Text::from(vec![Line::from("MONITOR_SETUP_ENABLED has to be set to true, do you want to set to true?")]))
+            .style(Style::default().fg(app.theme.text));
+        f.render_widget(msg, rows[0]);
+        let tip = Paragraph::new(Text::from(vec![Line::from("Press Y/Enter to confirm, N/Esc to cancel")]))
+            .style(Style::default().fg(app.theme.subtext0));
+        f.render_widget(tip, rows[1]);
+    }
+    // Confirm start install popup
+    if app.editing && app.edit_kind == EditKind::ConfirmStartInstall {
+        let area_w = area.width as i32;
+        let popup_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_h = 6u16;
+        let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        f.render_widget(Clear, popup_rect);
+        let popup_block = Block::default()
+            .title("Start unattended install?")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(popup_block, popup_rect);
+
+        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Length(2)])
+            .split(inner);
+        let msg = Paragraph::new(Text::from(vec![Line::from("This will run the setup now. Proceed?")]))
+            .style(Style::default().fg(app.theme.text));
+        f.render_widget(msg, rows[0]);
+        let tip = Paragraph::new(Text::from(vec![Line::from("Press Y/Enter to confirm, N/Esc to cancel")]))
+            .style(Style::default().fg(app.theme.subtext0));
+        f.render_widget(tip, rows[1]);
     }
     // Confirm reboot popup
     if app.editing && app.edit_kind == EditKind::ConfirmReboot {
@@ -1502,9 +1600,14 @@ fn resolve_setup_script_path() -> Option<PathBuf> {
 struct PackagesRoot {
     hyprland_packages: HashMap<String, Vec<String>>,
     aur_packages: HashMap<String, Vec<String>>,
+    package_descriptions: Option<HashMap<String, String>>,
 }
 
-fn load_packages_json_categorized() -> Option<(Vec<(String, Vec<String>)>, Vec<(String, Vec<String>)>)> {
+fn load_packages_json_categorized() -> Option<(
+    Vec<(String, Vec<String>)>,
+    Vec<(String, Vec<String>)>,
+    HashMap<String, String>,
+)> {
     let candidates = [
         PathBuf::from("./packages.json"),
         PathBuf::from("../packages.json"),
@@ -1532,7 +1635,8 @@ fn load_packages_json_categorized() -> Option<(Vec<(String, Vec<String>)>, Vec<(
         })
         .collect();
     aur_cats.sort_by(|a, b| a.0.cmp(&b.0));
-    Some((pac_cats, aur_cats))
+    let descs = parsed.package_descriptions.unwrap_or_default();
+    Some((pac_cats, aur_cats, descs))
 }
 
 fn install_panic_hook() {
@@ -1580,7 +1684,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         if app.edit_kind == EditKind::MonitorWizard {
             // Wizard navigation and operations
             match key.code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                     app.mw_monitors.clear();
@@ -1641,7 +1745,55 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             return Ok(false);
         } else if app.edit_kind == EditKind::Info {
             match key.code {
-                KeyCode::Esc | KeyCode::Enter => {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                _ => {}
+            }
+            return Ok(false);
+        } else if app.edit_kind == EditKind::AddPackagesWarning {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                    // Return to AddPackages text editor to let user fix
+                    app.edit_kind = EditKind::Text;
+                    // keep editing true, keep current buffer
+                }
+                _ => {}
+            }
+            return Ok(false);
+        } else if app.edit_kind == EditKind::ConfirmEnableMonitorSetup {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    // Enable and open monitor wizard
+                    app.preflight.monitor_setup_enabled = true;
+                    app.edit_kind = EditKind::MonitorWizard;
+                    app.mw_buffer = app.preflight.monitor_config.clone();
+                    app.mw_monitors = discover_hypr_monitors();
+                    app.mw_selected_monitor = 0;
+                    app.mw_selected_mode = 0;
+                    app.mw_selected_scale = 1;
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('q') => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                _ => {}
+            }
+            return Ok(false);
+        } else if app.edit_kind == EditKind::ConfirmStartInstall {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                    app.ui_mode = UiMode::Menu; // return to menu for logs visibility
+                    if app.preflight.dry_run {
+                        spawn_setup(app, &["--dry-run"])?;
+                    } else {
+                        spawn_setup(app, &[])?;
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('q') => {
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }
@@ -1656,7 +1808,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('q') => {
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }
@@ -1687,122 +1839,141 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 }
             }
             match key.code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     app.editing = false;
                 }
                 KeyCode::Enter => {
                     app.editing = false; // selections already stored in sel vecs
                 }
+                KeyCode::Tab => {
+                    app.ms_focus_right = !app.ms_focus_right;
+                }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    if len > 0 {
-                        // advance and skip headers
-                        for _ in 0..len {
-                            app.ms_cursor = if app.ms_cursor + 1 >= len { 0 } else { app.ms_cursor + 1 };
-                            if !header_idx.contains(&app.ms_cursor) { break; }
+                    if app.ms_focus_right {
+                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        cats.sort();
+                        let lenf = cats.len();
+                        if lenf > 0 { app.ms_cursor_filter = if app.ms_cursor_filter + 1 >= lenf { 0 } else { app.ms_cursor_filter + 1 }; }
+                    } else {
+                        if len > 0 {
+                            // advance and skip headers
+                            for _ in 0..len {
+                                app.ms_cursor = if app.ms_cursor + 1 >= len { 0 } else { app.ms_cursor + 1 };
+                                if !header_idx.contains(&app.ms_cursor) { break; }
+                            }
                         }
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    if len > 0 {
-                        // retreat and skip headers
-                        for _ in 0..len {
-                            app.ms_cursor = if app.ms_cursor == 0 { len - 1 } else { app.ms_cursor - 1 };
-                            if !header_idx.contains(&app.ms_cursor) { break; }
+                    if app.ms_focus_right {
+                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        cats.sort();
+                        let lenf = cats.len();
+                        if lenf > 0 { app.ms_cursor_filter = if app.ms_cursor_filter == 0 { lenf - 1 } else { app.ms_cursor_filter - 1 }; }
+                    } else {
+                        if len > 0 {
+                            // retreat and skip headers
+                            for _ in 0..len {
+                                app.ms_cursor = if app.ms_cursor == 0 { len - 1 } else { app.ms_cursor - 1 };
+                                if !header_idx.contains(&app.ms_cursor) { break; }
+                            }
                         }
                     }
                 }
                 KeyCode::Char(' ') => {
-                    // Toggle selected entry if not a header
-                    let mut idx = 0usize;
-                    if is_pacman {
-                        'outerp: for (_, pkgs) in &app.pacman_cats {
-                            if app.ms_cursor == idx { idx += 1; continue; } // header row
-                            idx += 1;
-                            for p in pkgs {
-                                if app.ms_cursor == idx { let e = app.pacman_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outerp; }
-                                idx += 1;
+                    if app.ms_focus_right {
+                        // toggle filter entry
+                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        cats.sort();
+                        let idx = app.ms_cursor_filter.min(cats.len().saturating_sub(1));
+                        if let Some(cat) = cats.get(idx) {
+                            if is_pacman {
+                                if app.pacman_filter_working.contains(cat) { app.pacman_filter_working.remove(cat); } else { app.pacman_filter_working.insert(cat.clone()); }
+                            } else {
+                                if app.aur_filter_working.contains(cat) { app.aur_filter_working.remove(cat) ; } else { app.aur_filter_working.insert(cat.clone()); }
                             }
                         }
                     } else {
-                        'outera: for (_, pkgs) in &app.aur_cats {
-                            if app.ms_cursor == idx { idx += 1; continue; } // header row
-                            idx += 1;
-                            for p in pkgs {
-                                if app.ms_cursor == idx { let e = app.aur_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outera; }
+                        // Toggle selected package if not a header
+                        let mut idx = 0usize;
+                        if is_pacman {
+                            'outerp: for (_, pkgs) in &app.pacman_cats {
+                                if app.ms_cursor == idx { idx += 1; continue; } // header row
                                 idx += 1;
+                                for p in pkgs {
+                                    if app.ms_cursor == idx { let e = app.pacman_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outerp; }
+                                    idx += 1;
+                                }
+                            }
+                        } else {
+                            'outera: for (_, pkgs) in &app.aur_cats {
+                                if app.ms_cursor == idx { idx += 1; continue; } // header row
+                                idx += 1;
+                                for p in pkgs {
+                                    if app.ms_cursor == idx { let e = app.aur_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outera; }
+                                    idx += 1;
+                                }
                             }
                         }
                     }
                 }
                 KeyCode::Char('a') => {
-                    if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = true; } } else { for v in app.aur_sel_map.values_mut() { *v = true; } }
+                    if app.ms_focus_right {
+                        // select all categories
+                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        cats.sort();
+                        if is_pacman { app.pacman_filter_working = cats.into_iter().collect(); } else { app.aur_filter_working = cats.into_iter().collect(); }
+                    } else {
+                        if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = true; } } else { for v in app.aur_sel_map.values_mut() { *v = true; } }
+                    }
                 }
                 KeyCode::Char('n') => {
-                    if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = false; } } else { for v in app.aur_sel_map.values_mut() { *v = false; } }
-                }
-                KeyCode::Char('f') => {
-                    // Enter filter selection popup
-                    app.edit_kind = if is_pacman { EditKind::FilterPacman } else { EditKind::FilterAur };
-                    // reuse ms_cursor for filter list start
-                    app.ms_cursor = 0;
-                }
-                _ => {}
-            }
-            return Ok(false);
-        } else if app.edit_kind == EditKind::FilterPacman || app.edit_kind == EditKind::FilterAur {
-            // Filter selection handling
-            let is_pacman = app.edit_kind == EditKind::FilterPacman;
-            // Build categories + All
-            let mut cats: Vec<String> = if is_pacman {
-                app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
-            } else {
-                app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
-            };
-            cats.sort();
-            cats.insert(0, "All".to_string());
-            let len = cats.len();
-            match key.code {
-                KeyCode::Esc => {
-                    // cancel
-                    app.editing = false;
-                    // return to package selector
-                    app.edit_kind = if is_pacman { EditKind::SelectPacman } else { EditKind::SelectAur };
-                    app.ms_cursor = 0;
-                }
-                KeyCode::Enter => {
-                    // apply selection
-                    let selected = app.ms_cursor.min(len.saturating_sub(1));
-                    if selected == 0 {
-                        if is_pacman { app.pacman_filter = None; } else { app.aur_filter = None; }
+                    if app.ms_focus_right {
+                        // clear categories (empty means all)
+                        if is_pacman { app.pacman_filter_working.clear(); } else { app.aur_filter_working.clear(); }
                     } else {
-                        let chosen = cats[selected].clone();
-                        if is_pacman { app.pacman_filter = Some(chosen); } else { app.aur_filter = Some(chosen); }
+                        if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = false; } } else { for v in app.aur_sel_map.values_mut() { *v = false; } }
                     }
-                    app.edit_kind = if is_pacman { EditKind::SelectPacman } else { EditKind::SelectAur };
-                    app.ms_cursor = 0;
-                }
-                KeyCode::Char('a') => {
-                    // quick All
-                    if is_pacman { app.pacman_filter = None; } else { app.aur_filter = None; }
-                    app.edit_kind = if is_pacman { EditKind::SelectPacman } else { EditKind::SelectAur };
-                    app.ms_cursor = 0;
-                }
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if len > 0 { app.ms_cursor = if app.ms_cursor + 1 >= len { 0 } else { app.ms_cursor + 1 }; }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    if len > 0 { app.ms_cursor = if app.ms_cursor == 0 { len - 1 } else { app.ms_cursor - 1 }; }
                 }
                 _ => {}
             }
             return Ok(false);
         }
         match key.code {
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Char('q') => {
                 app.editing = false;
                 app.edit_buffer.clear();
             }
             KeyCode::Enter => {
+                // Intercept AddPackages: validate and show popup if issues
+                if app.preflight_focus == PreflightField::AddPackages {
+                    let raw = app.edit_buffer.clone();
+                    let mut names: Vec<String> = raw
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                    names.sort();
+                    names.dedup();
+                    let mut warnings: Vec<String> = Vec::new();
+                    for name in &names {
+                        if app.pacman_sel_map.contains_key(name) || app.aur_sel_map.contains_key(name) || app.user_added.contains(name) {
+                            warnings.push(format!("Already selected: {}", name));
+                            continue;
+                        }
+                        let is_repo = Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false);
+                        let is_aur = if is_repo { false } else { Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) };
+                        if !is_repo && !is_aur {
+                            warnings.push(format!("Not found in pacman or AUR: {}", name));
+                        }
+                    }
+                    if !warnings.is_empty() {
+                        app.warning_lines = warnings;
+                        app.edit_kind = EditKind::AddPackagesWarning;
+                        // keep editing true to show popup; do not apply yet
+                        return Ok(false);
+                    }
+                }
                 apply_edit_buffer(app);
                 app.editing = false;
                 app.edit_buffer.clear();
@@ -1818,9 +1989,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     }
 
     match key.code {
-        KeyCode::Char('q') => {
-            app.ui_mode = UiMode::Menu;
-        }
+        KeyCode::Char('q') => return Ok(true),
         KeyCode::Home => {
             app.follow_tail = false;
             app.scroll = 0;
@@ -1858,12 +2027,14 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         app.edit_kind = EditKind::Info;
                         return Ok(false);
                     }
-                    app.ui_mode = UiMode::Menu; // return to menu for logs visibility
                     if app.preflight.dry_run {
-                        spawn_setup(app, &["--dry-run"])?;
-                    } else {
-                        spawn_setup(app, &[])?;
+                        app.ui_mode = UiMode::Menu; // return to menu for logs visibility
+                        spawn_setup(app, &["--dry-run"]) ?;
+                        return Ok(false);
                     }
+                    app.editing = true;
+                    app.edit_kind = EditKind::ConfirmStartInstall;
+                    return Ok(false);
                 }
                 PreflightField::EnvWallpaperDirOverride => begin_editing(app),
                 PreflightField::EnvMonitorConfig => begin_editing(app),
@@ -1872,15 +2043,20 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.editing = true;
                     app.edit_kind = EditKind::SelectPacman;
                     app.ms_cursor = 0;
+                    app.ms_focus_right = false;
+                    app.ms_cursor_filter = 0;
                 }
                 PreflightField::SelectAur => {
                     app.editing = true;
                     app.edit_kind = EditKind::SelectAur;
                     app.ms_cursor = 0;
+                    app.ms_focus_right = false;
+                    app.ms_cursor_filter = 0;
                 }
                 PreflightField::AddPackages => {
                     app.editing = true;
                     app.edit_kind = EditKind::Text;
+                    app.add_packages_append_mode = true; // Enter opens in append mode
                     app.edit_buffer = String::new();
                 }
                 _ => {}
@@ -1899,11 +2075,11 @@ fn preflight_focus_next(app: &mut AppState) {
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::Password,
-        PreflightField::Password => PreflightField::EnvDryRun,
-        PreflightField::EnvDryRun => PreflightField::SelectPacman,
+        PreflightField::Password => PreflightField::SelectPacman,
         PreflightField::SelectPacman => PreflightField::SelectAur,
         PreflightField::SelectAur => PreflightField::AddPackages,
-        PreflightField::AddPackages => PreflightField::Start,
+        PreflightField::AddPackages => PreflightField::EnvDryRun,
+        PreflightField::EnvDryRun => PreflightField::Start,
         PreflightField::Start => PreflightField::EnvPromptDefaultYn,
     };
 }
@@ -1917,11 +2093,11 @@ fn preflight_focus_prev(app: &mut AppState) {
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
         PreflightField::Password => PreflightField::EnvAutoContinueOnWarnings,
-        PreflightField::EnvDryRun => PreflightField::Password,
-        PreflightField::SelectPacman => PreflightField::EnvDryRun,
+        PreflightField::SelectPacman => PreflightField::Password,
         PreflightField::SelectAur => PreflightField::SelectPacman,
         PreflightField::AddPackages => PreflightField::SelectAur,
-        PreflightField::Start => PreflightField::AddPackages,
+        PreflightField::EnvDryRun => PreflightField::AddPackages,
+        PreflightField::Start => PreflightField::EnvDryRun,
     };
 }
 
@@ -1980,6 +2156,9 @@ fn begin_editing(app: &mut AppState) {
         }
         PreflightField::EnvMonitorConfig => {
             if !app.preflight.monitor_setup_enabled {
+                // Ask to enable
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmEnableMonitorSetup;
                 return;
             }
             app.editing = true;
@@ -1995,6 +2174,16 @@ fn begin_editing(app: &mut AppState) {
             app.editing = true;
             app.edit_kind = EditKind::Text;
             app.edit_buffer = String::new();
+        }
+        PreflightField::AddPackages => {
+            app.editing = true;
+            app.edit_kind = EditKind::Text;
+            app.add_packages_append_mode = false; // 'e' opens in replace/edit mode
+            if app.user_added.is_empty() {
+                app.edit_buffer = String::new();
+            } else {
+                app.edit_buffer = app.user_added.join(", ");
+            }
         }
         _ => {}
     }
@@ -2017,36 +2206,62 @@ fn apply_edit_buffer(app: &mut AppState) {
             names.sort();
             names.dedup();
 
-            for name in names {
-                // Skip if already present in categorized lists: mark selected in map and continue
-                if app.pacman_sel_map.contains_key(&name) {
-                    if let Some(v) = app.pacman_sel_map.get_mut(&name) { *v = true; }
-                    app.push_log_line(format!("Package '{}' already in pacman list; set selected", name));
-                    continue;
-                }
-                if app.aur_sel_map.contains_key(&name) {
-                    if let Some(v) = app.aur_sel_map.get_mut(&name) { *v = true; }
-                    app.push_log_line(format!("Package '{}' already in AUR list; set selected", name));
-                    continue;
-                }
-
-                if !app.user_added.contains(&name) {
-                    // Classify: check pacman repo first, then AUR via yay -Si
+            if app.add_packages_append_mode {
+                // Append-only: keep existing user_added, add new valid ones only
+                for name in names {
+                    if app.user_added.contains(&name) {
+                        continue;
+                    }
+                    if app.pacman_sel_map.contains_key(&name) {
+                        if let Some(v) = app.pacman_sel_map.get_mut(&name) { *v = true; }
+                        app.push_log_line(format!("Package '{}' already in pacman list; set selected", name));
+                        continue;
+                    }
+                    if app.aur_sel_map.contains_key(&name) {
+                        if let Some(v) = app.aur_sel_map.get_mut(&name) { *v = true; }
+                        app.push_log_line(format!("Package '{}' already in AUR list; set selected", name));
+                        continue;
+                    }
                     let mut src = String::from("unknown");
                     if Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
                         src = "pacman".to_string();
                     } else if Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
                         src = "aur".to_string();
                     }
-                    if src == "unknown" {
-                        app.push_log_line(format!("Skipping unknown package '{}': not found in pacman or AUR", name));
-                        continue;
-                    }
+                    if src == "unknown" { app.push_log_line(format!("Skipping unknown package '{}': not found in pacman or AUR", name)); continue; }
                     app.user_added_src.insert(name.clone(), src);
                     app.user_added.push(name);
                 }
+            } else {
+                // Replace mode: rebuild list exactly from current input
+                let mut new_user_added: Vec<String> = Vec::new();
+                let mut new_user_added_src: HashMap<String, String> = HashMap::new();
+                for name in names {
+                    if app.pacman_sel_map.contains_key(&name) {
+                        if let Some(v) = app.pacman_sel_map.get_mut(&name) { *v = true; }
+                        app.push_log_line(format!("Package '{}' already in pacman list; set selected", name));
+                        continue;
+                    }
+                    if app.aur_sel_map.contains_key(&name) {
+                        if let Some(v) = app.aur_sel_map.get_mut(&name) { *v = true; }
+                        app.push_log_line(format!("Package '{}' already in AUR list; set selected", name));
+                        continue;
+                    }
+                    let mut src = String::from("unknown");
+                    if Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                        src = "pacman".to_string();
+                    } else if Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                        src = "aur".to_string();
+                    }
+                    if src == "unknown" { app.push_log_line(format!("Skipping unknown package '{}': not found in pacman or AUR", name)); continue; }
+                    new_user_added_src.insert(name.clone(), src);
+                    new_user_added.push(name);
+                }
+                app.user_added = new_user_added;
+                app.user_added_src = new_user_added_src;
             }
             app.edit_kind = EditKind::None;
+            app.add_packages_append_mode = false; // reset
         }
         PreflightField::EnvMonitorConfig => {
             // When using wizard, saving is handled by 's' key; keep here for text fallback

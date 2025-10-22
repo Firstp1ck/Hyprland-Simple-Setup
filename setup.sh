@@ -85,6 +85,7 @@ execute_command() {
         echo -e "${YELLOW}[DRY-RUN]${NC} Would execute: $cmd"
         echo -e "${YELLOW}[DRY-RUN]${NC} Description: $description"
         log_dry_run_operation "$caller_function" "$description"
+        sleep 0.05
         return 0
     else
         # Prefer using provided SUDO_PASSWORD to avoid prompts; fallback to -n in NON_INTERACTIVE
@@ -103,6 +104,8 @@ execute_command() {
         if [ $exit_code -ne 0 ]; then
             print_warning "Command for '$description' failed."
         fi
+        # Throttle UI output similarly to dry-run
+        sleep 0.05
         return $exit_code
     fi
 }
@@ -460,6 +463,13 @@ list_packages() {
 verify_installed_packages() {
     extended_announce_step "Verifying installed packages"
 
+    # In dry-run, skip verification entirely (execute_command would always succeed)
+    if is_dry_run; then
+        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/yay"
+        print_message "Dry-run: skipping package verification"
+        return 0
+    fi
+
     # Find the newest package list files
     local user_pkg_file
     user_pkg_file=$(ls -t "$HOME"/user_installed_packages_* 2>/dev/null | head -n1)
@@ -492,7 +502,7 @@ verify_installed_packages() {
             [[ -z "$package" || "$package" =~ ^[[:space:]]*# ]] && continue
 
             ((total_checked++))
-            if ! pacman -Qi "$package" &>/dev/null; then
+            if ! execute_command "pacman -Qi '$package' >/dev/null 2>&1" "Check installed: $package"; then
                 missing_packages+=("$package (Pacman)")
                 missing_pacman+=("$package")
             fi
@@ -507,7 +517,7 @@ verify_installed_packages() {
             [[ -z "$package" || "$package" =~ ^[[:space:]]*# ]] && continue
 
             ((total_checked++))
-            if ! pacman -Qi "$package" &>/dev/null; then
+            if ! execute_command "pacman -Qi '$package' >/dev/null 2>&1" "Check installed: $package (AUR)"; then
                 missing_packages+=("$package (AUR)")
                 missing_aur+=("$package")
             fi
@@ -1580,16 +1590,20 @@ configure_grub_btrfsd() {
     fi
 
     # Create (or overwrite) a drop-in override file that removes any '.snapshot' and appends '-t' to ExecStart
-    if sudo bash -c "cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf << 'EOF'
+    if is_dry_run; then
+        log_dry_run_operation "configure_grub_btrfsd" "Would write /etc/systemd/system/grub-btrfsd.service.d/override.conf"
+    else
+        if sudo bash -c "cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf << 'EOF'
 [Service]
 ExecStart=
 ExecStart=\$(grep '^ExecStart=' /etc/systemd/system/grub-btrfsd.service | sed 's/\.snapshot//g; s/\$/ -t/')
 EOF"; then
-        print_message "grub-btrfsd override file created."
-    else
-        print_error "Failed to create grub-btrfsd override file."
-        track_config_status "grub-btrfsd Configuration" "$CROSS_MARK"
-        return 1
+            print_message "grub-btrfsd override file created."
+        else
+            print_error "Failed to create grub-btrfsd override file."
+            track_config_status "grub-btrfsd Configuration" "$CROSS_MARK"
+            return 1
+        fi
     fi
 
     # Reload systemd daemon and enable the service
@@ -1972,7 +1986,12 @@ verify_workspace_config() {
 main() {
     print_message "Starting Hyprland Setup..."
 
-    setup_sudo_password
+    # Skip sudo password setup in dry-run
+    if is_dry_run; then
+        print_message "Dry-run: skipping sudo password capture"
+    else
+        setup_sudo_password
+    fi
 
     get_fish_language_choice
     check_disk_space
