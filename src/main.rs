@@ -660,7 +660,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     rows.push(mk(
         "Edit",
-        "Add packages (comma/space-separated)",
+        "Add packages (comma-separated)",
         if app.user_added.is_empty() { "<none>".to_string() } else { app.user_added.join(", ") },
         sel(PreflightField::AddPackages),
     ));
@@ -731,7 +731,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             PreflightField::EnvWallpaperDirOverride => "WALLPAPER_DIR_OVERRIDE",
             PreflightField::EnvMonitorConfig => "MONITOR_CONFIG",
             PreflightField::Password => "PASSWORD",
-            PreflightField::AddPackages => "ADD PACKAGES (comma/space separated)",
+            PreflightField::AddPackages => "ADD PACKAGES (comma-separated)",
             _ => "",
         };
         let caret = "▏";
@@ -2010,7 +2010,7 @@ fn apply_edit_buffer(app: &mut AppState) {
             // Parse list, dedupe, and classify via pacman/yay availability
             let raw = app.edit_buffer.clone();
             let mut names: Vec<String> = raw
-                .split(|c: char| c == ',' || c.is_whitespace())
+                .split(',')
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| s.trim().to_string())
                 .collect();
