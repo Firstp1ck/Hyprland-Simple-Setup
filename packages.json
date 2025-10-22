@@ -1,0 +1,167 @@
+{
+  "hyprland_packages": {
+    "core_hyprland": [
+      "waybar",
+      "hyprpaper",
+      "hyprcursor",
+      "hyprlock",
+      "hypridle",
+      "hyprpolkitagent",
+      "hyprpicker",
+      "wl-clipboard",
+      "wl-clip-persist",
+      "hyprgraphics",
+      "hyprland-qtutils",
+      "hyprland-qt-support",
+      "hyprwayland-scanner",
+      "python-pyquery",
+      "tk",
+      "arch-wiki-docs",
+      "hyprland",
+      "xdg-desktop-portal-hyprland"
+    ],
+    "desktop_evnironment": [
+      "dolphin",
+      "grim",
+      "htop",
+      "iwd",
+      "kitty",
+      "nano",
+      "openssh",
+      "polkit-kde-agent",
+      "qt5-wayland",
+      "qt6-wayland",
+      "slurp",
+      "smartmontools",
+      "vim",
+      "wget",
+      "wireless_tools",
+      "wofi",
+      "wpa_supplicant",
+      "xdg-utils"
+    ],
+    "graphics_driver": [
+      "intel-media-driver",
+      "libva-intel-driver",
+      "libva-mesa-driver",
+      "mesa",
+      "vulkan-intel",
+      "vulkan-nouveau",
+      "vulkan-radeon",
+      "xf86-video-amdgpu",
+      "xf86-video-ati",
+      "xf86-video-nouveau",
+      "xorg-server",
+      "xorg-xinit"
+    ],
+    "greeter": [
+      "sddm"
+    ],
+    "audio": [
+      "pipewire",
+      "pipewire-pulse",
+      "wireplumber",
+      "pavucontrol",
+      "pulseaudio-qt"
+    ],
+    "kernel": [
+      "linux",
+      "linux-headers",
+      "linux-api-headers",
+      "linux-firmware"
+    ],
+    "file_management": [
+      "xdg-user-dirs",
+      "git",
+      "onefetch",
+      "fd",
+      "fzf",
+      "stow",
+      "nvim",
+      "ark",
+      "7zip",
+      "timeshift",
+      "grub-btrfs",
+      "inotify-tools",
+      "satty"
+    ],
+    "shell": [
+      "fish"
+    ],
+    "browser": [
+      "vivaldi",
+      "vivaldi-ffmpeg-codecs"
+    ],
+    "system_integration": [
+      "xdg-desktop-portal-gtk",
+      "xdg-desktop-portal-kde",
+      "gnome-keyring",
+      "network-manager-applet",
+      "networkmanager",
+      "nm-connection-editor",
+      "bluez",
+      "bluez-utils",
+      "blueman",
+      "swaync",
+      "ddcutil"
+    ],
+    "theming": [
+      "ttf-jetbrains-mono-nerd",
+      "ttf-nerd-fonts-symbols",
+      "ttf-nerd-fonts-symbols-common",
+      "otf-font-awesome",
+      "cava",
+      "breeze",
+      "breeze5",
+      "breeze-gtk",
+      "qt5ct",
+      "qt6ct",
+      "nwg-look"
+    ],
+    "cli_tools": [
+      "dysk",
+      "duf",
+      "bat",
+      "lsd",
+      "btop",
+      "zoxide",
+      "lshw",
+      "ntfs-3g",
+      "firewalld",
+      "fastfetch",
+      "tldr",
+      "zellij",
+      "calcurse",
+      "psensor",
+      "konsole"
+    ],
+    "gui_tools": []
+  },
+  "aur_packages": {
+    "core_hyprland": [
+      "pyprland",
+      "hyprsunset"
+    ],
+    "screenshots": [
+      "hyprshot"
+    ],
+    "gui_tools": [
+      "visual-studio-code-bin",
+      "github-desktop-bin",
+      "wlogout"
+    ],
+    "theming": [
+      "waypaper-git",
+      "rose-pine-hyprcursor"
+    ],
+    "system_integration": [
+      "xwaylandvideobridge",
+      "wl-clipboard-history-git",
+      "waybar-module-pacman-updates-git"
+    ],
+    "cli_tools": [
+      "lsplug"
+    ]
+  }
+}
+

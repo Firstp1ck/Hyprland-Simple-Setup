@@ -1215,8 +1215,38 @@ install_pacman_packages() {
     print_message "Updating pacman database..."
     execute_command "sudo pacman -Sy" "Update pacman database" || exit 1
 
-    print_message "Installing Hyprland packages..."
-    for pkg in "${hyprland_packages[@]}"; do
+    # Determine packages to install from env override, default to hyprland_packages array
+    local -a pkgs_to_install=()
+    if [ -n "${SELECTED_PACMAN_PACKAGES}" ]; then
+        # Allow comma or whitespace separated lists
+        IFS=' ' read -r -a pkgs_to_install <<< "${SELECTED_PACMAN_PACKAGES//,/ }"
+        print_message "Installing selected packages from TUI (${#pkgs_to_install[@]} items)"
+    else
+        pkgs_to_install=("${hyprland_packages[@]}")
+        print_message "Installing default Hyprland packages..."
+    fi
+
+    # Append user-added pacman packages (if any)
+    if [ -n "${USER_ADDED_PACMAN_PACKAGES}" ]; then
+        read -r -a user_pac_arr <<< "${USER_ADDED_PACMAN_PACKAGES//,/ }"
+        pkgs_to_install+=("${user_pac_arr[@]}")
+    fi
+
+    # Deduplicate pkgs_to_install while preserving order
+    if [ ${#pkgs_to_install[@]} -gt 0 ]; then
+        declare -A _seen
+        local -a _dedup
+        for p in "${pkgs_to_install[@]}"; do
+            if [ -n "$p" ] && [ -z "${_seen[$p]}" ]; then
+                _seen[$p]=1
+                _dedup+=("$p")
+            fi
+        done
+        pkgs_to_install=("${_dedup[@]}")
+        unset _seen
+    fi
+
+    for pkg in "${pkgs_to_install[@]}"; do
         if ! execute_command "sudo pacman -S --needed --noconfirm $pkg" "Installing $pkg"; then
             print_warning "Failed to install $pkg. Please install manually if issues persist."
         fi
@@ -1246,8 +1276,36 @@ aur_extras=(
 
 install_aur_extras() {
     announce_step "Install AUR extras"
-    print_message "Installing Hyprland AUR extras: ${aur_extras[*]}"
-    for pkg in "${aur_extras[@]}"; do
+    local -a aur_to_install=()
+    # Merge TUI-selected AUR packages and user-added AUR packages
+    if [ -n "${SELECTED_AUR_PACKAGES}" ]; then
+        IFS=' ' read -r -a aur_to_install <<< "${SELECTED_AUR_PACKAGES//,/ }"
+        print_message "Installing selected AUR packages from TUI (${#aur_to_install[@]} items)"
+    else
+        aur_to_install=("${aur_extras[@]}")
+        print_message "Installing default Hyprland AUR extras: ${aur_to_install[*]}"
+    fi
+    if [ -n "${USER_ADDED_AUR_PACKAGES}" ]; then
+        # append user-added aur entries
+        read -r -a user_aur_arr <<< "${USER_ADDED_AUR_PACKAGES//,/ }"
+        aur_to_install+=("${user_aur_arr[@]}")
+    fi
+
+    # Deduplicate AUR list while preserving order
+    if [ ${#aur_to_install[@]} -gt 0 ]; then
+        declare -A _seen2
+        local -a _dedup2
+        for p in "${aur_to_install[@]}"; do
+            if [ -n "$p" ] && [ -z "${_seen2[$p]}" ]; then
+                _seen2[$p]=1
+                _dedup2+=("$p")
+            fi
+        done
+        aur_to_install=("${_dedup2[@]}")
+        unset _seen2
+    fi
+
+    for pkg in "${aur_to_install[@]}"; do
         if ! execute_command "yay -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
         fi
