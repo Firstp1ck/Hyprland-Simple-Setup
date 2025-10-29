@@ -149,7 +149,7 @@ It sets up the following Components/Apps:
      ```
    - **After Installation:**
      ```bash
-     hyprland-simple-setup-git
+     hyprland-simple-setup
      ```
 
 2. **Option 2: Installation via Git**
@@ -180,7 +180,7 @@ It sets up the following Components/Apps:
 
 ## TUI Testing
 
-You can test-drive a Rust TUI that configures options up front and runs `setup.sh` unattended.
+You can run the Rust TUI via the hyprland-simple-setup command (recommended). For development or manual runs, you can still build and run with cargo as shown below; the TUI orchestrates `setup.sh` non-interactively.
 
 Install Rust dependencies:
 
@@ -254,12 +254,17 @@ Notes:
 
 ## Setup Script Execution
 
-To install and configure Hyprland along with its dependencies, run:
+To install and configure Hyprland with the interactive TUI, run:
+```bash
+hyprland-simple-setup
+```
+This launches the Rust TUI, which guides you through preflight options and runs the installer unattended.
+
+Advanced/legacy: To run the shell installer directly:
 ```bash
 cd ~/Hyprland-Simple-Setup
 ./setup.sh
 ```
-This script automatically updates Pacman, installs the necessary packages, and configures Hyprland tools.
 
 ## Package Installations
 
