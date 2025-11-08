@@ -42,10 +42,18 @@ struct Theme {
     blue: Color,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepSeverity {
+    None,
+    Warning,
+    Error,
+}
+
 #[derive(Clone, Debug)]
 struct SetupSection {
     title: String,
     done: bool,
+    severity: StepSeverity,
 }
 
 impl Theme {
@@ -367,6 +375,9 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
             }
+            // Ensure the Output pane follows the tail to show the final lines
+            app.follow_tail = true;
+            app.scroll = app.logs.len().saturating_sub(1) as u16;
             // Mark the final section as done when the process ends
             if let Some(idx) = app.current_section.take()
                 && let Some(sec) = app.sections.get_mut(idx)
@@ -446,14 +457,26 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         // Render sections with color: green=done, white=pending, blue=current
         let mut lines: Vec<Line> = Vec::new();
         for (idx, sec) in app.sections.iter().enumerate() {
+            // Determine color priority: Error > Warning > Blue(current) > Green(done) > default
             let style = if Some(idx) == app.current_section {
-                Style::default()
-                    .fg(app.theme.blue)
-                    .add_modifier(Modifier::BOLD)
+                match sec.severity {
+                    StepSeverity::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    StepSeverity::Warning => Style::default().fg(app.theme.yellow).add_modifier(Modifier::BOLD),
+                    StepSeverity::None => Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD),
+                }
             } else if sec.done {
-                Style::default().fg(Color::Green)
+                match sec.severity {
+                    StepSeverity::Error => Style::default().fg(Color::Red),
+                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
+                    StepSeverity::None => Style::default().fg(Color::Green),
+                }
             } else {
-                Style::default().fg(app.theme.text)
+                // Pending
+                match sec.severity {
+                    StepSeverity::Error => Style::default().fg(Color::Red),
+                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
+                    StepSeverity::None => Style::default().fg(app.theme.text),
+                }
             };
             lines.push(Line::from(Span::styled(format!("• {}", sec.title), style)));
         }
@@ -1509,6 +1532,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
+    // Auto-follow output from the start of the run
+    app.follow_tail = true;
+    app.scroll = app.logs.len().saturating_sub(1) as u16;
     let tx_out = app.tx.clone();
     if let Some(mut stdout) = stdout {
         thread::spawn(move || {
@@ -2440,10 +2466,34 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
             app.sections.push(SetupSection {
                 title: title.clone(),
                 done: false,
+                severity: StepSeverity::None,
             });
             app.current_section = Some(app.sections.len() - 1);
         }
         return;
+    }
+
+    // Check for warnings/errors and annotate current section
+    let clean = strip_ansi_sequences(trimmed);
+    let lower = clean.to_lowercase();
+    let mut sev: Option<StepSeverity> = None;
+    if lower.contains("[error]") || lower.starts_with("error: ") {
+        sev = Some(StepSeverity::Error);
+    } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ") {
+        sev = Some(StepSeverity::Warning);
+    }
+    if let Some(sev_val) = sev {
+        if let Some(idx) = app.current_section {
+            if let Some(sec) = app.sections.get_mut(idx) {
+                // Upgrade severity if needed (Error overrides Warning)
+                match (sec.severity, sev_val) {
+                    (StepSeverity::Error, _) => {}
+                    (StepSeverity::Warning, StepSeverity::Error) => sec.severity = StepSeverity::Error,
+                    (StepSeverity::None, s) => sec.severity = s,
+                    _ => {}
+                }
+            }
+        }
     }
 
     // Summary markers that imply completion
@@ -2578,7 +2628,7 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         for fname in called {
             if let Some(title) = get_title_for_fn(&fname) {
                 if !out.iter().any(|s| s.title == title) {
-                    out.push(SetupSection { title, done: false });
+                    out.push(SetupSection { title, done: false, severity: StepSeverity::None });
                 }
             }
         }

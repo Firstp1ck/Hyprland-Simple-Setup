@@ -482,7 +482,7 @@ verify_installed_packages() {
     aur_pkg_file=$(ls -t "$HOME"/aur_packages_* 2>/dev/null | head -n1)
 
     if [ -z "$user_pkg_file" ] && [ -z "$aur_pkg_file" ]; then
-        print_warning "No package list files found in $HOME. Generating new package lists..."
+        print_message "No package list files found in $HOME. Generating new package lists..."
         list_packages
         # Re-find the files after generation
         user_pkg_file=$(ls -t "$HOME"/user_installed_packages_* 2>/dev/null | head -n1)
@@ -1554,10 +1554,10 @@ configure_gnome_keyring() {
         print_message "Verified PAM configuration for gnome-keyring in $pam_file."
         pam_ok="true"
     else
-        print_warning "PAM configuration for gnome-keyring may be missing or malformed in $pam_file."
-        print_warning "Please open $pam_file and ensure these lines exist (uncommented):"
-        print_warning "  auth    optional    pam_gnome_keyring.so"
-        print_warning "  session optional    pam_gnome_keyring.so auto_start"
+        print_warning "PAM configuration for gnome-keyring may be missing or malformed in $pam_file.\n
+        Please ensure these lines exist (uncommented):\n
+        'auth    optional    pam_gnome_keyring.so'\n  
+        'session optional    pam_gnome_keyring.so auto_start'"
         pam_ok="false"
     fi
 
