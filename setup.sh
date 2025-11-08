@@ -30,6 +30,9 @@ aur_updates=()
 failed_packages=()
 config_statuses=()
 
+# Selected AUR helper (paru preferred if available)
+AUR_HELPER=""
+
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
@@ -226,9 +229,10 @@ distro_install() {
             ;;
         arch|endeavouros|cachyos)
             if ! execute_command "sudo pacman -S --needed --noconfirm ${packages[*]}" "Install packages: ${packages[*]}"; then
-                print_warning "pacman failed, trying yay as fallback for: ${packages[*]}"
-                if execute_command "yay -S --needed --noconfirm ${packages[*]}" "Install packages with yay: ${packages[*]}"; then
-                    print_message "yay fallback install succeeded for: ${packages[*]}"
+                check_yay
+                print_warning "pacman failed, trying ${AUR_HELPER:-AUR helper} as fallback for: ${packages[*]}"
+                if [ -n "$AUR_HELPER" ] && execute_command "$AUR_HELPER -S --needed --noconfirm ${packages[*]}" "Install packages with $AUR_HELPER: ${packages[*]}"; then
+                    print_message "$AUR_HELPER fallback install succeeded for: ${packages[*]}"
                 fi
             fi
             ;;
@@ -465,7 +469,7 @@ verify_installed_packages() {
 
     # In dry-run, skip verification entirely (execute_command would always succeed)
     if is_dry_run; then
-        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/yay"
+        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/AUR helper"
         print_message "Dry-run: skipping package verification"
         return 0
     fi
@@ -533,7 +537,7 @@ verify_installed_packages() {
             fi
             if [ ${#missing_aur[@]} -gt 0 ]; then
                 check_yay
-                execute_command "yay -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
+                execute_command "$AUR_HELPER -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
             fi
 
             # Re-verify post-install
@@ -593,46 +597,56 @@ check_bootloader() {
 }
 
 check_yay() {
-    if ! command -v yay &> /dev/null; then
-        print_message "yay is not installed. Installing yay..."
-
-        if is_windows; then
-            print_message "Running on Windows - skipping yay installation"
-            return 0
-        fi
-
-        # Check for required packages
-        local missing_packages=()
-        # Simple base-devel presence check (handles modern Arch where it's a meta-package)
-        if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
-            missing_packages+=("base-devel")
-        fi
-        if ! command -v debugedit &>/dev/null; then
-            missing_packages+=("debugedit")
-        fi
-        if ! command -v git &> /dev/null; then
-            missing_packages+=("git")
-        fi
-
-        # Install missing packages if any
-        if [ ${#missing_packages[@]} -gt 0 ]; then
-            print_message "Installing required packages: ${missing_packages[*]}"
-            distro_install "${missing_packages[@]}"
-        fi
-
-        # Clone the yay repo and build it
-        execute_command "git clone https://aur.archlinux.org/yay.git /tmp/yay" "Clone yay repository"
-        cd /tmp/yay > /dev/null || return 
-        execute_command "makepkg -si --noconfirm" "Build and install yay"
-
-        # Verify installation was successful
-        if ! command -v yay &> /dev/null; then
-            handle_error "'yay' installation failed. Please install yay manually and re-run the script."
-        else
-            print_message "yay installed successfully!"
-        fi
-    else
+    # Prefer paru if available
+    if command -v paru &>/dev/null; then
+        AUR_HELPER="paru"
+        print_message "Detected paru. Using paru as AUR helper (skipping yay installation)."
+        return 0
+    fi
+    # Fallback to yay if installed
+    if command -v yay &> /dev/null; then
+        AUR_HELPER="yay"
         print_message "yay is already installed."
+        return 0
+    fi
+
+    print_message "No AUR helper found. Installing yay..."
+
+    if is_windows; then
+        print_message "Running on Windows - skipping yay installation"
+        return 0
+    fi
+
+    # Check for required packages
+    local missing_packages=()
+    # Simple base-devel presence check (handles modern Arch where it's a meta-package)
+    if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
+        missing_packages+=("base-devel")
+    fi
+    if ! command -v debugedit &>/dev/null; then
+        missing_packages+=("debugedit")
+    fi
+    if ! command -v git &> /dev/null; then
+        missing_packages+=("git")
+    fi
+
+    # Install missing packages if any
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+        print_message "Installing required packages: ${missing_packages[*]}"
+        distro_install "${missing_packages[@]}"
+    fi
+
+    # Clone the yay repo and build it
+    execute_command "git clone https://aur.archlinux.org/yay.git /tmp/yay" "Clone yay repository"
+    cd /tmp/yay > /dev/null || return 
+    execute_command "makepkg -si --noconfirm" "Build and install yay"
+
+    # Verify installation was successful
+    if ! command -v yay &> /dev/null; then
+        handle_error "'yay' installation failed. Please install yay manually and re-run the script."
+    else
+        AUR_HELPER="yay"
+        print_message "yay installed successfully!"
     fi
 }
 
@@ -701,19 +715,8 @@ check_dependencies() {
         exit 1
     fi
 
-    # Ensure yay exists (after base-devel/debugedit/git are present)
-    if ! command -v yay >/dev/null 2>&1; then
-        print_warning "YAY is not installed. Installing YAY..."
-        (
-            cd /tmp || exit 1
-            git clone https://aur.archlinux.org/yay.git
-            cd yay || exit 1
-            makepkg -si --noconfirm
-        ) || {
-            print_error "Failed to install YAY"
-            exit 1
-        }
-    fi
+    # Ensure AUR helper exists (prefer paru, else install yay)
+    check_yay
 }
 
 check_distro() {
@@ -1201,7 +1204,7 @@ update_pacman() {
 update_yay() {
     announce_step "Updating AUR packages"
     check_yay
-    if execute_command "yay -Sua --noconfirm" "Update AUR packages"; then
+    if execute_command "$AUR_HELPER -Sua --noconfirm" "Update AUR packages"; then
         aur_updates+=("AUR Packages: $CHECK_MARK")
     else
         aur_updates+=("AUR Packages: $CROSS_MARK")
@@ -1210,12 +1213,13 @@ update_yay() {
 
 remove_cache() {
     announce_step "Removing pacman cache"
+    check_yay
     if [[ "$DISTRO" == "endeavouros" ]]; then
-        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (EndeavourOS)"
+        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache (EndeavourOS)"
     elif [[ "$DISTRO" == "arch" ]] || [[ "$DISTRO" == "cachyos" ]]; then
-        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux/CachyOS)"
+        execute_command "sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux/CachyOS)"
     else
-        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache"
+        execute_command "sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache"
     fi
     print_message "Pacman cache removed."
 }
@@ -1315,8 +1319,9 @@ install_aur_extras() {
         unset _seen2
     fi
 
+    check_yay
     for pkg in "${aur_to_install[@]}"; do
-        if ! execute_command "yay -S --needed --noconfirm $pkg" "Install $pkg"; then
+        if ! execute_command "$AUR_HELPER -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
         fi
     done
@@ -1436,12 +1441,41 @@ configure_gnome_keyring() {
         print_message "gnome-keyring is already installed."
     fi
 
-    if ! grep -q "pam_gnome_keyring.so" /etc/pam.d/login; then
-        print_message "Adding PAM configurations for gnome-keyring to /etc/pam.d/login..."
-        execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a /etc/pam.d/login > /dev/null" "Add pam_gnome_keyring.so auth to /etc/pam.d/login"
-        execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a /etc/pam.d/login > /dev/null" "Add pam_gnome_keyring.so session to /etc/pam.d/login"
+    local pam_file="/etc/pam.d/login"
+    local has_auth="false"
+    local has_session="false"
+
+    if grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$pam_file"; then
+        has_auth="true"
+    fi
+    if grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$pam_file"; then
+        has_session="true"
+    fi
+
+    if [ "$has_auth" != "true" ] || [ "$has_session" != "true" ]; then
+        print_message "Adding PAM configurations for gnome-keyring to $pam_file..."
+        if [ "$has_auth" != "true" ]; then
+            execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a '$pam_file' > /dev/null" "Add pam_gnome_keyring.so auth to $pam_file"
+        fi
+        if [ "$has_session" != "true" ]; then
+            execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a '$pam_file' > /dev/null" "Add pam_gnome_keyring.so session to $pam_file"
+        fi
     else
-        print_message "PAM configuration for gnome-keyring already exists in /etc/pam.d/login."
+        print_message "PAM configuration for gnome-keyring already exists in $pam_file."
+    fi
+
+    # Verify PAM configuration is correctly set
+    local pam_ok="false"
+    if grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$pam_file" && \
+       grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$pam_file"; then
+        print_message "Verified PAM configuration for gnome-keyring in $pam_file."
+        pam_ok="true"
+    else
+        print_warning "PAM configuration for gnome-keyring may be missing or malformed in $pam_file."
+        print_warning "Please open $pam_file and ensure these lines exist (uncommented):"
+        print_warning "  auth    optional    pam_gnome_keyring.so"
+        print_warning "  session optional    pam_gnome_keyring.so auto_start"
+        pam_ok="false"
     fi
 
     print_message "Starting gnome-keyring-daemon..."
@@ -1451,7 +1485,11 @@ configure_gnome_keyring() {
         execute_command "/usr/bin/gnome-keyring-daemon --start --components=pkcs11,secrets,ssh &>/dev/null &" "Start gnome-keyring-daemon"
     fi
 
-    track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
+    if [ "$pam_ok" = "true" ]; then
+        track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
+    else
+        track_config_status "Gnome-keyring Setup" "$CIRCLE (Manual verification needed)"
+    fi
 }
 
 configure_filepicker() {
