@@ -1525,31 +1525,21 @@ configure_gnome_keyring() {
     fi
 
     local pam_file="/etc/pam.d/login"
-    # Follow include chain (login -> system-local-login -> system-login) collecting candidates
-    local -a candidates
-    local current="$pam_file"
-    local depth=0
-    while [ -n "$current" ] && [ $depth -lt 5 ]; do
-        candidates+=("$current")
-        local next=""
-        if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-local-login' "$current" \
-            && [ -f "/etc/pam.d/system-local-login" ]; then
-            next="/etc/pam.d/system-local-login"
-        elif grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-login' "$current" \
-            && [ -f "/etc/pam.d/system-login" ]; then
-            next="/etc/pam.d/system-login"
-        else
-            next=""
-        fi
-        # Stop if no further include or we're looping
-        if [ -z "$next" ] || [ "$next" = "$current" ]; then
-            break
-        fi
-        current="$next"
-        depth=$((depth + 1))
-    done
-    # The deepest file in the chain is where we prefer to write missing lines
-    local target_file="${candidates[${#candidates[@]}-1]}"
+    # Determine include stack and candidates to verify
+    local -a candidates=("$pam_file")
+    if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-local-login' "$pam_file" \
+        && [ -f "/etc/pam.d/system-local-login" ]; then
+        candidates+=("/etc/pam.d/system-local-login")
+    fi
+    if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-login' "$pam_file" \
+        && [ -f "/etc/pam.d/system-login" ]; then
+        candidates+=("/etc/pam.d/system-login")
+    fi
+    # Safer write target: prefer system-local-login if present, else login
+    local target_file="$pam_file"
+    if printf '%s\n' "${candidates[@]}" | grep -qx "/etc/pam.d/system-local-login"; then
+        target_file="/etc/pam.d/system-local-login"
+    fi
     local has_auth="false"
     local has_session="false"
     for f in "${candidates[@]}"; do
@@ -1590,7 +1580,7 @@ configure_gnome_keyring() {
         print_message "Verified PAM configuration for gnome-keyring in: ${candidates[*]}"
         pam_ok="true"
     else
-        print_warning "PAM configuration for gnome-keyring may be missing or malformed (checked: ${candidates[*]}).\nPlease ensure these lines exist (uncommented) in the deepest included file (usually /etc/pam.d/system-login):\n  auth    optional    pam_gnome_keyring.so\n  session optional    pam_gnome_keyring.so auto_start"
+        print_warning "PAM configuration for gnome-keyring may be missing or malformed (checked: ${candidates[*]}).\nPlease ensure these lines exist (uncommented) in /etc/pam.d/system-local-login (preferred) or /etc/pam.d/login:\n  auth    optional    pam_gnome_keyring.so\n  session optional    pam_gnome_keyring.so auto_start"
         pam_ok="false"
     fi
 
