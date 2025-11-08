@@ -872,32 +872,76 @@ check_user_input() {
 }
 
 find_hyprland_setup_dir() {
-    # First check the installed package location
+    # 0) Allow explicit override via environment variable
+    if [ -n "${HYPRLAND_SETUP_DIR:-}" ] && [ -d "${HYPRLAND_SETUP_DIR}" ]; then
+        echo "${HYPRLAND_SETUP_DIR}"
+        return 0
+    fi
+
+    # 0b) Use HYPR_SETUP_PATH from AUR wrapper (points to setup.sh inside share dir)
+    if [ -n "${HYPR_SETUP_PATH:-}" ]; then
+        local from_wrapper
+        from_wrapper="$(dirname -- "$HYPR_SETUP_PATH")"
+        if [ -d "$from_wrapper" ]; then
+            echo "$from_wrapper"
+            return 0
+        fi
+    fi
+
+    # 1) Prefer the directory of this script (repo root in typical layout)
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+    if [ -d "$script_dir/dotfiles" ] || [ "$(basename "$script_dir")" = "$SETUP_DIR" ]; then
+        echo "$script_dir"
+        return 0
+    fi
+
+    # 2) If inside a git repo, use the toplevel directory
+    if command -v git >/dev/null 2>&1; then
+        local git_root
+        git_root="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+        if [ -n "$git_root" ] && [ -d "$git_root" ]; then
+            if [ -d "$git_root/dotfiles" ] || [ "$(basename "$git_root")" = "$SETUP_DIR" ]; then
+                echo "$git_root"
+                return 0
+            fi
+        fi
+    fi
+
+    # 3) Check known installed locations
     if [ -d "/usr/share/hyprland-simple-setup-git" ]; then
         echo "/usr/share/hyprland-simple-setup-git"
         return 0
     fi
-    
-    # Fallback to searching in common locations
+    if [ -d "/usr/share/Hyprland-Simple-Setup" ]; then
+        echo "/usr/share/Hyprland-Simple-Setup"
+        return 0
+    fi
+
+    # 4) Search common user directories (wider net, slightly deeper)
     local search_paths=(
+        "$PWD"
         "$HOME"
         "$HOME/Dokumente"
         "$HOME/Documents"
         "$HOME/Downloads"
+        "$HOME/GitHub"
+        "$HOME/Projects"
+        "$HOME/Workspace"
     )
-    
+    local path
     for path in "${search_paths[@]}"; do
         if [ -d "$path" ]; then
-            # Search for both directory names
             local found_dir
-            found_dir=$(find "$path" -maxdepth 3 -type d \( -name "$SETUP_DIR" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
+            found_dir=$(find "$path" -maxdepth 6 -type d \( -name "$SETUP_DIR" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
             if [ -n "$found_dir" ]; then
                 echo "$found_dir"
                 return 0
             fi
         fi
     done
-    
+
+    # Not found
     return 1
 }
 
@@ -914,6 +958,7 @@ update_configs() {
     hyprland_setup_dir=$(find_hyprland_setup_dir)
     if [ -z "$hyprland_setup_dir" ]; then
         print_error "Could not find $SETUP_DIR directory"
+        print_warning "Tip: set HYPRLAND_SETUP_DIR to the project root and re-run."
         track_config_status "Dotfiles Setup" "$CROSS_MARK"
         return 1
     fi
@@ -1285,6 +1330,19 @@ install_pacman_packages() {
         unset _seen
     fi
 
+    # If CachyOS Snapper support is present, skip installing Timeshift entirely
+    if pacman -Qq cachyos-snapper-support &>/dev/null; then
+        print_message "Detected 'cachyos-snapper-support'. Skipping installation of Timeshift."
+        local -a _filtered
+        for p in "${pkgs_to_install[@]}"; do
+            if [ "$p" != "timeshift" ]; then
+                _filtered+=("$p")
+            fi
+        done
+        pkgs_to_install=("${_filtered[@]}")
+        unset _filtered
+    fi
+
     for pkg in "${pkgs_to_install[@]}"; do
         if ! execute_command "sudo pacman -S --needed --noconfirm $pkg" "Installing $pkg"; then
             print_warning "Failed to install $pkg. Please install manually if issues persist."
@@ -1606,6 +1664,13 @@ configure_pacman_color() {
 
 configure_timeshift() {
     announce_step "Setting up Timeshift"
+
+    # Skip Timeshift setup if CachyOS Snapper integration is present
+    if pacman -Qq cachyos-snapper-support &>/dev/null; then
+        print_message "Detected 'cachyos-snapper-support'. Skipping Timeshift configuration."
+        track_config_status "Timeshift Setup" "$CIRCLE (Using CachyOS Snapper)"
+        return 0
+    fi
 
     # Ensure Timeshift is installed
     if ! command -v timeshift &>/dev/null; then
