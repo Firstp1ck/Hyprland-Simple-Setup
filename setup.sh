@@ -1186,6 +1186,23 @@ hyprland_packages=(
 
 update_arch_mirrors() {
     announce_step "Updating Arch mirrors"
+    if [[ "$DISTRO" == "manjaro" ]]; then
+        print_message "Detected Manjaro. Using pacman-mirrors instead of reflector."
+        if ! command -v pacman-mirrors &> /dev/null; then
+            print_message "pacman-mirrors not installed. Installing pacman-mirrors..."
+            if ! distro_install "pacman-mirrors"; then
+                print_error "pacman-mirrors installation failed. Aborting mirror update."
+                mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+                return 1
+            fi
+        fi
+        if execute_command "sudo pacman-mirrors --geoip --timeout 6 && sudo pacman -Syy" "Update Manjaro mirrors"; then
+            mirror_updates+=("Arch Mirrors: $CHECK_MARK")
+        else
+            mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+        fi
+        return 0
+    fi
         if ! command -v reflector &> /dev/null; then
         print_message "Reflector not installed. Installing reflector..."
         if ! distro_install "reflector"; then
@@ -1193,7 +1210,7 @@ update_arch_mirrors() {
             return 1
         fi
     fi
-    if execute_command "sudo reflector --verbose --country DE,CH,AT --protocol https --sort rate --latest 20 --download-timeout 6 --save /etc/pacman.d/mirrorlist" "Update Arch mirrors"; then
+    if execute_command "sudo reflector --verbose --protocol https --sort rate --latest 20 --download-timeout 6 --save /etc/pacman.d/mirrorlist" "Update Arch mirrors"; then
         mirror_updates+=("Arch Mirrors: $CHECK_MARK")
     else
         mirror_updates+=("Arch Mirrors: $CROSS_MARK")
