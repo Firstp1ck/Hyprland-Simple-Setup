@@ -452,9 +452,22 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .borders(Borders::ALL)
         .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
         .border_style(Style::default().fg(app.theme.mauve));
+    // Draw outer block first
+    f.render_widget(left_block, chunks[0]);
+    // Compute inner area (inside the border) and split to reserve a legend row at the bottom
+    let left_inner = Rect {
+        x: chunks[0].x + 1,
+        y: chunks[0].y + 1,
+        width: chunks[0].width.saturating_sub(2),
+        height: chunks[0].height.saturating_sub(2),
+    };
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .split(left_inner);
 
     if !app.sections.is_empty() {
-        // Render sections with color: green=done, white=pending, blue=current
+        // Render sections with color: green=done, white/palette text=pending, blue=current
         let mut lines: Vec<Line> = Vec::new();
         for (idx, sec) in app.sections.iter().enumerate() {
             // Determine color priority: Error > Warning > Blue(current) > Green(done) > default
@@ -480,15 +493,14 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             };
             lines.push(Line::from(Span::styled(format!("• {}", sec.title), style)));
         }
-        let left_widget = Paragraph::new(Text::from(lines)).block(left_block);
-        f.render_widget(left_widget, chunks[0]);
+        let left_widget = Paragraph::new(Text::from(lines));
+        f.render_widget(left_widget, left_chunks[0]);
     } else {
         let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
             "Run Hyprland setup",
             Style::default().fg(app.theme.text),
         )))];
         let menu = List::new(items)
-            .block(left_block)
             .highlight_style(
                 Style::default()
                     .fg(app.theme.blue)
@@ -496,8 +508,21 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             )
             .highlight_symbol("▶ ");
         // Use List for selection when idle
-        f.render_stateful_widget(menu, chunks[0], &mut app.list_state);
+        f.render_stateful_widget(menu, left_chunks[0], &mut app.list_state);
     }
+    // Legend row at bottom of the Actions pane
+    let legend = Paragraph::new(Text::from(vec![Line::from(vec![
+        Span::styled("Legend: ", Style::default().fg(app.theme.subtext0)),
+        Span::styled("Current", Style::default().fg(app.theme.blue)),
+        Span::raw("  "),
+        Span::styled("Done", Style::default().fg(Color::Green)),
+        Span::raw("  "),
+        Span::styled("Warning", Style::default().fg(app.theme.yellow)),
+        Span::raw("  "),
+        Span::styled("Error", Style::default().fg(Color::Red)),
+    ])]))
+    .style(Style::default().fg(app.theme.subtext0));
+    f.render_widget(legend, left_chunks[1]);
 
     let desc = "Execute setup.sh with full flow";
     let right_chunks = Layout::default()

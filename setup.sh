@@ -1525,39 +1525,72 @@ configure_gnome_keyring() {
     fi
 
     local pam_file="/etc/pam.d/login"
+    # Follow include chain (login -> system-local-login -> system-login) collecting candidates
+    local -a candidates
+    local current="$pam_file"
+    local depth=0
+    while [ -n "$current" ] && [ $depth -lt 5 ]; do
+        candidates+=("$current")
+        local next=""
+        if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-local-login' "$current" \
+            && [ -f "/etc/pam.d/system-local-login" ]; then
+            next="/etc/pam.d/system-local-login"
+        elif grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-login' "$current" \
+            && [ -f "/etc/pam.d/system-login" ]; then
+            next="/etc/pam.d/system-login"
+        else
+            next=""
+        fi
+        # Stop if no further include or we're looping
+        if [ -z "$next" ] || [ "$next" = "$current" ]; then
+            break
+        fi
+        current="$next"
+        depth=$((depth + 1))
+    done
+    # The deepest file in the chain is where we prefer to write missing lines
+    local target_file="${candidates[${#candidates[@]}-1]}"
     local has_auth="false"
     local has_session="false"
-
-    if grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$pam_file"; then
-        has_auth="true"
-    fi
-    if grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$pam_file"; then
-        has_session="true"
-    fi
+    for f in "${candidates[@]}"; do
+        if [ "$has_auth" != "true" ] && grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$f"; then
+            has_auth="true"
+        fi
+        if [ "$has_session" != "true" ] && grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$f"; then
+            has_session="true"
+        fi
+    done
 
     if [ "$has_auth" != "true" ] || [ "$has_session" != "true" ]; then
-        print_message "Adding PAM configurations for gnome-keyring to $pam_file..."
+        print_message "Adding PAM configurations for gnome-keyring to $target_file..."
         if [ "$has_auth" != "true" ]; then
-            execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a '$pam_file' > /dev/null" "Add pam_gnome_keyring.so auth to $pam_file"
+            execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a '$target_file' > /dev/null" "Add pam_gnome_keyring.so auth to $target_file"
         fi
         if [ "$has_session" != "true" ]; then
-            execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a '$pam_file' > /dev/null" "Add pam_gnome_keyring.so session to $pam_file"
+            execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a '$target_file' > /dev/null" "Add pam_gnome_keyring.so session to $target_file"
         fi
     else
-        print_message "PAM configuration for gnome-keyring already exists in $pam_file."
+        print_message "PAM configuration for gnome-keyring already exists (checked: ${candidates[*]})."
     fi
 
     # Verify PAM configuration is correctly set
     local pam_ok="false"
-    if grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$pam_file" && \
-       grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$pam_file"; then
-        print_message "Verified PAM configuration for gnome-keyring in $pam_file."
+    # Verify PAM configuration is correctly set (in login or included)
+    local verify_auth="false"
+    local verify_session="false"
+    for f in "${candidates[@]}"; do
+        if [ "$verify_auth" != "true" ] && grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$f"; then
+            verify_auth="true"
+        fi
+        if [ "$verify_session" != "true" ] && grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$f"; then
+            verify_session="true"
+        fi
+    done
+    if [ "$verify_auth" = "true" ] && [ "$verify_session" = "true" ]; then
+        print_message "Verified PAM configuration for gnome-keyring in: ${candidates[*]}"
         pam_ok="true"
     else
-        print_warning "PAM configuration for gnome-keyring may be missing or malformed in $pam_file.\n
-        Please ensure these lines exist (uncommented):\n
-        'auth    optional    pam_gnome_keyring.so'\n  
-        'session optional    pam_gnome_keyring.so auto_start'"
+        print_warning "PAM configuration for gnome-keyring may be missing or malformed (checked: ${candidates[*]}).\nPlease ensure these lines exist (uncommented) in the deepest included file (usually /etc/pam.d/system-login):\n  auth    optional    pam_gnome_keyring.so\n  session optional    pam_gnome_keyring.so auto_start"
         pam_ok="false"
     fi
 
