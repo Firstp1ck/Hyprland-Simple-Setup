@@ -1264,7 +1264,7 @@ update_arch_mirrors() {
 
 update_pacman() {
     announce_step "Updating pacman packages"
-    if execute_command "sudo pacman -Syu --noconfirm" "Update pacman packages"; then
+    if execute_command "sudo pacman -Syyu --noconfirm" "Update pacman packages"; then
         package_updates+=("Pacman Packages: $CHECK_MARK")
     else
         package_updates+=("Pacman Packages: $CROSS_MARK")
@@ -1554,10 +1554,10 @@ configure_gnome_keyring() {
     if [ "$has_auth" != "true" ] || [ "$has_session" != "true" ]; then
         print_message "Adding PAM configurations for gnome-keyring to $target_file..."
         if [ "$has_auth" != "true" ]; then
-            execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a '$target_file' > /dev/null" "Add pam_gnome_keyring.so auth to $target_file"
+            execute_command "sudo bash -c \"printf '%s\\n' 'auth optional pam_gnome_keyring.so' >> '$target_file'\"" "Add pam_gnome_keyring.so auth to $target_file"
         fi
         if [ "$has_session" != "true" ]; then
-            execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a '$target_file' > /dev/null" "Add pam_gnome_keyring.so session to $target_file"
+            execute_command "sudo bash -c \"printf '%s\\n' 'session optional pam_gnome_keyring.so auto_start' >> '$target_file'\"" "Add pam_gnome_keyring.so session to $target_file"
         fi
     else
         print_message "PAM configuration for gnome-keyring already exists (checked: ${candidates[*]})."
