@@ -32,6 +32,7 @@ config_statuses=()
 
 # Selected AUR helper (paru preferred if available)
 AUR_HELPER=""
+AUR_HELPER_CHECKED=""
 
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
@@ -597,16 +598,22 @@ check_bootloader() {
 }
 
 check_yay() {
+    # Prevent duplicate checks/installs within one run
+    if [ "$AUR_HELPER_CHECKED" = "true" ] && [ -n "$AUR_HELPER" ]; then
+        return 0
+    fi
     # Prefer paru if available
     if command -v paru &>/dev/null; then
         AUR_HELPER="paru"
         print_message "Detected paru. Using paru as AUR helper (skipping yay installation)."
+        AUR_HELPER_CHECKED="true"
         return 0
     fi
     # Fallback to yay if installed
     if command -v yay &> /dev/null; then
         AUR_HELPER="yay"
         print_message "yay is already installed."
+        AUR_HELPER_CHECKED="true"
         return 0
     fi
 
@@ -648,6 +655,7 @@ check_yay() {
         AUR_HELPER="yay"
         print_message "yay installed successfully!"
     fi
+    AUR_HELPER_CHECKED="true"
 }
 
 check_disk_space() {
