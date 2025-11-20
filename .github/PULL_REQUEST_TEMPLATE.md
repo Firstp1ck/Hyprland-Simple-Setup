@@ -1,4 +1,4 @@
-<!-- Thank you for contributing to Pacsea! Please read CONTRIBUTING.md before submitting. -->
+<!-- Thank you for contributing to Hyprland-Simple-Setup! Please read CONTRIBUTING.md before submitting. -->
 
 ## Summary
 Briefly describe the problem and how your change solves it.
@@ -25,7 +25,7 @@ List exact steps and commands to verify the change. Include flags like `--dry-ru
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test -- --test-threads=1
-RUST_LOG=pacsea=debug cargo run -- --dry-run
+RUST_LOG=hyprland_setup_tui=debug cargo run -- --dry-run
 ```
 
 ## Screenshots / recordings (if UI changes)

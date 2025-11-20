@@ -1269,7 +1269,7 @@ update_arch_mirrors() {
         fi
         return 0
     fi
-        if ! command -v reflector &> /dev/null; then
+    if ! command -v reflector &> /dev/null; then
         print_message "Reflector not installed. Installing reflector..."
         if ! distro_install "reflector"; then
             print_error "Reflector installation failed. Aborting mirror update."
@@ -1295,7 +1295,7 @@ update_pacman() {
 update_yay() {
     announce_step "Updating AUR packages"
     check_yay
-    if execute_command "$AUR_HELPER -Sua --noconfirm" "Update AUR packages"; then
+    if [ -n "$AUR_HELPER" ] && execute_command "$AUR_HELPER -Sua --noconfirm" "Update AUR packages"; then
         aur_updates+=("AUR Packages: $CHECK_MARK")
     else
         aur_updates+=("AUR Packages: $CROSS_MARK")
@@ -1306,11 +1306,20 @@ remove_cache() {
     announce_step "Removing pacman cache"
     check_yay
     if [[ "$DISTRO" == "endeavouros" ]]; then
-        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache (EndeavourOS)"
+        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm" "Remove pacman cache (EndeavourOS)"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache (EndeavourOS)"
+        fi
     elif [[ "$DISTRO" == "arch" ]] || [[ "$DISTRO" == "cachyos" ]]; then
-        execute_command "sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux/CachyOS)"
+        execute_command "sudo pacman -Sc --noconfirm" "Remove pacman cache (Arch Linux/CachyOS)"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache (Arch Linux/CachyOS)"
+        fi
     else
-        execute_command "sudo pacman -Sc --noconfirm && $AUR_HELPER -Sc --noconfirm" "Remove pacman/aur cache"
+        execute_command "sudo pacman -Sc --noconfirm" "Remove pacman cache"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache"
+        fi
     fi
     print_message "Pacman cache removed."
 }
