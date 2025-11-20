@@ -42,6 +42,7 @@ get_fish_language_choice() {
         if [ "$NON_INTERACTIVE" = "true" ]; then
             # default to 1 (de_CH) if not provided in env
             FISH_LANGUAGE_CHOICE=${FISH_LANGUAGE_CHOICE_OVERRIDE:-1}
+            print_verbose "Non-interactive mode: FISH_LANGUAGE_CHOICE_OVERRIDE='$FISH_LANGUAGE_CHOICE_OVERRIDE', using FISH_LANGUAGE_CHOICE='$FISH_LANGUAGE_CHOICE'"
             return
         fi
         echo "Select your preferred language setting for Fish Shell:"
@@ -49,6 +50,8 @@ get_fish_language_choice() {
         echo "2) de     (German: LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
         echo "3) us     (US English: LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
         read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
+    else
+        print_verbose "FISH_LANGUAGE_CHOICE already set to: '$FISH_LANGUAGE_CHOICE'"
     fi
 }
 
@@ -989,6 +992,11 @@ set_fish_language_config() {
     local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
     local lang language
 
+    # Trim whitespace and ensure we have a valid numeric value
+    FISH_LANGUAGE_CHOICE=$(echo "$FISH_LANGUAGE_CHOICE" | tr -d '[:space:]')
+    
+    print_verbose "FISH_LANGUAGE_CHOICE value: '$FISH_LANGUAGE_CHOICE'"
+
     case "$FISH_LANGUAGE_CHOICE" in
         1)
             lang="de_CH.UTF-8"
@@ -1003,13 +1011,18 @@ set_fish_language_config() {
             language="en_US:de_CH"
             ;;
         *)
-            echo "Invalid selection, using default (de_CH)."
+            print_warning "Invalid FISH_LANGUAGE_CHOICE value: '$FISH_LANGUAGE_CHOICE'. Using default (de_CH)."
             lang="de_CH.UTF-8"
             language="de_CH:en_US"
             ;;
     esac
+    
+    print_verbose "Selected language: LANG=$lang, LANGUAGE=$language"
 
-    # Check if file exists
+    # Check if file exists (try both dotfiles source and symlinked location)
+    local fish_conf_runtime="$HOME/.config/fish/conf.d/01-env.fish"
+    
+    # Update the source file in dotfiles (this will propagate to symlink if stow has run)
     if [ ! -f "$fish_conf" ]; then
         print_message "Creating fish config file at $fish_conf"
         execute_command "mkdir -p '$(dirname "$fish_conf")'" "Create fish config directory"
@@ -1018,12 +1031,19 @@ set_fish_language_config() {
         execute_command "echo '# Language Settings' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '' >> '$fish_conf'" "Add initial language settings"
     else
         print_message "Updating existing fish config file at $fish_conf"
-        # Replace existing language settings
-        execute_command "sed -i 's/^set -gx LANG .*/set -gx LANG \"$lang\"/' '$fish_conf'" "Update LANG"
-        execute_command "sed -i 's/^set -gx LANGUAGE .*/set -gx LANGUAGE \"$language\"/' '$fish_conf'" "Update LANGUAGE"
+        # Replace existing language settings (handle both with and without quotes)
+        execute_command "sed -i -E 's|^set -gx LANG .*|set -gx LANG \"$lang\"|' '$fish_conf'" "Update LANG"
+        execute_command "sed -i -E 's|^set -gx LANGUAGE .*|set -gx LANGUAGE \"$language\"|' '$fish_conf'" "Update LANGUAGE"
+    fi
+    
+    # Also update the runtime location if it exists and is not a symlink (or if symlink is broken)
+    if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
+        print_message "Also updating runtime fish config file at $fish_conf_runtime"
+        execute_command "sed -i -E 's|^set -gx LANG .*|set -gx LANG \"$lang\"|' '$fish_conf_runtime'" "Update LANG in runtime config"
+        execute_command "sed -i -E 's|^set -gx LANGUAGE .*|set -gx LANGUAGE \"$language\"|' '$fish_conf_runtime'" "Update LANGUAGE in runtime config"
     fi
 
-    print_message "Fish language settings updated in $fish_conf"
+    print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
 }
 
 ##############################################################
