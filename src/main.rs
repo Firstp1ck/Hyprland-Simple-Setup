@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use chrono::Local;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::execute;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -20,12 +20,12 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
 };
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
 use std::io::Write as IoWrite;
-use std::collections::{HashMap, HashSet};
-use serde::Deserialize;
 
 // MenuAction/MenuItem and process tracking removed to simplify and avoid warnings
 
@@ -164,8 +164,10 @@ struct AppState {
     ms_focus_right: bool,
     ms_cursor_filter: usize,
     // Optional category filters (None = all). When Some, only listed categories are shown. (kept for backward-compat / future persistence)
-    #[allow(dead_code)] pacman_filter_cats: Option<HashSet<String>>,
-    #[allow(dead_code)] aur_filter_cats: Option<HashSet<String>>,
+    #[allow(dead_code)]
+    pacman_filter_cats: Option<HashSet<String>>,
+    #[allow(dead_code)]
+    aur_filter_cats: Option<HashSet<String>>,
     // Working sets for live category filter in package selector
     pacman_filter_working: HashSet<String>,
     aur_filter_working: HashSet<String>,
@@ -266,8 +268,16 @@ impl AppState {
             s.aur_cats = aur_cats;
             s.pkg_descs = descs;
             // default select all
-            for (_, pkgs) in &s.pacman_cats { for p in pkgs { s.pacman_sel_map.insert(p.clone(), true); } }
-            for (_, pkgs) in &s.aur_cats { for p in pkgs { s.aur_sel_map.insert(p.clone(), true); } }
+            for (_, pkgs) in &s.pacman_cats {
+                for p in pkgs {
+                    s.pacman_sel_map.insert(p.clone(), true);
+                }
+            }
+            for (_, pkgs) in &s.aur_cats {
+                for p in pkgs {
+                    s.aur_sel_map.insert(p.clone(), true);
+                }
+            }
         }
         s
     }
@@ -398,10 +408,8 @@ fn run_app<B: ratatui::backend::Backend>(
             match event::read().context("read event")? {
                 Event::Key(key) => {
                     // Process only on Press to avoid duplicate triggers from Release/Repeat (Windows)
-                    if matches!(key.kind, KeyEventKind::Press) {
-                        if handle_key_event(app, key)? {
-                            break;
-                        }
+                    if matches!(key.kind, KeyEventKind::Press) && handle_key_event(app, key)? {
+                        break;
                     }
                 }
                 Event::Mouse(_)
@@ -713,19 +721,29 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     rows.push(mk(
         "Enter",
         "Select pacman packages",
-        format!("{} selected", app.pacman_sel_map.values().filter(|v| **v).count()),
+        format!(
+            "{} selected",
+            app.pacman_sel_map.values().filter(|v| **v).count()
+        ),
         sel(PreflightField::SelectPacman),
     ));
     rows.push(mk(
         "Enter",
         "Select AUR packages",
-        format!("{} selected", app.aur_sel_map.values().filter(|v| **v).count()),
+        format!(
+            "{} selected",
+            app.aur_sel_map.values().filter(|v| **v).count()
+        ),
         sel(PreflightField::SelectAur),
     ));
     rows.push(mk(
         "Edit",
         "Add packages (comma-separated)",
-        if app.user_added.is_empty() { "<none>".to_string() } else { app.user_added.join(", ") },
+        if app.user_added.is_empty() {
+            "<none>".to_string()
+        } else {
+            app.user_added.join(", ")
+        },
         sel(PreflightField::AddPackages),
     ));
     rows.push(mk(
@@ -1050,16 +1068,27 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(bottom_help, rows[3]);
     }
     // Package multiselect popups (categorized)
-    if app.editing && (app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur) {
+    if app.editing
+        && (app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur)
+    {
         let is_pacman = app.edit_kind == EditKind::SelectPacman;
         let area_w = area.width as i32;
         let popup_w = (area_w * 4 / 5).max(50) as u16;
         let popup_h = (area.height.saturating_sub(6)).max(12);
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
         f.render_widget(Clear, popup_rect);
-        let title = if app.edit_kind == EditKind::SelectPacman { "Select pacman packages" } else { "Select AUR packages" };
+        let title = if app.edit_kind == EditKind::SelectPacman {
+            "Select pacman packages"
+        } else {
+            "Select AUR packages"
+        };
         let popup_block = Block::default()
             .title(title)
             .borders(Borders::ALL)
@@ -1067,11 +1096,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
         // Split vertically into help + main + footer
         let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(5), Constraint::Length(2)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(5),
+                Constraint::Length(2),
+            ])
             .split(inner);
         // Split main horizontally: left packages, right live category filter
         let cols = Layout::default()
@@ -1084,40 +1122,76 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         f.render_widget(help, rows[0]);
 
         // Prepare right pane: live category filter data and ensure working set initialized
-        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+        let mut cats: Vec<String> = if is_pacman {
+            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
+        } else {
+            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
+        };
         cats.sort();
 
         // Build categorized lines into a flat list of (is_header, label, key_opt)
         // label includes package name and a description column
         let mut flat: Vec<(bool, String, Option<String>)> = Vec::new();
         if is_pacman {
-            let cat_filter = if app.pacman_filter_working.is_empty() { None } else { Some(&app.pacman_filter_working) };
+            let cat_filter = if app.pacman_filter_working.is_empty() {
+                None
+            } else {
+                Some(&app.pacman_filter_working)
+            };
             for (cat, pkgs) in &app.pacman_cats {
-                if let Some(cf) = cat_filter { if !cf.contains(cat) { continue; } }
+                if let Some(cf) = cat_filter
+                    && !cf.contains(cat)
+                {
+                    continue;
+                }
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.pacman_sel_map.get(p).unwrap_or(&false);
                     let mark = if chosen { "[x]" } else { "[ ]" };
-                    let desc = app.pkg_descs.get(p).cloned().unwrap_or_else(|| "".to_string());
+                    let desc = app
+                        .pkg_descs
+                        .get(p)
+                        .cloned()
+                        .unwrap_or_else(|| "".to_string());
                     // Two-column layout: name left, desc right; pad name to fixed width
                     let name_col = format!("{} {}", mark, p);
                     let name_width = (popup_rect.width as usize).saturating_sub(6).min(40); // cap name width
-                    let padded = if name_col.len() < name_width { format!("{:<width$}", name_col, width=name_width) } else { name_col };
+                    let padded = if name_col.len() < name_width {
+                        format!("{:<width$}", name_col, width = name_width)
+                    } else {
+                        name_col
+                    };
                     flat.push((false, format!("{}  {}", padded, desc), Some(p.clone())));
                 }
             }
         } else {
-            let cat_filter = if app.aur_filter_working.is_empty() { None } else { Some(&app.aur_filter_working) };
+            let cat_filter = if app.aur_filter_working.is_empty() {
+                None
+            } else {
+                Some(&app.aur_filter_working)
+            };
             for (cat, pkgs) in &app.aur_cats {
-                if let Some(cf) = cat_filter { if !cf.contains(cat) { continue; } }
+                if let Some(cf) = cat_filter
+                    && !cf.contains(cat)
+                {
+                    continue;
+                }
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.aur_sel_map.get(p).unwrap_or(&false);
                     let mark = if chosen { "[x]" } else { "[ ]" };
-                    let desc = app.pkg_descs.get(p).cloned().unwrap_or_else(|| "".to_string());
+                    let desc = app
+                        .pkg_descs
+                        .get(p)
+                        .cloned()
+                        .unwrap_or_else(|| "".to_string());
                     let name_col = format!("{} {}", mark, p);
                     let name_width = (popup_rect.width as usize).saturating_sub(6).min(40);
-                    let padded = if name_col.len() < name_width { format!("{:<width$}", name_col, width=name_width) } else { name_col };
+                    let padded = if name_col.len() < name_width {
+                        format!("{:<width$}", name_col, width = name_width)
+                    } else {
+                        name_col
+                    };
                     flat.push((false, format!("{}  {}", padded, desc), Some(p.clone())));
                 }
             }
@@ -1127,7 +1201,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let mut items: Vec<ListItem> = Vec::with_capacity(flat.len());
         for (is_header, label, _) in &flat {
             if *is_header {
-                items.push(ListItem::new(Line::from(label.clone())).style(Style::default().fg(app.theme.yellow)));
+                items.push(
+                    ListItem::new(Line::from(label.clone()))
+                        .style(Style::default().fg(app.theme.yellow)),
+                );
             } else {
                 items.push(ListItem::new(Line::from(label.clone())));
             }
@@ -1135,34 +1212,64 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let mut state = ListState::default();
         state.select(Some(app.ms_cursor.min(items.len().saturating_sub(1))));
         let list = List::new(items)
-            .highlight_style(Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol("▶ ")
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                    .border_style(Style::default().fg(if !app.ms_focus_right { app.theme.mauve } else { app.theme.surface1 })),
+                    .border_style(Style::default().fg(if !app.ms_focus_right {
+                        app.theme.mauve
+                    } else {
+                        app.theme.surface1
+                    })),
             );
         f.render_stateful_widget(list, cols[0], &mut state);
 
         // Right pane: live category filter
         let mut filter_items: Vec<ListItem> = Vec::new();
         for c in &cats {
-            let mark = if (if is_pacman { &app.pacman_filter_working } else { &app.aur_filter_working }).contains(c) { "[x]" } else { "[ ]" };
+            let mark = if (if is_pacman {
+                &app.pacman_filter_working
+            } else {
+                &app.aur_filter_working
+            })
+            .contains(c)
+            {
+                "[x]"
+            } else {
+                "[ ]"
+            };
             filter_items.push(ListItem::new(Line::from(format!("{} {}", mark, c))));
         }
         let mut filter_state = ListState::default();
         filter_state.select(Some(app.ms_cursor_filter.min(cats.len().saturating_sub(1))));
-        let filter_title = if is_pacman { "Filter pacman categories" } else { "Filter AUR categories" };
+        let filter_title = if is_pacman {
+            "Filter pacman categories"
+        } else {
+            "Filter AUR categories"
+        };
         let filter_list = List::new(filter_items)
-            .highlight_style(Style::default().fg(app.theme.mauve).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.mauve)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol("▶ ")
             .block(
                 Block::default()
                     .title(filter_title)
                     .borders(Borders::ALL)
                     .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-                    .border_style(Style::default().fg(if app.ms_focus_right { app.theme.mauve } else { app.theme.surface1 })),
+                    .border_style(Style::default().fg(if app.ms_focus_right {
+                        app.theme.mauve
+                    } else {
+                        app.theme.surface1
+                    })),
             );
         f.render_stateful_widget(filter_list, cols[1], &mut filter_state);
 
@@ -1176,8 +1283,11 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             let selc = app.aur_sel_map.values().filter(|v| **v).count();
             (selc, total)
         };
-        let bottom = Paragraph::new(Text::from(vec![Line::from(format!("Selected: {} / {}", selected_count, total_count))]))
-            .style(Style::default().fg(app.theme.subtext0));
+        let bottom = Paragraph::new(Text::from(vec![Line::from(format!(
+            "Selected: {} / {}",
+            selected_count, total_count
+        ))]))
+        .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(bottom, rows[2]);
     }
 
@@ -1233,7 +1343,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let popup_h = (app.warning_lines.len() as u16 + 5).min(area.height.saturating_sub(4));
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
             .title("Package warnings")
@@ -1242,10 +1357,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
         let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length((app.warning_lines.len() as u16).min(inner.height.saturating_sub(2))), Constraint::Length(1)])
+            .constraints([
+                Constraint::Length(
+                    (app.warning_lines.len() as u16).min(inner.height.saturating_sub(2)),
+                ),
+                Constraint::Length(1),
+            ])
             .split(inner);
         let mut lines: Vec<Line> = Vec::new();
         for l in &app.warning_lines {
@@ -1253,8 +1378,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         }
         let list = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
         f.render_widget(list, rows[0]);
-        let tip = Paragraph::new(Text::from(vec![Line::from("Press Enter/Esc to return and edit")]))
-            .style(Style::default().fg(app.theme.subtext0));
+        let tip = Paragraph::new(Text::from(vec![Line::from(
+            "Press Enter/Esc to return and edit",
+        )]))
+        .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
     // Confirm enable monitor setup popup
@@ -1264,7 +1391,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let popup_h = 6u16;
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
             .title("Enable Monitor Setup?")
@@ -1273,16 +1405,25 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Length(2)])
             .split(inner);
-        let msg = Paragraph::new(Text::from(vec![Line::from("MONITOR_SETUP_ENABLED has to be set to true, do you want to set to true?")]))
-            .style(Style::default().fg(app.theme.text));
+        let msg = Paragraph::new(Text::from(vec![Line::from(
+            "MONITOR_SETUP_ENABLED has to be set to true, do you want to set to true?",
+        )]))
+        .style(Style::default().fg(app.theme.text));
         f.render_widget(msg, rows[0]);
-        let tip = Paragraph::new(Text::from(vec![Line::from("Press Y/Enter to confirm, N/Esc to cancel")]))
-            .style(Style::default().fg(app.theme.subtext0));
+        let tip = Paragraph::new(Text::from(vec![Line::from(
+            "Press Y/Enter to confirm, N/Esc to cancel",
+        )]))
+        .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
     // Confirm start install popup
@@ -1292,7 +1433,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let popup_h = 6u16;
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-        let popup_rect = Rect { x: popup_x, y: popup_y, width: popup_w, height: popup_h };
+        let popup_rect = Rect {
+            x: popup_x,
+            y: popup_y,
+            width: popup_w,
+            height: popup_h,
+        };
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
             .title("Start unattended install?")
@@ -1301,16 +1447,25 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.mauve));
         f.render_widget(popup_block, popup_rect);
 
-        let inner = Rect { x: popup_rect.x + 1, y: popup_rect.y + 1, width: popup_rect.width - 2, height: popup_rect.height - 2 };
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width - 2,
+            height: popup_rect.height - 2,
+        };
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Length(2)])
             .split(inner);
-        let msg = Paragraph::new(Text::from(vec![Line::from("This will run the setup now. Proceed?")]))
-            .style(Style::default().fg(app.theme.text));
+        let msg = Paragraph::new(Text::from(vec![Line::from(
+            "This will run the setup now. Proceed?",
+        )]))
+        .style(Style::default().fg(app.theme.text));
         f.render_widget(msg, rows[0]);
-        let tip = Paragraph::new(Text::from(vec![Line::from("Press Y/Enter to confirm, N/Esc to cancel")]))
-            .style(Style::default().fg(app.theme.subtext0));
+        let tip = Paragraph::new(Text::from(vec![Line::from(
+            "Press Y/Enter to confirm, N/Esc to cancel",
+        )]))
+        .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
     // Confirm reboot popup
@@ -1462,31 +1617,47 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     let selected_pacman = if !app.pacman_sel_map.is_empty() {
         let mut out = Vec::new();
         for (name, sel) in &app.pacman_sel_map {
-            if *sel { out.push(name.clone()); }
+            if *sel {
+                out.push(name.clone());
+            }
         }
         out.sort();
         // Merge user-added pacman packages
         for name in &app.user_added {
-            if let Some(src) = app.user_added_src.get(name) { if src == "pacman" { out.push(name.clone()); } }
+            if let Some(src) = app.user_added_src.get(name)
+                && src == "pacman"
+            {
+                out.push(name.clone());
+            }
         }
         out.sort();
         out.dedup();
         out.join(" ")
-    } else { String::new() };
+    } else {
+        String::new()
+    };
     let selected_aur = if !app.aur_sel_map.is_empty() {
         let mut out = Vec::new();
         for (name, sel) in &app.aur_sel_map {
-            if *sel { out.push(name.clone()); }
+            if *sel {
+                out.push(name.clone());
+            }
         }
         out.sort();
         // Merge user-added AUR packages
         for name in &app.user_added {
-            if let Some(src) = app.user_added_src.get(name) { if src == "aur" { out.push(name.clone()); } }
+            if let Some(src) = app.user_added_src.get(name)
+                && src == "aur"
+            {
+                out.push(name.clone());
+            }
         }
         out.sort();
         out.dedup();
         out.join(" ")
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     // Non-interactive env config from preflight
     let pf = &app.preflight;
@@ -1522,19 +1693,31 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             "false"
         },
     );
-    if !selected_pacman.is_empty() { cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone()); }
-    if !selected_aur.is_empty() { cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone()); }
+    if !selected_pacman.is_empty() {
+        cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone());
+    }
+    if !selected_aur.is_empty() {
+        cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone());
+    }
     // Also pass user-added splits explicitly for setup.sh merging
     let mut user_pac = Vec::new();
     let mut user_aur = Vec::new();
     for name in &app.user_added {
         if let Some(src) = app.user_added_src.get(name) {
-            if src == "pacman" { user_pac.push(name.clone()); }
-            if src == "aur" { user_aur.push(name.clone()); }
+            if src == "pacman" {
+                user_pac.push(name.clone());
+            }
+            if src == "aur" {
+                user_aur.push(name.clone());
+            }
         }
     }
-    if !user_pac.is_empty() { cmd.env("USER_ADDED_PACMAN_PACKAGES", user_pac.join(" ")); }
-    if !user_aur.is_empty() { cmd.env("USER_ADDED_AUR_PACKAGES", user_aur.join(" ")); }
+    if !user_pac.is_empty() {
+        cmd.env("USER_ADDED_PACMAN_PACKAGES", user_pac.join(" "));
+    }
+    if !user_aur.is_empty() {
+        cmd.env("USER_ADDED_AUR_PACKAGES", user_aur.join(" "));
+    }
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -1654,11 +1837,13 @@ struct PackagesRoot {
     package_descriptions: Option<HashMap<String, String>>,
 }
 
-fn load_packages_json_categorized() -> Option<(
+type PackagesCategorized = (
     Vec<(String, Vec<String>)>,
     Vec<(String, Vec<String>)>,
     HashMap<String, String>,
-)> {
+);
+
+fn load_packages_json_categorized() -> Option<PackagesCategorized> {
     let candidates = [
         PathBuf::from("./packages.json"),
         PathBuf::from("../packages.json"),
@@ -1901,32 +2086,60 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
                     if app.ms_focus_right {
-                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        let mut cats: Vec<String> = if is_pacman {
+                            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
+                        } else {
+                            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
+                        };
                         cats.sort();
                         let lenf = cats.len();
-                        if lenf > 0 { app.ms_cursor_filter = if app.ms_cursor_filter + 1 >= lenf { 0 } else { app.ms_cursor_filter + 1 }; }
-                    } else {
-                        if len > 0 {
-                            // advance and skip headers
-                            for _ in 0..len {
-                                app.ms_cursor = if app.ms_cursor + 1 >= len { 0 } else { app.ms_cursor + 1 };
-                                if !header_idx.contains(&app.ms_cursor) { break; }
+                        if lenf > 0 {
+                            app.ms_cursor_filter = if app.ms_cursor_filter + 1 >= lenf {
+                                0
+                            } else {
+                                app.ms_cursor_filter + 1
+                            };
+                        }
+                    } else if len > 0 {
+                        // advance and skip headers
+                        for _ in 0..len {
+                            app.ms_cursor = if app.ms_cursor + 1 >= len {
+                                0
+                            } else {
+                                app.ms_cursor + 1
+                            };
+                            if !header_idx.contains(&app.ms_cursor) {
+                                break;
                             }
                         }
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     if app.ms_focus_right {
-                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        let mut cats: Vec<String> = if is_pacman {
+                            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
+                        } else {
+                            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
+                        };
                         cats.sort();
                         let lenf = cats.len();
-                        if lenf > 0 { app.ms_cursor_filter = if app.ms_cursor_filter == 0 { lenf - 1 } else { app.ms_cursor_filter - 1 }; }
-                    } else {
-                        if len > 0 {
-                            // retreat and skip headers
-                            for _ in 0..len {
-                                app.ms_cursor = if app.ms_cursor == 0 { len - 1 } else { app.ms_cursor - 1 };
-                                if !header_idx.contains(&app.ms_cursor) { break; }
+                        if lenf > 0 {
+                            app.ms_cursor_filter = if app.ms_cursor_filter == 0 {
+                                lenf - 1
+                            } else {
+                                app.ms_cursor_filter - 1
+                            };
+                        }
+                    } else if len > 0 {
+                        // retreat and skip headers
+                        for _ in 0..len {
+                            app.ms_cursor = if app.ms_cursor == 0 {
+                                len - 1
+                            } else {
+                                app.ms_cursor - 1
+                            };
+                            if !header_idx.contains(&app.ms_cursor) {
+                                break;
                             }
                         }
                     }
@@ -1934,14 +2147,24 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 KeyCode::Char(' ') => {
                     if app.ms_focus_right {
                         // toggle filter entry
-                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        let mut cats: Vec<String> = if is_pacman {
+                            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
+                        } else {
+                            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
+                        };
                         cats.sort();
                         let idx = app.ms_cursor_filter.min(cats.len().saturating_sub(1));
                         if let Some(cat) = cats.get(idx) {
                             if is_pacman {
-                                if app.pacman_filter_working.contains(cat) { app.pacman_filter_working.remove(cat); } else { app.pacman_filter_working.insert(cat.clone()); }
+                                if app.pacman_filter_working.contains(cat) {
+                                    app.pacman_filter_working.remove(cat);
+                                } else {
+                                    app.pacman_filter_working.insert(cat.clone());
+                                }
+                            } else if app.aur_filter_working.contains(cat) {
+                                app.aur_filter_working.remove(cat);
                             } else {
-                                if app.aur_filter_working.contains(cat) { app.aur_filter_working.remove(cat) ; } else { app.aur_filter_working.insert(cat.clone()); }
+                                app.aur_filter_working.insert(cat.clone());
                             }
                         }
                     } else {
@@ -1949,19 +2172,34 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         let mut idx = 0usize;
                         if is_pacman {
                             'outerp: for (_, pkgs) in &app.pacman_cats {
-                                if app.ms_cursor == idx { idx += 1; continue; } // header row
+                                if app.ms_cursor == idx {
+                                    idx += 1;
+                                    continue;
+                                } // header row
                                 idx += 1;
                                 for p in pkgs {
-                                    if app.ms_cursor == idx { let e = app.pacman_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outerp; }
+                                    if app.ms_cursor == idx {
+                                        let e =
+                                            app.pacman_sel_map.entry(p.clone()).or_insert(false);
+                                        *e = !*e;
+                                        break 'outerp;
+                                    }
                                     idx += 1;
                                 }
                             }
                         } else {
                             'outera: for (_, pkgs) in &app.aur_cats {
-                                if app.ms_cursor == idx { idx += 1; continue; } // header row
+                                if app.ms_cursor == idx {
+                                    idx += 1;
+                                    continue;
+                                } // header row
                                 idx += 1;
                                 for p in pkgs {
-                                    if app.ms_cursor == idx { let e = app.aur_sel_map.entry(p.clone()).or_insert(false); *e = !*e; break 'outera; }
+                                    if app.ms_cursor == idx {
+                                        let e = app.aur_sel_map.entry(p.clone()).or_insert(false);
+                                        *e = !*e;
+                                        break 'outera;
+                                    }
                                     idx += 1;
                                 }
                             }
@@ -1971,19 +2209,43 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 KeyCode::Char('a') => {
                     if app.ms_focus_right {
                         // select all categories
-                        let mut cats: Vec<String> = if is_pacman { app.pacman_cats.iter().map(|(c, _)| c.clone()).collect() } else { app.aur_cats.iter().map(|(c, _)| c.clone()).collect() };
+                        let mut cats: Vec<String> = if is_pacman {
+                            app.pacman_cats.iter().map(|(c, _)| c.clone()).collect()
+                        } else {
+                            app.aur_cats.iter().map(|(c, _)| c.clone()).collect()
+                        };
                         cats.sort();
-                        if is_pacman { app.pacman_filter_working = cats.into_iter().collect(); } else { app.aur_filter_working = cats.into_iter().collect(); }
+                        if is_pacman {
+                            app.pacman_filter_working = cats.into_iter().collect();
+                        } else {
+                            app.aur_filter_working = cats.into_iter().collect();
+                        }
+                    } else if is_pacman {
+                        for v in app.pacman_sel_map.values_mut() {
+                            *v = true;
+                        }
                     } else {
-                        if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = true; } } else { for v in app.aur_sel_map.values_mut() { *v = true; } }
+                        for v in app.aur_sel_map.values_mut() {
+                            *v = true;
+                        }
                     }
                 }
                 KeyCode::Char('n') => {
                     if app.ms_focus_right {
                         // clear categories (empty means all)
-                        if is_pacman { app.pacman_filter_working.clear(); } else { app.aur_filter_working.clear(); }
+                        if is_pacman {
+                            app.pacman_filter_working.clear();
+                        } else {
+                            app.aur_filter_working.clear();
+                        }
+                    } else if is_pacman {
+                        for v in app.pacman_sel_map.values_mut() {
+                            *v = false;
+                        }
                     } else {
-                        if is_pacman { for v in app.pacman_sel_map.values_mut() { *v = false; } } else { for v in app.aur_sel_map.values_mut() { *v = false; } }
+                        for v in app.aur_sel_map.values_mut() {
+                            *v = false;
+                        }
                     }
                 }
                 _ => {}
@@ -1991,9 +2253,19 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             return Ok(false);
         }
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc => {
                 app.editing = false;
                 app.edit_buffer.clear();
+            }
+            KeyCode::Char('q') => {
+                // For password input, 'q' should be treated as a regular character
+                // For other text inputs, 'q' cancels editing
+                if app.preflight_focus == PreflightField::Password {
+                    app.edit_buffer.push('q');
+                } else {
+                    app.editing = false;
+                    app.edit_buffer.clear();
+                }
             }
             KeyCode::Enter => {
                 // Intercept AddPackages: validate and show popup if issues
@@ -2008,12 +2280,31 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     names.dedup();
                     let mut warnings: Vec<String> = Vec::new();
                     for name in &names {
-                        if app.pacman_sel_map.contains_key(name) || app.aur_sel_map.contains_key(name) || app.user_added.contains(name) {
+                        if app.pacman_sel_map.contains_key(name)
+                            || app.aur_sel_map.contains_key(name)
+                            || app.user_added.contains(name)
+                        {
                             warnings.push(format!("Already selected: {}", name));
                             continue;
                         }
-                        let is_repo = Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false);
-                        let is_aur = if is_repo { false } else { Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) };
+                        let is_repo = Command::new("bash")
+                            .arg("-lc")
+                            .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
+                            .status()
+                            .ok()
+                            .map(|s| s.success())
+                            .unwrap_or(false);
+                        let is_aur = if is_repo {
+                            false
+                        } else {
+                            Command::new("bash")
+                                .arg("-lc")
+                                .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
+                                .status()
+                                .ok()
+                                .map(|s| s.success())
+                                .unwrap_or(false)
+                        };
                         if !is_repo && !is_aur {
                             warnings.push(format!("Not found in pacman or AUR: {}", name));
                         }
@@ -2080,7 +2371,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     }
                     if app.preflight.dry_run {
                         app.ui_mode = UiMode::Menu; // return to menu for logs visibility
-                        spawn_setup(app, &["--dry-run"]) ?;
+                        spawn_setup(app, &["--dry-run"])?;
                         return Ok(false);
                     }
                     app.editing = true;
@@ -2264,22 +2555,52 @@ fn apply_edit_buffer(app: &mut AppState) {
                         continue;
                     }
                     if app.pacman_sel_map.contains_key(&name) {
-                        if let Some(v) = app.pacman_sel_map.get_mut(&name) { *v = true; }
-                        app.push_log_line(format!("Package '{}' already in pacman list; set selected", name));
+                        if let Some(v) = app.pacman_sel_map.get_mut(&name) {
+                            *v = true;
+                        }
+                        app.push_log_line(format!(
+                            "Package '{}' already in pacman list; set selected",
+                            name
+                        ));
                         continue;
                     }
                     if app.aur_sel_map.contains_key(&name) {
-                        if let Some(v) = app.aur_sel_map.get_mut(&name) { *v = true; }
-                        app.push_log_line(format!("Package '{}' already in AUR list; set selected", name));
+                        if let Some(v) = app.aur_sel_map.get_mut(&name) {
+                            *v = true;
+                        }
+                        app.push_log_line(format!(
+                            "Package '{}' already in AUR list; set selected",
+                            name
+                        ));
                         continue;
                     }
                     let mut src = String::from("unknown");
-                    if Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                    if Command::new("bash")
+                        .arg("-lc")
+                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
+                        .status()
+                        .ok()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                    {
                         src = "pacman".to_string();
-                    } else if Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                    } else if Command::new("bash")
+                        .arg("-lc")
+                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
+                        .status()
+                        .ok()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                    {
                         src = "aur".to_string();
                     }
-                    if src == "unknown" { app.push_log_line(format!("Skipping unknown package '{}': not found in pacman or AUR", name)); continue; }
+                    if src == "unknown" {
+                        app.push_log_line(format!(
+                            "Skipping unknown package '{}': not found in pacman or AUR",
+                            name
+                        ));
+                        continue;
+                    }
                     app.user_added_src.insert(name.clone(), src);
                     app.user_added.push(name);
                 }
@@ -2289,22 +2610,52 @@ fn apply_edit_buffer(app: &mut AppState) {
                 let mut new_user_added_src: HashMap<String, String> = HashMap::new();
                 for name in names {
                     if app.pacman_sel_map.contains_key(&name) {
-                        if let Some(v) = app.pacman_sel_map.get_mut(&name) { *v = true; }
-                        app.push_log_line(format!("Package '{}' already in pacman list; set selected", name));
+                        if let Some(v) = app.pacman_sel_map.get_mut(&name) {
+                            *v = true;
+                        }
+                        app.push_log_line(format!(
+                            "Package '{}' already in pacman list; set selected",
+                            name
+                        ));
                         continue;
                     }
                     if app.aur_sel_map.contains_key(&name) {
-                        if let Some(v) = app.aur_sel_map.get_mut(&name) { *v = true; }
-                        app.push_log_line(format!("Package '{}' already in AUR list; set selected", name));
+                        if let Some(v) = app.aur_sel_map.get_mut(&name) {
+                            *v = true;
+                        }
+                        app.push_log_line(format!(
+                            "Package '{}' already in AUR list; set selected",
+                            name
+                        ));
                         continue;
                     }
                     let mut src = String::from("unknown");
-                    if Command::new("bash").arg("-lc").arg(format!("pacman -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                    if Command::new("bash")
+                        .arg("-lc")
+                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
+                        .status()
+                        .ok()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                    {
                         src = "pacman".to_string();
-                    } else if Command::new("bash").arg("-lc").arg(format!("yay -Si -- {} >/dev/null 2>&1", name)).status().ok().map(|s| s.success()).unwrap_or(false) {
+                    } else if Command::new("bash")
+                        .arg("-lc")
+                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
+                        .status()
+                        .ok()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                    {
                         src = "aur".to_string();
                     }
-                    if src == "unknown" { app.push_log_line(format!("Skipping unknown package '{}': not found in pacman or AUR", name)); continue; }
+                    if src == "unknown" {
+                        app.push_log_line(format!(
+                            "Skipping unknown package '{}': not found in pacman or AUR",
+                            name
+                        ));
+                        continue;
+                    }
                     new_user_added_src.insert(name.clone(), src);
                     new_user_added.push(name);
                 }
@@ -2540,7 +2891,9 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
     // 3) For each called function, look up the first announce_step title in its body.
     // 4) Build the sections vector in that order, and append the final marker.
     let mut out: Vec<SetupSection> = Vec::new();
-    let Ok(content) = fs::read_to_string(script_path) else { return out };
+    let Ok(content) = fs::read_to_string(script_path) else {
+        return out;
+    };
 
     let lines: Vec<&str> = content.lines().collect();
 
@@ -2552,16 +2905,12 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         if let Some(paren) = t.find("(){") {
             // rough; many functions are formatted as "name() {"
             let name = t[..paren].trim();
-            if !name.is_empty()
-                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
-            {
+            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
                 fn_starts.insert(name.to_string(), i);
             }
         } else if let Some(paren) = t.find("() {") {
             let name = t[..paren].trim();
-            if !name.is_empty()
-                && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
-            {
+            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
                 fn_starts.insert(name.to_string(), i);
             }
         }
@@ -2588,14 +2937,14 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
             }
             // check for announce_step
             let t = s.trim();
-            if let Some(rest) = t.strip_prefix("announce_step \"")
+            if let Some(rest) = t
+                .strip_prefix("announce_step \"")
                 .or_else(|| t.strip_prefix("extended_announce_step \""))
+                && let Some(end) = rest.find('"')
             {
-                if let Some(end) = rest.find('"') {
-                    let title = rest[..end].to_string();
-                    title_cache.insert(fname.to_string(), title.clone());
-                    return Some(title);
-                }
+                let title = rest[..end].to_string();
+                title_cache.insert(fname.to_string(), title.clone());
+                return Some(title);
             }
             if s.contains('{') {
                 depth += 1;
