@@ -624,6 +624,7 @@ check_yay() {
 
     if is_windows; then
         print_message "Running on Windows - skipping yay installation"
+        AUR_HELPER_CHECKED="true"
         return 0
     fi
 
