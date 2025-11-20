@@ -674,6 +674,19 @@ check_disk_space() {
 }
 
 check_dependencies() {
+    # Skip dependency checks on Windows or in dry-run mode
+    if is_windows || is_dry_run; then
+        if is_windows; then
+            print_message "Running on Windows - skipping dependency checks"
+        else
+            log_dry_run_operation "check_dependencies" "Would check and install missing dependencies"
+            print_message "Dry-run: skipping dependency checks"
+        fi
+        # Still check for AUR helper (which will skip on Windows)
+        check_yay
+        return 0
+    fi
+
     local deps_cmds=("git" "sudo" "debugedit")
     local missing_cmds=()
 
