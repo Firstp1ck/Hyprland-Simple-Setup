@@ -30,6 +30,10 @@ aur_updates=()
 failed_packages=()
 config_statuses=()
 
+# Selected AUR helper (paru preferred if available)
+AUR_HELPER=""
+AUR_HELPER_CHECKED=""
+
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
@@ -229,9 +233,10 @@ distro_install() {
             ;;
         arch|endeavouros|cachyos)
             if ! execute_command "sudo pacman -S --needed --noconfirm ${packages[*]}" "Install packages: ${packages[*]}"; then
-                print_warning "pacman failed, trying yay as fallback for: ${packages[*]}"
-                if execute_command "yay -S --needed --noconfirm ${packages[*]}" "Install packages with yay: ${packages[*]}"; then
-                    print_message "yay fallback install succeeded for: ${packages[*]}"
+                check_yay
+                print_warning "pacman failed, trying ${AUR_HELPER:-AUR helper} as fallback for: ${packages[*]}"
+                if [ -n "$AUR_HELPER" ] && execute_command "$AUR_HELPER -S --needed --noconfirm ${packages[*]}" "Install packages with $AUR_HELPER: ${packages[*]}"; then
+                    print_message "$AUR_HELPER fallback install succeeded for: ${packages[*]}"
                 fi
             fi
             ;;
@@ -468,7 +473,7 @@ verify_installed_packages() {
 
     # In dry-run, skip verification entirely (execute_command would always succeed)
     if is_dry_run; then
-        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/yay"
+        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/AUR helper"
         print_message "Dry-run: skipping package verification"
         return 0
     fi
@@ -480,7 +485,7 @@ verify_installed_packages() {
     aur_pkg_file=$(ls -t "$HOME"/aur_packages_* 2>/dev/null | head -n1)
 
     if [ -z "$user_pkg_file" ] && [ -z "$aur_pkg_file" ]; then
-        print_warning "No package list files found in $HOME. Generating new package lists..."
+        print_message "No package list files found in $HOME. Generating new package lists..."
         list_packages
         # Re-find the files after generation
         user_pkg_file=$(ls -t "$HOME"/user_installed_packages_* 2>/dev/null | head -n1)
@@ -536,7 +541,7 @@ verify_installed_packages() {
             fi
             if [ ${#missing_aur[@]} -gt 0 ]; then
                 check_yay
-                execute_command "yay -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
+                execute_command "$AUR_HELPER -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
             fi
 
             # Re-verify post-install
@@ -596,47 +601,65 @@ check_bootloader() {
 }
 
 check_yay() {
-    if ! command -v yay &> /dev/null; then
-        print_message "yay is not installed. Installing yay..."
-
-        if is_windows; then
-            print_message "Running on Windows - skipping yay installation"
-            return 0
-        fi
-
-        # Check for required packages
-        local missing_packages=()
-        # Simple base-devel presence check (handles modern Arch where it's a meta-package)
-        if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
-            missing_packages+=("base-devel")
-        fi
-        if ! command -v debugedit &>/dev/null; then
-            missing_packages+=("debugedit")
-        fi
-        if ! command -v git &> /dev/null; then
-            missing_packages+=("git")
-        fi
-
-        # Install missing packages if any
-        if [ ${#missing_packages[@]} -gt 0 ]; then
-            print_message "Installing required packages: ${missing_packages[*]}"
-            distro_install "${missing_packages[@]}"
-        fi
-
-        # Clone the yay repo and build it
-        execute_command "git clone https://aur.archlinux.org/yay.git /tmp/yay" "Clone yay repository"
-        cd /tmp/yay > /dev/null || return 
-        execute_command "makepkg -si --noconfirm" "Build and install yay"
-
-        # Verify installation was successful
-        if ! command -v yay &> /dev/null; then
-            handle_error "'yay' installation failed. Please install yay manually and re-run the script."
-        else
-            print_message "yay installed successfully!"
-        fi
-    else
-        print_message "yay is already installed."
+    # Prevent duplicate checks/installs within one run
+    if [ "$AUR_HELPER_CHECKED" = "true" ] && [ -n "$AUR_HELPER" ]; then
+        return 0
     fi
+    # Prefer paru if available
+    if command -v paru &>/dev/null; then
+        AUR_HELPER="paru"
+        print_message "Detected paru. Using paru as AUR helper (skipping yay installation)."
+        AUR_HELPER_CHECKED="true"
+        return 0
+    fi
+    # Fallback to yay if installed
+    if command -v yay &> /dev/null; then
+        AUR_HELPER="yay"
+        print_message "yay is already installed."
+        AUR_HELPER_CHECKED="true"
+        return 0
+    fi
+
+    print_message "No AUR helper found. Installing yay..."
+
+    if is_windows; then
+        print_message "Running on Windows - skipping yay installation"
+        AUR_HELPER_CHECKED="true"
+        return 0
+    fi
+
+    # Check for required packages
+    local missing_packages=()
+    # Simple base-devel presence check (handles modern Arch where it's a meta-package)
+    if ! pacman -Qq base-devel 2>/dev/null | head -n1 | grep -qx 'base-devel'; then
+        missing_packages+=("base-devel")
+    fi
+    if ! command -v debugedit &>/dev/null; then
+        missing_packages+=("debugedit")
+    fi
+    if ! command -v git &> /dev/null; then
+        missing_packages+=("git")
+    fi
+
+    # Install missing packages if any
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+        print_message "Installing required packages: ${missing_packages[*]}"
+        distro_install "${missing_packages[@]}"
+    fi
+
+    # Clone the yay repo and build it
+    execute_command "git clone https://aur.archlinux.org/yay.git /tmp/yay" "Clone yay repository"
+    cd /tmp/yay > /dev/null || return 
+    execute_command "makepkg -si --noconfirm" "Build and install yay"
+
+    # Verify installation was successful
+    if ! command -v yay &> /dev/null; then
+        handle_error "'yay' installation failed. Please install yay manually and re-run the script."
+    else
+        AUR_HELPER="yay"
+        print_message "yay installed successfully!"
+    fi
+    AUR_HELPER_CHECKED="true"
 }
 
 check_disk_space() {
@@ -651,6 +674,19 @@ check_disk_space() {
 }
 
 check_dependencies() {
+    # Skip dependency checks on Windows or in dry-run mode
+    if is_windows || is_dry_run; then
+        if is_windows; then
+            print_message "Running on Windows - skipping dependency checks"
+        else
+            log_dry_run_operation "check_dependencies" "Would check and install missing dependencies"
+            print_message "Dry-run: skipping dependency checks"
+        fi
+        # Still check for AUR helper (which will skip on Windows)
+        check_yay
+        return 0
+    fi
+
     local deps_cmds=("git" "sudo" "debugedit")
     local missing_cmds=()
 
@@ -704,19 +740,8 @@ check_dependencies() {
         exit 1
     fi
 
-    # Ensure yay exists (after base-devel/debugedit/git are present)
-    if ! command -v yay >/dev/null 2>&1; then
-        print_warning "YAY is not installed. Installing YAY..."
-        (
-            cd /tmp || exit 1
-            git clone https://aur.archlinux.org/yay.git
-            cd yay || exit 1
-            makepkg -si --noconfirm
-        ) || {
-            print_error "Failed to install YAY"
-            exit 1
-        }
-    fi
+    # Ensure AUR helper exists (prefer paru, else install yay)
+    check_yay
 }
 
 check_distro() {
@@ -864,32 +889,76 @@ check_user_input() {
 }
 
 find_hyprland_setup_dir() {
-    # First check the installed package location
+    # 0) Allow explicit override via environment variable
+    if [ -n "${HYPRLAND_SETUP_DIR:-}" ] && [ -d "${HYPRLAND_SETUP_DIR}" ]; then
+        echo "${HYPRLAND_SETUP_DIR}"
+        return 0
+    fi
+
+    # 0b) Use HYPR_SETUP_PATH from AUR wrapper (points to setup.sh inside share dir)
+    if [ -n "${HYPR_SETUP_PATH:-}" ]; then
+        local from_wrapper
+        from_wrapper="$(dirname -- "$HYPR_SETUP_PATH")"
+        if [ -d "$from_wrapper" ]; then
+            echo "$from_wrapper"
+            return 0
+        fi
+    fi
+
+    # 1) Prefer the directory of this script (repo root in typical layout)
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+    if [ -d "$script_dir/dotfiles" ] || [ "$(basename "$script_dir")" = "$SETUP_DIR" ]; then
+        echo "$script_dir"
+        return 0
+    fi
+
+    # 2) If inside a git repo, use the toplevel directory
+    if command -v git >/dev/null 2>&1; then
+        local git_root
+        git_root="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+        if [ -n "$git_root" ] && [ -d "$git_root" ]; then
+            if [ -d "$git_root/dotfiles" ] || [ "$(basename "$git_root")" = "$SETUP_DIR" ]; then
+                echo "$git_root"
+                return 0
+            fi
+        fi
+    fi
+
+    # 3) Check known installed locations
     if [ -d "/usr/share/hyprland-simple-setup-git" ]; then
         echo "/usr/share/hyprland-simple-setup-git"
         return 0
     fi
-    
-    # Fallback to searching in common locations
+    if [ -d "/usr/share/Hyprland-Simple-Setup" ]; then
+        echo "/usr/share/Hyprland-Simple-Setup"
+        return 0
+    fi
+
+    # 4) Search common user directories (wider net, slightly deeper)
     local search_paths=(
+        "$PWD"
         "$HOME"
         "$HOME/Dokumente"
         "$HOME/Documents"
         "$HOME/Downloads"
+        "$HOME/GitHub"
+        "$HOME/Projects"
+        "$HOME/Workspace"
     )
-    
+    local path
     for path in "${search_paths[@]}"; do
         if [ -d "$path" ]; then
-            # Search for both directory names
             local found_dir
-            found_dir=$(find "$path" -maxdepth 3 -type d \( -name "$SETUP_DIR" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
+            found_dir=$(find "$path" -maxdepth 6 -type d \( -name "$SETUP_DIR" -o -name "hyprland-simple-setup-git" \) 2>/dev/null | head -n 1)
             if [ -n "$found_dir" ]; then
                 echo "$found_dir"
                 return 0
             fi
         fi
     done
-    
+
+    # Not found
     return 1
 }
 
@@ -906,6 +975,7 @@ update_configs() {
     hyprland_setup_dir=$(find_hyprland_setup_dir)
     if [ -z "$hyprland_setup_dir" ]; then
         print_error "Could not find $SETUP_DIR directory"
+        print_warning "Tip: set HYPRLAND_SETUP_DIR to the project root and re-run."
         track_config_status "Dotfiles Setup" "$CROSS_MARK"
         return 1
     fi
@@ -1195,14 +1265,31 @@ hyprland_packages=(
 
 update_arch_mirrors() {
     announce_step "Updating Arch mirrors"
-        if ! command -v reflector &> /dev/null; then
+    if [[ "$DISTRO" == "manjaro" ]]; then
+        print_message "Detected Manjaro. Using pacman-mirrors instead of reflector."
+        if ! command -v pacman-mirrors &> /dev/null; then
+            print_message "pacman-mirrors not installed. Installing pacman-mirrors..."
+            if ! distro_install "pacman-mirrors"; then
+                print_error "pacman-mirrors installation failed. Aborting mirror update."
+                mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+                return 1
+            fi
+        fi
+        if execute_command "sudo pacman-mirrors --geoip --timeout 6 && sudo pacman -Syy" "Update Manjaro mirrors"; then
+            mirror_updates+=("Arch Mirrors: $CHECK_MARK")
+        else
+            mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+        fi
+        return 0
+    fi
+    if ! command -v reflector &> /dev/null; then
         print_message "Reflector not installed. Installing reflector..."
         if ! distro_install "reflector"; then
             print_error "Reflector installation failed. Aborting mirror update."
             return 1
         fi
     fi
-    if execute_command "sudo reflector --verbose --country DE,CH,AT --protocol https --sort rate --latest 20 --download-timeout 6 --save /etc/pacman.d/mirrorlist" "Update Arch mirrors"; then
+    if execute_command "sudo reflector --verbose --protocol https --sort rate --latest 20 --download-timeout 6 --save /etc/pacman.d/mirrorlist" "Update Arch mirrors"; then
         mirror_updates+=("Arch Mirrors: $CHECK_MARK")
     else
         mirror_updates+=("Arch Mirrors: $CROSS_MARK")
@@ -1211,7 +1298,7 @@ update_arch_mirrors() {
 
 update_pacman() {
     announce_step "Updating pacman packages"
-    if execute_command "sudo pacman -Syu --noconfirm" "Update pacman packages"; then
+    if execute_command "sudo pacman -Syyu --noconfirm" "Update pacman packages"; then
         package_updates+=("Pacman Packages: $CHECK_MARK")
     else
         package_updates+=("Pacman Packages: $CROSS_MARK")
@@ -1221,7 +1308,7 @@ update_pacman() {
 update_yay() {
     announce_step "Updating AUR packages"
     check_yay
-    if execute_command "yay -Sua --noconfirm" "Update AUR packages"; then
+    if [ -n "$AUR_HELPER" ] && execute_command "$AUR_HELPER -Sua --noconfirm" "Update AUR packages"; then
         aur_updates+=("AUR Packages: $CHECK_MARK")
     else
         aur_updates+=("AUR Packages: $CROSS_MARK")
@@ -1230,12 +1317,22 @@ update_yay() {
 
 remove_cache() {
     announce_step "Removing pacman cache"
+    check_yay
     if [[ "$DISTRO" == "endeavouros" ]]; then
-        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (EndeavourOS)"
+        execute_command "sudo paccache -r && sudo pacman -Sc --noconfirm" "Remove pacman cache (EndeavourOS)"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache (EndeavourOS)"
+        fi
     elif [[ "$DISTRO" == "arch" ]] || [[ "$DISTRO" == "cachyos" ]]; then
-        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache (Arch Linux/CachyOS)"
+        execute_command "sudo pacman -Sc --noconfirm" "Remove pacman cache (Arch Linux/CachyOS)"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache (Arch Linux/CachyOS)"
+        fi
     else
-        execute_command "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm" "Remove pacman/aur cache"
+        execute_command "sudo pacman -Sc --noconfirm" "Remove pacman cache"
+        if [ -n "$AUR_HELPER" ]; then
+            execute_command "$AUR_HELPER -Sc --noconfirm" "Remove AUR cache"
+        fi
     fi
     print_message "Pacman cache removed."
 }
@@ -1274,6 +1371,19 @@ install_pacman_packages() {
         done
         pkgs_to_install=("${_dedup[@]}")
         unset _seen
+    fi
+
+    # If CachyOS Snapper support is present, skip installing Timeshift entirely
+    if pacman -Qq cachyos-snapper-support &>/dev/null; then
+        print_message "Detected 'cachyos-snapper-support'. Skipping installation of Timeshift."
+        local -a _filtered
+        for p in "${pkgs_to_install[@]}"; do
+            if [ "$p" != "timeshift" ]; then
+                _filtered+=("$p")
+            fi
+        done
+        pkgs_to_install=("${_filtered[@]}")
+        unset _filtered
     fi
 
     for pkg in "${pkgs_to_install[@]}"; do
@@ -1335,8 +1445,9 @@ install_aur_extras() {
         unset _seen2
     fi
 
+    check_yay
     for pkg in "${aur_to_install[@]}"; do
-        if ! execute_command "yay -S --needed --noconfirm $pkg" "Install $pkg"; then
+        if ! execute_command "$AUR_HELPER -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
         fi
     done
@@ -1456,12 +1567,64 @@ configure_gnome_keyring() {
         print_message "gnome-keyring is already installed."
     fi
 
-    if ! grep -q "pam_gnome_keyring.so" /etc/pam.d/login; then
-        print_message "Adding PAM configurations for gnome-keyring to /etc/pam.d/login..."
-        execute_command "echo 'auth optional pam_gnome_keyring.so' | sudo tee -a /etc/pam.d/login > /dev/null" "Add pam_gnome_keyring.so auth to /etc/pam.d/login"
-        execute_command "echo 'session optional pam_gnome_keyring.so auto_start' | sudo tee -a /etc/pam.d/login > /dev/null" "Add pam_gnome_keyring.so session to /etc/pam.d/login"
+    local pam_file="/etc/pam.d/login"
+    # Determine include stack and candidates to verify
+    local -a candidates=("$pam_file")
+    if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-local-login' "$pam_file" \
+        && [ -f "/etc/pam.d/system-local-login" ]; then
+        candidates+=("/etc/pam.d/system-local-login")
+    fi
+    if grep -Eq '^[[:space:]]*(auth|session|account|password)[[:space:]]+include[[:space:]]+system-login' "$pam_file" \
+        && [ -f "/etc/pam.d/system-login" ]; then
+        candidates+=("/etc/pam.d/system-login")
+    fi
+    # Safer write target: prefer system-local-login if present, else login
+    local target_file="$pam_file"
+    if printf '%s\n' "${candidates[@]}" | grep -qx "/etc/pam.d/system-local-login"; then
+        target_file="/etc/pam.d/system-local-login"
+    fi
+    local has_auth="false"
+    local has_session="false"
+    for f in "${candidates[@]}"; do
+        if [ "$has_auth" != "true" ] && grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$f"; then
+            has_auth="true"
+        fi
+        if [ "$has_session" != "true" ] && grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$f"; then
+            has_session="true"
+        fi
+    done
+
+    if [ "$has_auth" != "true" ] || [ "$has_session" != "true" ]; then
+        print_message "Adding PAM configurations for gnome-keyring to $target_file..."
+        if [ "$has_auth" != "true" ]; then
+            execute_command "sudo bash -c \"printf '%s\\n' 'auth optional pam_gnome_keyring.so' >> '$target_file'\"" "Add pam_gnome_keyring.so auth to $target_file"
+        fi
+        if [ "$has_session" != "true" ]; then
+            execute_command "sudo bash -c \"printf '%s\\n' 'session optional pam_gnome_keyring.so auto_start' >> '$target_file'\"" "Add pam_gnome_keyring.so session to $target_file"
+        fi
     else
-        print_message "PAM configuration for gnome-keyring already exists in /etc/pam.d/login."
+        print_message "PAM configuration for gnome-keyring already exists (checked: ${candidates[*]})."
+    fi
+
+    # Verify PAM configuration is correctly set
+    local pam_ok="false"
+    # Verify PAM configuration is correctly set (in login or included)
+    local verify_auth="false"
+    local verify_session="false"
+    for f in "${candidates[@]}"; do
+        if [ "$verify_auth" != "true" ] && grep -Eq '^[[:space:]]*auth[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so([[:space:]].*)?$' "$f"; then
+            verify_auth="true"
+        fi
+        if [ "$verify_session" != "true" ] && grep -Eq '^[[:space:]]*session[[:space:]]+optional[[:space:]]+pam_gnome_keyring\.so.*auto_start' "$f"; then
+            verify_session="true"
+        fi
+    done
+    if [ "$verify_auth" = "true" ] && [ "$verify_session" = "true" ]; then
+        print_message "Verified PAM configuration for gnome-keyring in: ${candidates[*]}"
+        pam_ok="true"
+    else
+        print_warning "PAM configuration for gnome-keyring may be missing or malformed (checked: ${candidates[*]}).\nPlease ensure these lines exist (uncommented) in /etc/pam.d/system-local-login (preferred) or /etc/pam.d/login:\n  auth    optional    pam_gnome_keyring.so\n  session optional    pam_gnome_keyring.so auto_start"
+        pam_ok="false"
     fi
 
     print_message "Starting gnome-keyring-daemon..."
@@ -1471,7 +1634,11 @@ configure_gnome_keyring() {
         execute_command "/usr/bin/gnome-keyring-daemon --start --components=pkcs11,secrets,ssh &>/dev/null &" "Start gnome-keyring-daemon"
     fi
 
-    track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
+    if [ "$pam_ok" = "true" ]; then
+        track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
+    else
+        track_config_status "Gnome-keyring Setup" "$CIRCLE (Manual verification needed)"
+    fi
 }
 
 configure_filepicker() {
@@ -1563,6 +1730,13 @@ configure_pacman_color() {
 
 configure_timeshift() {
     announce_step "Setting up Timeshift"
+
+    # Skip Timeshift setup if CachyOS Snapper integration is present
+    if pacman -Qq cachyos-snapper-support &>/dev/null; then
+        print_message "Detected 'cachyos-snapper-support'. Skipping Timeshift configuration."
+        track_config_status "Timeshift Setup" "$CIRCLE (Using CachyOS Snapper)"
+        return 0
+    fi
 
     # Ensure Timeshift is installed
     if ! command -v timeshift &>/dev/null; then

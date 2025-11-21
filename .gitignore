@@ -16,3 +16,5 @@ RELEASE.md
 
 # Added by cargo
 /target
+
+Documents/*
