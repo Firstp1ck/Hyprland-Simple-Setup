@@ -2858,17 +2858,16 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ") {
         sev = Some(StepSeverity::Warning);
     }
-    if let Some(sev_val) = sev {
-        if let Some(idx) = app.current_section {
-            if let Some(sec) = app.sections.get_mut(idx) {
-                // Upgrade severity if needed (Error overrides Warning)
-                match (sec.severity, sev_val) {
-                    (StepSeverity::Error, _) => {}
-                    (StepSeverity::Warning, StepSeverity::Error) => sec.severity = StepSeverity::Error,
-                    (StepSeverity::None, s) => sec.severity = s,
-                    _ => {}
-                }
-            }
+    if let Some(sev_val) = sev
+        && let Some(idx) = app.current_section
+        && let Some(sec) = app.sections.get_mut(idx)
+    {
+        // Upgrade severity if needed (Error overrides Warning)
+        match (sec.severity, sev_val) {
+            (StepSeverity::Error, _) => {}
+            (StepSeverity::Warning, StepSeverity::Error) => sec.severity = StepSeverity::Error,
+            (StepSeverity::None, s) => sec.severity = s,
+            _ => {}
         }
     }
 
@@ -3000,10 +2999,10 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         }
         // 3) Map to titles and build sections
         for fname in called {
-            if let Some(title) = get_title_for_fn(&fname) {
-                if !out.iter().any(|s| s.title == title) {
-                    out.push(SetupSection { title, done: false, severity: StepSeverity::None });
-                }
+            if let Some(title) = get_title_for_fn(&fname)
+                && !out.iter().any(|s| s.title == title)
+            {
+                out.push(SetupSection { title, done: false, severity: StepSeverity::None });
             }
         }
     }
