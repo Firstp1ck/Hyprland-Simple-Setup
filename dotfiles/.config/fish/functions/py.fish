@@ -1,3 +1,4 @@
+# Python virtual environment and package helper: create, activate, remove venv, or install packages
 function py
     switch $argv[1]
         case venv

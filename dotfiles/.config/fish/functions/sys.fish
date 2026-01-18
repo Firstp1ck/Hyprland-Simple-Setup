@@ -1,3 +1,4 @@
+# System management helper: update, backup, or regenerate GRUB config
 function sys
     switch $argv[1]
         case update

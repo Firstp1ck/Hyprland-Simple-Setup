@@ -96,7 +96,7 @@ It sets up the following Components/Apps:
 - Screenshot Tool (Hyprshot with Satty)
 - Calculator (Qalculate-gtk)
 - Firewall (Firewalld)
-- Browser (Vivaldi)
+- Browser (User-selectable: zen-browser or Vivaldi)
 
 **CLI Applications**
 - Custom Stow (Stow - Custom Script for easy Config Management)
@@ -308,9 +308,10 @@ cd ~/Hyprland-Simple-Setup
 - fish (Shell)
 - konsole (KDE terminal)
 
-**Browsers**
-- vivaldi
-- vivaldi-ffmpeg-codecs
+**Browsers** (User-selectable during setup)
+- zen-browser (AUR, default)
+- vivaldi (pacman)
+- vivaldi-ffmpeg-codecs (pacman, required for Vivaldi)
 
 **System Integration**
 - xdg-desktop-portal-hyprland
@@ -473,7 +474,8 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   # Example window rules
   windowrulev2 = float,class:^(org\.pulseaudio\.pavucontrol)$
   windowrulev2 = center,class:^(org\.pulseaudio\.pavucontrol)$
-  windowrule = workspace 2, ^(vivaldi-stable)$
+  windowrule = workspace 2 silent, match:class zen
+  # Alternative: windowrule = workspace 2 silent, match:class vivaldi-stable
   windowrule = opacity 0.95, ^(Code)$
   ```
 
@@ -493,7 +495,7 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
 - Add or modify autostart programs in `~/.config/hypr/sources/exec_once.conf`:
   ```bash  
   # User applications
-  exec-once = vivaldi-stable
+  exec-once = [workspace 2 silent] $browser
   exec-once = [workspace 3] code
   ```
 

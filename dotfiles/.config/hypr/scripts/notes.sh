@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# If not running inside kitty, re-exec in kitty (without --hold)
-if [ -z "$KITTY_WINDOW_ID" ]; then
-    exec kitty --title Notes bash "$0" "$@"
+# If not running inside Alacritty, re-exec in Alacritty
+if [ -z "$INSIDE_ALACRITTY" ] && [ "$TERM" != "alacritty" ]; then
+    exec env INSIDE_ALACRITTY=1 alacritty -t Notes --command bash "$0" "$@"
 fi
 
 notes_dir="$HOME/Dokumente/0_Notes"

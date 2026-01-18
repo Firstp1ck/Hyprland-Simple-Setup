@@ -37,9 +37,28 @@ AUR_HELPER_CHECKED=""
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
+TERMINAL_CHOICE=""
+BROWSER_CHOICE=""
 SETUP_DIR=Hyprland-Simple-Setup
 
 ############################################################## Helper Functions ##############################################################
+
+get_terminal_choice() {
+    if [ -z "$TERMINAL_CHOICE" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            # default to 1 (kitty) if not provided in env
+            TERMINAL_CHOICE=${TERMINAL_CHOICE_OVERRIDE:-1}
+            print_verbose "Non-interactive mode: TERMINAL_CHOICE_OVERRIDE='$TERMINAL_CHOICE_OVERRIDE', using TERMINAL_CHOICE='$TERMINAL_CHOICE'"
+            return
+        fi
+        echo "Select your preferred terminal:"
+        echo "1) kitty (Default)"
+        echo "2) alacritty"
+        read -rp "Enter selection number (1-2): " TERMINAL_CHOICE
+    else
+        print_verbose "TERMINAL_CHOICE already set to: '$TERMINAL_CHOICE'"
+    fi
+}
 
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
@@ -56,6 +75,23 @@ get_fish_language_choice() {
         read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
     else
         print_verbose "FISH_LANGUAGE_CHOICE already set to: '$FISH_LANGUAGE_CHOICE'"
+    fi
+}
+
+get_browser_choice() {
+    if [ -z "$BROWSER_CHOICE" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            # default to 1 (zen-browser) if not provided in env
+            BROWSER_CHOICE=${BROWSER_CHOICE_OVERRIDE:-1}
+            print_verbose "Non-interactive mode: BROWSER_CHOICE_OVERRIDE='$BROWSER_CHOICE_OVERRIDE', using BROWSER_CHOICE='$BROWSER_CHOICE'"
+            return
+        fi
+        echo "Select your preferred browser:"
+        echo "1) zen-browser (Default)"
+        echo "2) vivaldi"
+        read -rp "Enter selection number (1-2): " BROWSER_CHOICE
+    else
+        print_verbose "BROWSER_CHOICE already set to: '$BROWSER_CHOICE'"
     fi
 }
 
@@ -1116,6 +1152,193 @@ set_fish_language_config() {
     print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
 }
 
+# Function to configure terminal choice in dotfiles
+configure_terminal() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_terminal" "Would update terminal configuration"
+        return 0
+    fi
+
+    # Trim whitespace and ensure we have a valid numeric value
+    TERMINAL_CHOICE=$(echo "$TERMINAL_CHOICE" | tr -d '[:space:]')
+    
+    print_verbose "TERMINAL_CHOICE value: '$TERMINAL_CHOICE'"
+
+    local terminal_name
+    case "$TERMINAL_CHOICE" in
+        1)
+            terminal_name="kitty"
+            ;;
+        2)
+            terminal_name="alacritty"
+            ;;
+        *)
+            print_warning "Invalid TERMINAL_CHOICE value: '$TERMINAL_CHOICE'. Using default (kitty)."
+            terminal_name="kitty"
+            ;;
+    esac
+    
+    print_verbose "Selected terminal: $terminal_name"
+
+    # Update app_variables.conf
+    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
+    
+    if [ -f "$app_vars_conf" ]; then
+        print_message "Updating terminal in app_variables.conf"
+        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_conf'" "Update terminal in app_variables.conf"
+    fi
+    
+    if [ -f "$app_vars_example" ]; then
+        print_message "Updating terminal in app_variables.conf example"
+        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_example'" "Update terminal in app_variables.conf example"
+    fi
+
+    # Update fish config
+    local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
+    local fish_conf_runtime="$HOME/.config/fish/conf.d/01-env.fish"
+    
+    if [ -f "$fish_conf" ]; then
+        print_message "Updating terminal in fish config"
+        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf'" "Update TERMINAL in fish config"
+        execute_command "sed -i -E 's|^set -x TERM .*|set -x TERM $terminal_name|' '$fish_conf'" "Update TERM in fish config"
+    fi
+    
+    if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
+        print_message "Updating terminal in runtime fish config"
+        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf_runtime'" "Update TERMINAL in runtime fish config"
+        execute_command "sed -i -E 's|^set -x TERM .*|set -x TERM $terminal_name|' '$fish_conf_runtime'" "Update TERM in runtime fish config"
+    fi
+
+    # Update scripts that reference alacritty specifically
+    local notes_script="$HOME/dotfiles/.config/hypr/scripts/notes.sh"
+    local float_calendar_script="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
+    local clipboard_script="$HOME/dotfiles/.config/waybar/scripts/clipboard.sh"
+    
+    if [ -f "$notes_script" ]; then
+        print_message "Updating terminal in notes.sh"
+        # Replace alacritty command calls but preserve INSIDE_ALACRITTY variable name
+        execute_command "sed -i -E 's|alacritty -t|$terminal_name -t|g' '$notes_script'" "Update terminal command in notes.sh"
+        execute_command "sed -i -E 's|\\\"alacritty\\\"|\\\"$terminal_name\\\"|g' '$notes_script'" "Update terminal string in notes.sh"
+        execute_command "sed -i -E 's|TERM != \\\"alacritty\\\"|TERM != \\\"$terminal_name\\\"|g' '$notes_script'" "Update TERM check in notes.sh"
+    fi
+    
+    if [ -f "$float_calendar_script" ]; then
+        print_message "Updating terminal in float_calendar.sh"
+        execute_command "sed -i -E 's|alacritty -e|$terminal_name -e|g' '$float_calendar_script'" "Update terminal in float_calendar.sh"
+    fi
+    
+    if [ -f "$clipboard_script" ]; then
+        print_message "Updating terminal in clipboard.sh"
+        execute_command "sed -i -E 's|alacritty --class|$terminal_name --class|g' '$clipboard_script'" "Update terminal in clipboard.sh"
+        execute_command "sed -i -E 's|alacritty-clipboard|$terminal_name-clipboard|g' '$clipboard_script'" "Update terminal class in clipboard.sh"
+    fi
+
+    print_message "Terminal configuration updated to: $terminal_name"
+}
+
+# Function to configure browser choice in dotfiles
+configure_browser() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_browser" "Would update browser configuration"
+        return 0
+    fi
+
+    # Trim whitespace and ensure we have a valid numeric value
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    
+    print_verbose "BROWSER_CHOICE value: '$BROWSER_CHOICE'"
+
+    local browser_name
+    local browser_class
+    local browser_command
+    case "$BROWSER_CHOICE" in
+        1)
+            browser_name="zen-browser"
+            browser_class="zen"
+            browser_command="zen-browser"
+            ;;
+        2)
+            browser_name="vivaldi"
+            browser_class="vivaldi-stable"
+            browser_command="hyprctl dispatch exec \"vivaldi-stable --ozone-platform=wayland --enable-features=UseOzonePlatform\""
+            ;;
+        *)
+            print_warning "Invalid BROWSER_CHOICE value: '$BROWSER_CHOICE'. Using default (zen-browser)."
+            browser_name="zen-browser"
+            browser_class="zen"
+            browser_command="zen-browser"
+            ;;
+    esac
+    
+    print_verbose "Selected browser: $browser_name"
+
+    # Update app_variables.conf
+    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
+    
+    for conf_file in "$app_vars_conf" "$app_vars_example"; do
+        [ -f "$conf_file" ] || continue
+        if [ "$conf_file" = "$app_vars_conf" ]; then
+            print_message "Updating browser in app_variables.conf"
+        else
+            print_message "Updating browser in app_variables.conf example"
+        fi
+        
+        # Remove all existing browser lines (including commented ones that match the pattern)
+        execute_command "sed -i '/^\\\$browser =/d' '$conf_file'" "Remove old browser lines"
+        execute_command "sed -i '/^# \\\$browser =/d' '$conf_file'" "Remove commented browser lines"
+        
+        # Add new browser line after $menu line using a temporary approach
+        local temp_file="${conf_file}.tmp"
+        local browser_line="\$browser = $browser_command"
+        if grep -q "^\\\$menu = " "$conf_file"; then
+            # Use awk to insert after $menu line
+            execute_command "awk -v cmd=\"$browser_line\" '/^\\\$menu = / {print; print cmd; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser after menu line"
+        elif grep -q "^\\\$fileManager = " "$conf_file"; then
+            execute_command "awk -v cmd=\"$browser_line\" '/^\\\$fileManager = / {print; print cmd; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser after fileManager line"
+        else
+            # Fallback: append to file
+            execute_command "printf '%s\n' \"$browser_line\" >> '$conf_file'" "Append browser line"
+        fi
+    done
+
+    # Update windows_and_workspaces.conf
+    local windows_conf="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+    local windows_example="$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.conf"
+    
+    for conf_file in "$windows_conf" "$windows_example"; do
+        [ -f "$conf_file" ] || continue
+        if [ "$conf_file" = "$windows_conf" ]; then
+            print_message "Updating browser workspace rule in windows_and_workspaces.conf"
+        else
+            print_message "Updating browser workspace rule in windows_and_workspaces.conf example"
+        fi
+        
+        # Remove old browser workspace rules (both vivaldi and zen)
+        execute_command "sed -i '/windowrule = workspace 2.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove old vivaldi workspace rule"
+        execute_command "sed -i '/windowrule = workspace 2.*match:class.*zen/d' '$conf_file'" "Remove old zen workspace rule"
+        execute_command "sed -i '/^# windowrule = workspace.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove commented vivaldi workspace rule"
+        execute_command "sed -i '/^# windowrule = workspace.*match:class.*zen/d' '$conf_file'" "Remove commented zen workspace rule"
+        
+        # Add new browser workspace rule after Workspace 2 comment
+        local temp_file="${conf_file}.tmp"
+        if grep -q "# Workspace 2" "$conf_file"; then
+            execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 2/ {print; print rule; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser workspace rule"
+        else
+            # If no Workspace 2 comment, add before Workspace 4
+            if grep -q "# Workspace 4" "$conf_file"; then
+                execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 4/ {print \"# Workspace 2\"; print rule; print; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add Workspace 2 section with browser rule"
+            else
+                # Fallback: append to file
+                execute_command "printf '%s\n' 'windowrule = workspace 2 silent, match:class $browser_class' >> '$conf_file'" "Append browser workspace rule"
+            fi
+        fi
+    done
+
+    print_message "Browser configuration updated to: $browser_name"
+}
+
 ##############################################################
 # Pacman Update and Hyprland Packages Installation
 ##############################################################
@@ -1208,9 +1431,7 @@ hyprland_packages=(
     # Shell
     "fish"
     
-    # Browser
-    "vivaldi"
-    "vivaldi-ffmpeg-codecs"
+    # Browser (will be selected based on user choice)
     
     # System Integration
     "xdg-desktop-portal-gtk"
@@ -1353,6 +1574,24 @@ install_pacman_packages() {
         print_message "Installing default Hyprland packages..."
     fi
 
+    # Add browser packages based on user choice
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    case "$BROWSER_CHOICE" in
+        1)
+            # zen-browser (AUR package)
+            print_message "Browser choice: zen-browser (will be installed via AUR)"
+            ;;
+        2)
+            # vivaldi
+            pkgs_to_install+=("vivaldi" "vivaldi-ffmpeg-codecs")
+            print_message "Browser choice: vivaldi (added to package list)"
+            ;;
+        *)
+            # Default to zen-browser
+            print_message "Browser choice: zen-browser (default, will be installed via AUR)"
+            ;;
+    esac
+
     # Append user-added pacman packages (if any)
     if [ -n "${USER_ADDED_PACMAN_PACKAGES}" ]; then
         read -r -a user_pac_arr <<< "${USER_ADDED_PACMAN_PACKAGES//,/ }"
@@ -1430,6 +1669,25 @@ install_aur_extras() {
         read -r -a user_aur_arr <<< "${USER_ADDED_AUR_PACKAGES//,/ }"
         aur_to_install+=("${user_aur_arr[@]}")
     fi
+
+    # Add browser packages based on user choice
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    case "$BROWSER_CHOICE" in
+        1)
+            # zen-browser (AUR package)
+            aur_to_install+=("zen-browser")
+            print_message "Browser choice: zen-browser (added to AUR package list)"
+            ;;
+        2)
+            # vivaldi is installed via pacman, skip here
+            print_message "Browser choice: vivaldi (installed via pacman)"
+            ;;
+        *)
+            # Default to zen-browser
+            aur_to_install+=("zen-browser")
+            print_message "Browser choice: zen-browser (default, added to AUR package list)"
+            ;;
+    esac
 
     # Deduplicate AUR list while preserving order
     if [ ${#aur_to_install[@]} -gt 0 ]; then
@@ -2188,6 +2446,8 @@ main() {
     fi
 
     get_fish_language_choice
+    get_terminal_choice
+    get_browser_choice
     check_disk_space
     check_distro
     check_desktop_environment
@@ -2261,6 +2521,8 @@ main() {
     install_aur_extras
     update_configs
     set_fish_language_config
+    configure_terminal
+    configure_browser
     configure_fish
     configure_environment
     configure_network_manager

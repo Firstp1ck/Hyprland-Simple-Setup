@@ -81,6 +81,7 @@ enum UiMode {
 struct PreflightConfig {
     prompt_default_yes: bool,
     fish_language_choice: u8, // 1,2,3
+    terminal_choice: u8, // 1=kitty, 2=alacritty
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -93,6 +94,7 @@ struct PreflightConfig {
 enum PreflightField {
     EnvPromptDefaultYn,
     EnvFishLanguageChoiceOverride,
+    EnvTerminalChoice,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
@@ -223,6 +225,7 @@ impl AppState {
             preflight: PreflightConfig {
                 prompt_default_yes: true,
                 fish_language_choice: 1,
+                terminal_choice: 1, // Default to kitty
                 wallpaper_dir: default_wallpaper,
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
@@ -667,6 +670,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         "Fish language",
         format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
         sel(PreflightField::EnvFishLanguageChoiceOverride),
+    ));
+    rows.push(mk(
+        "1/2",
+        "Terminal",
+        format!("{} (1=kitty,2=alacritty)", pf.terminal_choice),
+        sel(PreflightField::EnvTerminalChoice),
     ));
     rows.push(mk(
         "Edit",
@@ -1673,6 +1682,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         "FISH_LANGUAGE_CHOICE_OVERRIDE",
         pf.fish_language_choice.to_string(),
     );
+    cmd.env(
+        "TERMINAL_CHOICE_OVERRIDE",
+        pf.terminal_choice.to_string(),
+    );
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -2412,7 +2425,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvTerminalChoice,
+        PreflightField::EnvTerminalChoice => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
@@ -2430,7 +2444,8 @@ fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvTerminalChoice => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvTerminalChoice,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
@@ -2454,6 +2469,16 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
                 v = 1;
             }
             app.preflight.fish_language_choice = v as u8;
+        }
+        PreflightField::EnvTerminalChoice => {
+            let mut v = app.preflight.terminal_choice as i32 + delta;
+            if v < 1 {
+                v = 2;
+            }
+            if v > 2 {
+                v = 1;
+            }
+            app.preflight.terminal_choice = v as u8;
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Kill existing process to prevent duplicates
 pkill -x hyprsunset

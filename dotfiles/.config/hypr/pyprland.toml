@@ -8,8 +8,18 @@ plugins = [
 
 [scratchpads.term]
 animation = "fromTop"
-unfocus = "hide"
-command = "kitty --class kitty-dropterm"
-class = "kitty-dropterm"
+command = "alacritty --class=alacritty.term-top"
+class = "alacritty.term-top"
 size = "75% 60%"
 max_size = "1920px 100%"
+margin = 50
+unfocus = "hide"
+
+[scratchpads.volume]
+animation = "fromRight"
+command = "pavucontrol"
+class = "org.pulseaudio.pavucontrol"
+size = "40% 30%"
+position = "59% 4%"
+unfocus = "hide"
+lazy = true

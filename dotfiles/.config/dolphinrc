@@ -28,7 +28,6 @@ ShowFullPath=true
 ShowFullPathInTitlebar=true
 ShowToolTips=true
 SortingChoice=CaseInsensitiveSorting
-SplitView=true
 UseTabForSwitchingSplitView=true
 Version=202
 ViewPropsTimestamp=2025,3,6,22,13,8.213
@@ -55,6 +54,9 @@ IconSize=32
 
 [PreviewSettings]
 Plugins=appimagethumbnail,audiothumbnail,windowsexethumbnail,imagethumbnail,comicbookthumbnail,cursorthumbnail,djvuthumbnail,ebookthumbnail,exrthumbnail,jpegthumbnail,kraorathumbnail,windowsimagethumbnail,directorythumbnail,fontthumbnail,svgthumbnail,textthumbnail,gdk-pixbuf-thumbnailer
+
+[UiSettings]
+ColorScheme=BreezeDark
 
 [VersionControl]
 enabledPlugins=Git

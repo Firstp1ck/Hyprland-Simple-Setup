@@ -1,3 +1,4 @@
+# Pacman/Yay helper: update, install, remove, search packages, or update mirror list
 function pac
     switch $argv[1]
         case up

@@ -94,6 +94,7 @@
       "vivaldi",
       "vivaldi-ffmpeg-codecs"
     ],
+    "browser_zen": [],
     "system_integration": [
       "xdg-desktop-portal-gtk",
       "xdg-desktop-portal-kde",
@@ -135,7 +136,12 @@
       "zellij",
       "calcurse",
       "psensor",
-      "konsole"
+      "konsole",
+      "playerctl",
+      "brightnessctl",
+      "reflector",
+      "libnotify",
+      "jq"
     ],
     "gui_tools": []
   },
@@ -143,6 +149,9 @@
     "core_hyprland": [
       "pyprland",
       "hyprsunset"
+    ],
+    "browser": [
+      "zen-browser"
     ],
     "screenshots": [
       "hyprshot"
@@ -159,7 +168,8 @@
     "system_integration": [
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
-      "waybar-module-pacman-updates-git"
+      "waybar-module-pacman-updates-git",
+      "input-remapper-2"
     ],
     "cli_tools": [
       "lsplug"
@@ -250,6 +260,7 @@
 
     "vivaldi": "Vivaldi web browser",
     "vivaldi-ffmpeg-codecs": "Proprietary media codecs",
+    "zen-browser": "Zen Browser (privacy-focused Chromium fork)",
 
     "xdg-desktop-portal-gtk": "GTK portal backend",
     "xdg-desktop-portal-kde": "KDE portal backend",
@@ -290,6 +301,11 @@
     "calcurse": "CLI calendar and tasks",
     "psensor": "Hardware sensors monitor",
     "konsole": "KDE terminal",
+    "playerctl": "Media player control",
+    "brightnessctl": "Brightness control utility",
+    "reflector": "Arch mirrorlist updater",
+    "libnotify": "Desktop notifications library",
+    "jq": "JSON processor",
 
     "pyprland": "Hyprland plugin manager",
     "hyprsunset": "Night light for Hyprland",
@@ -302,7 +318,8 @@
     "xwaylandvideobridge": "XWayland capture bridge",
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
-    "lsplug": "Monitor plug/unplug events"
+    "lsplug": "Monitor plug/unplug events",
+    "input-remapper-2": "Mouse and keyboard button remapper"
   }
 }
 

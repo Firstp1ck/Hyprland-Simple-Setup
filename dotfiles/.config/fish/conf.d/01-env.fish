@@ -1,29 +1,58 @@
 # Language Settings
+set -gx LC_ALL de_CH.UTF-8
 set -gx LANG de_CH.UTF-8
 set -gx LANGUAGE de_CH:en_US
 
 # Editor and Terminal Settings
 set -gx EDITOR nvim
 set -gx VISUAL nvim
-set -x TERMINAL kitty
-set -x TERM kitty
-set -gx BROWSER "librewolf"
+set -x TERMINAL alacritty
+set -x TERM alacritty
+set -x BROWSER zen
 set -gx MANPAGER "nvim +Man!"
 
-# Path Settings
-set -x PATH /usr/local/bin $PATH
-set -x PATH $PATH $HOME/go/bin
+# Path Settings - fixed to avoid literal $PATH
+set -x PATH /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin \
+  $HOME/go/bin \
+  $HOME/.local/bin \
+  $HOME/.vscode/extensions \
+  $HOME/.fzf/bin \
+  /opt/rocm/bin /opt/rocm/hipopen/bin /opt/rocm/opencl/bin \
+  /usr/local/sbin /usr/local/bin /usr/lib/jvm/default/bin \
+  /usr/bin/site_perl /usr/bin/vendor_perl /usr/bin/core_perl \
+  /usr/lib/rustup/bin \
+  $HOME/Dokumente/GitHub/Linux-Setup/Scripts \
+  $HOME/Dokumente/GitHub/Open-Linux-Setup/Other \
+  $HOME/.local/scripts \
+  $HOME/.local/share/applications \
+  $HOME/.config/hypr/scripts \
+  $HOME/.config/waybar/scripts \
+  $HOME/.npm-global/bin
 
-# Script directories
-set LOCAL_SCRIPTS $HOME/.local/scripts
-set LOCAL_APPLICATIONS $HOME/.local/share/applications
-set HYPR_SCRIPTS $HOME/.config/hypr/scripts
-set WAYBAR_SCRIPTS $HOME/.config/waybar/scripts
 
-# Combine all script directories
-set -x SCRIPTS_DIR_PATH "$LOCAL_SCRIPTS:$LOCAL_APPLICATIONS:$HYPR_SCRIPTS:$WAYBAR_SCRIPTS"
-set -x PATH "$PATH:$SCRIPTS_DIR_PATH"
+# Make scripts executable (interactive shells only; skip if 'find' missing)
+set -l SCRIPTS_DIR_EXE \
+  $HOME/Dokumente/GitHub/Linux-Setup/Scripts \
+  $HOME/Dokumente/GitHub/Open-Linux-Setup/Other \
+  $HOME/.local/scripts \
+  $HOME/.local/share/applications \
+  $HOME/.config/hypr/scripts \
+  $HOME/.config/waybar/scripts
 
-# Make scripts executable
-set -l SCRIPTS_DIR_EXE $LOCAL_SCRIPTS $LOCAL_APPLICATIONS $HYPR_SCRIPTS $WAYBAR_SCRIPTS
-find $SCRIPTS_DIR_EXE -type f '(' -name '*.sh' -o -name '*.desktop' ')' -exec chmod +x '{}' ';'
+if status is-interactive
+    if type -q find
+        for dir in $SCRIPTS_DIR_EXE
+            if test -d $dir
+                command find $dir -type f -name '*.sh' -exec chmod +x '{}' ';'
+                command find $dir -type f -name '*.desktop' -exec chmod +x '{}' ';'
+            end
+        end
+    end
+end
+
+# Python Environment Variables for Certificates
+set -gx UV_NATIVE_TLS true
+set -gx SSL_CERT_FILE /etc/ssl/certs/ca-certificates.crt
+set -gx REQUESTS_CA_BUNDLE $SSL_CERT_FILE
+set -x PYTHONHTTPSVERIFY 1
+
