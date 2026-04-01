@@ -1623,6 +1623,97 @@ configure_browser() {
     print_message "Browser configuration updated to: $browser_name"
 }
 
+configure_hypr_autostart_optional_extras() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_hypr_autostart_optional_extras" "Would uncomment optional exec-once lines in Hyprland autostart.conf when tools are installed"
+        return 0
+    fi
+
+    uncomment_line_if_cmd_exists() {
+        local conf_file="$1"
+        local cmd="$2"
+        local line="$3"
+        command -v "$cmd" >/dev/null 2>&1 || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${cmd}"
+    }
+
+    uncomment_line_if_unit_exists() {
+        local conf_file="$1"
+        local unit="$2"
+        local line="$3"
+        systemctl --user list-unit-files --all 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit" || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${unit}"
+    }
+
+    uncomment_line_if_file_exists() {
+        local conf_file="$1"
+        local file="$2"
+        local line="$3"
+        [ -f "$file" ] || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: $(basename "$file")"
+    }
+
+    get_configured_terminal() {
+        local app_vars="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+        local t=""
+        if [ -f "$app_vars" ]; then
+            t=$(awk -F'=' '/^[[:space:]]*\\$terminal[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$app_vars" 2>/dev/null || true)
+        fi
+        if [ -n "$t" ] && command -v "$t" >/dev/null 2>&1; then
+            printf '%s' "$t"
+            return 0
+        fi
+        if command -v kitty >/dev/null 2>&1; then
+            printf '%s' "kitty"
+            return 0
+        fi
+        if command -v alacritty >/dev/null 2>&1; then
+            printf '%s' "alacritty"
+            return 0
+        fi
+        return 1
+    }
+
+    local configured_terminal=""
+    configured_terminal=$(get_configured_terminal || true)
+
+    local conf_files=(
+        "$HOME/dotfiles/.config/hypr/sources/autostart.conf"
+        "$HOME/dotfiles/.config/hypr/sources_example/autostart.conf"
+    )
+
+    local conf_file=""
+    for conf_file in "${conf_files[@]}"; do
+        [ -f "$conf_file" ] || continue
+
+        uncomment_line_if_cmd_exists "$conf_file" "swaync" "exec-once = swaync"
+        uncomment_line_if_cmd_exists "$conf_file" "nm-applet" "exec-once = nm-applet --indicator &"
+        uncomment_line_if_cmd_exists "$conf_file" "pypr" "exec-once = pypr"
+        uncomment_line_if_unit_exists "$conf_file" "app-org.kde.xwaylandvideobridge@autostart.service" "exec-once = systemctl --user start app-org.kde.xwaylandvideobridge@autostart.service &"
+
+        # Lines that include Hyprland variables ($hyprscripts/$mouse) must stay literal.
+        uncomment_line_if_file_exists "$conf_file" "$HOME/dotfiles/.config/hypr/scripts/fix-dolphin.sh" "exec-once = \$hyprscripts/fix-dolphin.sh &"
+        uncomment_line_if_cmd_exists "$conf_file" "input-remapper-control" "exec-once = input-remapper-control --command autoload --device \$mouse &"
+
+        uncomment_line_if_cmd_exists "$conf_file" "hyprsunset" "exec-once = hyprsunset"
+        uncomment_line_if_cmd_exists "$conf_file" "blueman-applet" "exec-once = blueman-applet &"
+        uncomment_line_if_cmd_exists "$conf_file" "blueman-tray" "exec-once = blueman-tray &"
+
+        # Workspace 3 terminal examples: enable only when the referenced terminal + config exists.
+        if [ "$configured_terminal" = "kitty" ]; then
+            uncomment_line_if_file_exists "$conf_file" "$HOME/.config/kitty/my_layout.conf" "exec-once = [workspace 3 silent] kitty --session ~/.config/kitty/my_layout.conf"
+
+            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+                uncomment_line_if_cmd_exists "$conf_file" "kitty" "exec-once = [workspace 3 silent] kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
+            fi
+        elif [ "$configured_terminal" = "alacritty" ]; then
+            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+                uncomment_line_if_cmd_exists "$conf_file" "alacritty" "exec-once = [workspace 3 silent] alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
+            fi
+        fi
+    done
+}
+
 ##############################################################
 # Pacman Update and Hyprland Packages Installation
 ##############################################################
@@ -2860,6 +2951,7 @@ main() {
     set_fish_language_config
     configure_terminal
     configure_browser
+    configure_hypr_autostart_optional_extras
     configure_fish
     configure_environment
     configure_network_manager

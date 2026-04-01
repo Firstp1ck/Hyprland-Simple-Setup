@@ -60,7 +60,6 @@ processes=(
     "Telegram"
     "wasistlos"
     "hyprsunset"
-    "gpu-screen-recorder"
     "conky"
     "fcitx5"
     "bluetoothd"

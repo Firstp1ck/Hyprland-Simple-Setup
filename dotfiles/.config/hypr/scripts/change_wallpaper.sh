@@ -127,6 +127,11 @@ fi
 pkill -f "hyprctl.*hyprpaper" 2>/dev/null
 sleep 0.1
 
+# Set fallback wallpaper target first (empty monitor selector).
+# This follows current hyprpaper IPC docs and avoids "no target" on
+# dynamic outputs until monitor-specific assignments are applied.
+hyprctl hyprpaper wallpaper ", $WALLPAPER, cover" >/dev/null 2>&1 || true
+
 # Set wallpaper on each monitor with retry logic
 # New hyprpaper 0.8.0 IPC format: 'monitor, path, fit_mode'
 # fit_mode is optional and defaults to 'cover' if omitted
@@ -137,7 +142,10 @@ for monitor in "${MONITORS[@]}"; do
   
   while [ $retry_count -lt $max_retries ] && [ "$success" = false ]; do
     # New format requires spaces: monitor, path, fit_mode
-    if hyprctl hyprpaper wallpaper "$monitor, $WALLPAPER, cover" &>/dev/null; then
+    wallpaper_out="$(hyprctl hyprpaper wallpaper "$monitor, $WALLPAPER, cover" 2>&1 || true)"
+    if [ -z "$wallpaper_out" ]; then
+      success=true
+    elif echo "$wallpaper_out" | grep -qiE "ok|applied|success"; then
       success=true
     else
       retry_count=$((retry_count + 1))
@@ -149,6 +157,7 @@ for monitor in "${MONITORS[@]}"; do
   
   if [ "$success" = false ]; then
     echo "Error: Failed to set wallpaper on $monitor after $max_retries attempts" >&2
+    [ -n "${wallpaper_out:-}" ] && echo "hyprpaper output: $wallpaper_out" >&2
   fi
 done
 
