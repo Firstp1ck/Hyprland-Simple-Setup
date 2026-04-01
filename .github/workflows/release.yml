@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
       
-      - name: Get tag name and check prerelease
+      - name: Get tag name
         id: tag
         run: |
           if [ -n "${{ github.event.release.tag_name }}" ]; then
@@ -29,18 +29,6 @@ jobs:
             TAG="${{ github.ref_name }}"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          
-          # Extract version number (remove 'v' prefix if present)
-          VERSION="${TAG#v}"
-          # Extract major version (first number before the dot)
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          
-          # Prerelease if major version < 1
-          if [ "$MAJOR" -lt 1 ] 2>/dev/null; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-          fi
       
       - name: Create or Update Release (source only)
         uses: softprops/action-gh-release@v2
@@ -48,7 +36,6 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Release ${{ steps.tag.outputs.tag }}
           draft: false
-          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
           generate_release_notes: false
           fail_on_unmatched_files: false
           token: ${{ secrets.GITHUB_TOKEN }}

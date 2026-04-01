@@ -23,7 +23,7 @@
 # Configuration
 # ============================================================================
 
-set -g PACSEA_DIR (realpath (dirname (status filename))/../..)
+set -g REPO_DIR (realpath (dirname (status filename))/../..)
 set -g AUR_GIT_DIR "$HOME/aur-packages/hyprland-simple-setup-git"
 set -g DRY_RUN false
 
@@ -122,7 +122,7 @@ function validate_semver
 end
 
 function get_current_version
-    grep -m1 '^version = ' "$PACSEA_DIR/Cargo.toml" | sed 's/version = "\(.*\)"/\1/'
+    grep -m1 '^version = ' "$REPO_DIR/Cargo.toml" | sed 's/version = "\(.*\)"/\1/'
 end
 
 function is_prerelease_version
@@ -180,7 +180,7 @@ function phase1_version_update
     if test "$DRY_RUN" = true
         log_info "[DRY-RUN] Would update version in Cargo.toml from $current_ver to $new_ver"
     else
-        sed -i "s/^version = \"$current_ver\"/version = \"$new_ver\"/" "$PACSEA_DIR/Cargo.toml"
+        sed -i "s/^version = \"$current_ver\"/version = \"$new_ver\"/" "$REPO_DIR/Cargo.toml"
         if test $status -eq 0
             log_success "Updated Cargo.toml"
         else
@@ -192,7 +192,7 @@ function phase1_version_update
     # Step 1.2: Run cargo check to update Cargo.lock
     log_step "Updating Cargo.lock"
     
-    cd "$PACSEA_DIR"
+    cd "$REPO_DIR"
     dry_run_cmd "cargo check"
     if test $status -eq 0
         log_success "Cargo.lock updated"
@@ -218,7 +218,7 @@ function phase2_documentation
     log_step "Generate Release Notes"
     _blue; echo -n "[INFO] "; _reset; echo -n "Please run: "; _bold; echo "/release-new $new_ver"; _reset
     
-    set -l release_file "$PACSEA_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
     
     if test "$DRY_RUN" = true
         log_info "[DRY-RUN] Would wait for release notes generation"
@@ -238,49 +238,8 @@ function phase2_documentation
     
     # Step 2.2: Update CHANGELOG.md
     update_changelog "$new_ver"
-    
-    # Step 2.3: Auto-generate announcement from release file
-    log_step "Auto-generate Announcement"
-    
-    if test "$DRY_RUN" = true
-        log_info "[DRY-RUN] Would generate announcement from release file"
-    else
-        if test -f "$release_file"
-            generate_announcement "$release_file" "$new_ver"
-        else
-            log_warn "Skipping announcement generation (no release file)"
-        end
-    end
-    
-    # Step 2.4: Run update_version_announcement.py
-    log_step "Update Version Announcement in Code"
-    
-    set -l announcement_file "$PACSEA_DIR/dev/ANNOUNCEMENTS/version_announcement_content.md"
-    
-    if test "$DRY_RUN" = true
-        log_info "[DRY-RUN] Would run update_version_announcement.py"
-    else
-        if test -f "$announcement_file"
-            set -l announcement_content (cat "$announcement_file")
-            python3 "$PACSEA_DIR/dev/scripts/update_version_announcement.py" \
-                "$new_ver" \
-                "Version $new_ver" \
-                --file "$announcement_file"
-            
-            if test $status -eq 0
-                log_success "Announcement updated in code"
-            else
-                log_error "Failed to update announcement"
-                if not confirm_continue "Continue anyway?"
-                    return 1
-                end
-            end
-        else
-            log_warn "Announcement file not found, skipping..."
-        end
-    end
-    
-    # Step 2.5: README update with Cursor
+
+    # Step 2.3: README update with Cursor
     log_step "Update README"
     _blue; echo -n "[INFO] "; _reset; echo -n "Please run: "; _bold; echo "/readme-update"; _reset
     
@@ -291,7 +250,7 @@ function phase2_documentation
         log_success "README update complete"
     end
     
-    # Step 2.6: Wiki update with Cursor
+    # Step 2.4: Wiki update with Cursor
     log_step "Update Wiki"
     _blue; echo -n "[INFO] "; _reset; echo -n "Please run: "; _bold; echo "/wiki-update"; _reset
     
@@ -302,7 +261,7 @@ function phase2_documentation
         log_success "Wiki update complete"
     end
     
-    # Step 2.7: Update SECURITY.md if major/minor version changed
+    # Step 2.5: Update SECURITY.md if major/minor version changed
     if is_major_or_minor_change "$old_ver" "$new_ver"
         log_step "Update SECURITY.md"
         update_security_md "$new_ver"
@@ -311,97 +270,6 @@ function phase2_documentation
     end
     
     return 0
-end
-
-function generate_announcement
-    set -l release_file $argv[1]
-    set -l ver $argv[2]
-    set -l output_file "$PACSEA_DIR/dev/ANNOUNCEMENTS/version_announcement_content.md"
-    
-    log_info "Parsing release file for announcement..."
-    
-    # Collect all bullet points from the "What's New" section
-    set -l all_items
-    set -l in_whats_new false
-    set -l current_subsection ""
-    
-    # Parse the release file line by line
-    while read -l line
-        # Detect "## What's New" section start
-        if string match -r -- '^##\s+What' "$line"
-            set in_whats_new true
-            continue
-        end
-        
-        # Detect end of "What's New" section (another ## header)
-        if test "$in_whats_new" = true
-            if string match -r -- '^##\s+' "$line"
-                # Another major section - stop parsing
-                set in_whats_new false
-                continue
-            end
-        end
-        
-        # Inside What's New section
-        if test "$in_whats_new" = true
-            # Detect subsection headers (### ...)
-            if string match -r -- '^###' "$line"
-                # Extract subsection name (strip ### and emoji)
-                set current_subsection (string replace -r -- '^###\s*[^\s]*\s*' '' "$line" | string trim)
-                continue
-            end
-            
-            # Extract bullet points
-            if string match -r -- '^[*\-]\s+' "$line"
-                set -l item (string replace -r -- '^[*\-]\s+' '' "$line")
-                # Truncate very long items (keep up to 150 chars to preserve content)
-                if test (string length "$item") -gt 150
-                    set item (string sub -l 147 "$item")"..."
-                end
-                # Skip empty items
-                if test -n "$item"
-                    set -a all_items "$item"
-                end
-            end
-        end
-    end < "$release_file"
-    
-    # Build the announcement content
-    set -l tmp_output (mktemp)
-    echo "## What's New" > "$tmp_output"
-    echo "" >> "$tmp_output"
-    
-    # Add items (limit to 5 total)
-    set -l count 0
-    for item in $all_items
-        if test $count -lt 5
-            echo "- $item" >> "$tmp_output"
-            set count (math $count + 1)
-        end
-    end
-    echo "" >> "$tmp_output"
-    
-    # Check character count (max 800)
-    set -l char_count (wc -c < "$tmp_output" | string trim)
-    if test $char_count -gt 800
-        log_warn "Announcement exceeds 800 chars ($char_count), truncating..."
-    end
-    
-    # Move to output file
-    mv "$tmp_output" "$output_file"
-    log_success "Generated announcement ($char_count chars) at: $output_file"
-    
-    # Show preview
-    echo
-    _cyan; echo "--- Announcement Preview ---"; _reset
-    cat "$output_file"
-    _cyan; echo "--- End Preview ---"; _reset
-    echo
-    
-    if not confirm_continue "Accept this announcement?"
-        log_info "Please edit the file manually..."
-        wait_for_user "Press Enter after editing $output_file..."
-    end
 end
 
 # ============================================================================
@@ -444,7 +312,7 @@ function phase4_build_release
     
     log_phase "4. Build and Release"
     
-    cd "$PACSEA_DIR"
+    cd "$REPO_DIR"
     
     # Step 4.1: Run cargo-dev (tests/checks)
     log_step "Running cargo-dev (tests and checks)"
@@ -466,7 +334,7 @@ function phase4_build_release
         log_info "[DRY-RUN] Would commit all changes with message: Release v$new_ver"
         log_info "[DRY-RUN] Would push to origin"
     else
-        cd "$PACSEA_DIR"
+        cd "$REPO_DIR"
         git add -A
         git commit -m "Release v$new_ver"
         if test $status -eq 0
@@ -526,7 +394,7 @@ function phase4_build_release
     # Step 4.5: Create GitHub release (source only)
     log_step "Creating GitHub Release"
     
-    set -l release_file "$PACSEA_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
     
     # Determine if this is a prerelease (version < 1.0.0)
     set -l prerelease_flag ""
@@ -624,9 +492,6 @@ function check_prerequisites
         set missing $missing "git"
     end
     
-    if not command -q python3
-        set missing $missing "python3"
-    end
     
     # Check for fish functions
     if not functions -q cargo-dev
@@ -643,8 +508,8 @@ function check_prerequisites
     end
     
     # Check directories exist
-    if not test -d "$PACSEA_DIR"
-        log_error "Pacsea directory not found: $PACSEA_DIR"
+    if not test -d "$REPO_DIR"
+        log_error "Repo directory not found: $REPO_DIR"
         return 1
     end
     
@@ -664,7 +529,7 @@ end
 function check_preflight
     log_info "Running pre-flight checks..."
     
-    cd "$PACSEA_DIR"
+    cd "$REPO_DIR"
     
     # Check if on main branch
     set -l current_branch (git branch --show-current)
@@ -700,7 +565,7 @@ end
 
 function update_security_md
     set -l new_ver $argv[1]
-    set -l security_file "$PACSEA_DIR/SECURITY.md"
+    set -l security_file "$REPO_DIR/SECURITY.md"
     
     log_step "Updating SECURITY.md"
     
@@ -803,8 +668,8 @@ end
 
 function update_changelog
     set -l new_ver $argv[1]
-    set -l changelog_file "$PACSEA_DIR/CHANGELOG.md"
-    set -l release_file "$PACSEA_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l changelog_file "$REPO_DIR/CHANGELOG.md"
+    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
     
     log_step "Updating CHANGELOG.md"
     
