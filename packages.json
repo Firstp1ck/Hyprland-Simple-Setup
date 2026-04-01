@@ -93,9 +93,9 @@
     ],
     "browser": [
       "vivaldi",
-      "vivaldi-ffmpeg-codecs"
+      "vivaldi-ffmpeg-codecs",
+      "zen-browser"
     ],
-    "browser_zen": [],
     "system_integration": [
       "xdg-desktop-portal-gtk",
       "xdg-desktop-portal-kde",
