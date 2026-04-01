@@ -313,7 +313,7 @@ get_first_hypr_monitor() {
 
 # Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor
 ensure_wallpaper_monitors() {
-    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    local wallpaper_conf="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
     [ -f "$wallpaper_conf" ] || return 0
 
     # Read existing MONITORS line if any
@@ -899,6 +899,26 @@ validate_wallpaper_dir() {
     return 0
 }
 
+# Prefer $HOME/Pictures; fallback to $HOME/Bilder; create Pictures if neither exists.
+resolve_user_pictures_dir() {
+    local pictures_dir="$HOME/Pictures"
+    local bilder_dir="$HOME/Bilder"
+
+    if [ -d "$pictures_dir" ]; then
+        echo "$pictures_dir"
+        return 0
+    fi
+
+    if [ -d "$bilder_dir" ]; then
+        echo "$bilder_dir"
+        return 0
+    fi
+
+    # If user doesn't have either (or uses custom XDG dirs), default to Pictures and create it.
+    mkdir -p "$pictures_dir"
+    echo "$pictures_dir"
+}
+
 # Function to check and prompt user input for required variables
 check_user_input() {
     # Find Hyprland-Simple-Setup directory first
@@ -1071,9 +1091,21 @@ update_configs() {
         track_config_status "Dotfiles Setup" "$CROSS_MARK"
     fi
 
+    # Copy wallpapers into the user's pictures directory (Pictures or Bilder).
+    # This ensures change_wallpaper.sh can pick wallpapers from a stable location.
+    local source_wallpaper_dir="$WALLPAPER_DIR"
+    local pictures_base
+    pictures_base="$(resolve_user_pictures_dir)"
+    local target_wallpaper_dir="$pictures_base/Wallpapers"
+    execute_command "mkdir -p '$target_wallpaper_dir'" "Create wallpapers directory in pictures folder"
+    execute_command "cp -a '$source_wallpaper_dir/.' '$target_wallpaper_dir/'" "Copy wallpapers into $target_wallpaper_dir"
+
+    # Point WALLPAPER_DIR to the copied location from here on.
+    WALLPAPER_DIR="$target_wallpaper_dir"
+
     # Update the wallpaper configuration file
-    # Use the active runtime config under ~/.config; if symlinked to dotfiles, it will update there too
-    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    # Use the active runtime config under ~/.config; change_wallpaper.sh sources sources_specific/change_wallpaper.conf
+    local wallpaper_conf="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
     execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory"
     # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
     if [ -f "$wallpaper_conf" ]; then
@@ -2105,7 +2137,7 @@ configure_monitor() {
         # local monitors_conf_file="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/monitors.conf"
         local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
         # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
-        local wallpaper_conf="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+        local wallpaper_conf="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
 
         # Function to get available modes for a monitor
         get_monitor_modes() {
