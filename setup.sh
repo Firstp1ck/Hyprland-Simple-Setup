@@ -1454,7 +1454,7 @@ hyprland_packages=(
     "dysk"
     "duf"
     "bat"
-    "lsd"
+    "eza"
     "btop"
     "zoxide"
     "lshw"
@@ -1466,6 +1466,7 @@ hyprland_packages=(
     "zellij"
     "calcurse"
     "psensor"
+    "starship"
 
     # Calculator
     "qalculate-gtk"
