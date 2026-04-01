@@ -17,7 +17,5 @@ RELEASE.md
 # Added by cargo
 /target
 
-Documents/*
-
 dev/COMMIT
 dev/PR/*

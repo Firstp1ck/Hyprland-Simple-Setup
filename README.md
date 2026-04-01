@@ -164,6 +164,11 @@ It sets up the following Components/Apps:
      - Verify installations
      - Guide you through configuration steps
 
+   - Recommended: run the interactive TUI (same installer, guided preflight):
+     ```bash
+     cargo run --release
+     ```
+
 3. If you add new configuration files add them to the `dotfiles` folder to match your system (e.g. displays, wallpapers, and environment variables, see section: [Manuell Installation & Configuration](#manuell-installation--configuration)).
 
 4. **Deploy dotfiles using GNU stow:**
@@ -194,7 +199,7 @@ rustup component add rust-analyzer
 Clone and run the TUI:
 
 ```bash
-git clone -b Rust-TUI-Setup https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
+git clone https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
 cd ~/Hyprland-Simple-Setup
 cargo run --release
 ```
@@ -225,7 +230,7 @@ Notes:
 ## Prerequisites
 - Arch-based Linux distribution (tested on EndeavourOS and Arch, with Archinstall-Script)
 - Base development tools (`git`, `sudo`)
-- YAY AUR helper (will be installed if missing)
+- An AUR helper (supported: `yay`, `paru`, `pikaur`; the setup will guide you if missing)
 - A directory containing your wallpapers (Will use Default Wallpapers from the Repository otherwise)
 - Internet connection for package downloads
 
@@ -235,6 +240,7 @@ Notes:
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
 - **Logging:** All actions logged to `~/Hyprland-Simple-Setup.log`
+- **Release notes:** See `Documents/RELEASE_v*.md` and `CHANGELOG.md`
 
 ## Project Structure
 

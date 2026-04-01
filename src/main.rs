@@ -81,7 +81,7 @@ enum UiMode {
 struct PreflightConfig {
     prompt_default_yes: bool,
     fish_language_choice: u8, // 1,2,3
-    terminal_choice: u8, // 1=kitty, 2=alacritty
+    terminal_choice: u8,      // 1=kitty, 2=alacritty
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -523,9 +523,15 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             // Determine color priority: Error > Warning > Blue(current) > Green(done) > default
             let style = if Some(idx) == app.current_section {
                 match sec.severity {
-                    StepSeverity::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    StepSeverity::Warning => Style::default().fg(app.theme.yellow).add_modifier(Modifier::BOLD),
-                    StepSeverity::None => Style::default().fg(app.theme.blue).add_modifier(Modifier::BOLD),
+                    StepSeverity::Error => {
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                    }
+                    StepSeverity::Warning => Style::default()
+                        .fg(app.theme.yellow)
+                        .add_modifier(Modifier::BOLD),
+                    StepSeverity::None => Style::default()
+                        .fg(app.theme.blue)
+                        .add_modifier(Modifier::BOLD),
                 }
             } else if sec.done {
                 match sec.severity {
@@ -1390,7 +1396,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let lines: Vec<Line> = if app.info_lines.is_empty() {
             vec![Line::from("")]
         } else {
-            app.info_lines.iter().map(|l| Line::from(l.clone())).collect()
+            app.info_lines
+                .iter()
+                .map(|l| Line::from(l.clone()))
+                .collect()
         };
         let msg = Paragraph::new(Text::from(lines))
             .style(Style::default().fg(app.theme.text))
@@ -1749,10 +1758,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         "FISH_LANGUAGE_CHOICE_OVERRIDE",
         pf.fish_language_choice.to_string(),
     );
-    cmd.env(
-        "TERMINAL_CHOICE_OVERRIDE",
-        pf.terminal_choice.to_string(),
-    );
+    cmd.env("TERMINAL_CHOICE_OVERRIDE", pf.terminal_choice.to_string());
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -2888,8 +2894,8 @@ fn monitor_setup_availability() -> (bool, Vec<String>) {
 fn has_any_cmd(candidates: &[Option<String>]) -> bool {
     candidates
         .iter()
-        .cloned()
         .flatten()
+        .cloned()
         .any(|c| Command::new(c).arg("--version").output().is_ok())
 }
 
@@ -2931,8 +2937,7 @@ fn startup_prereq_warnings(app: &AppState) -> Vec<String> {
     }
 
     let mut lines = vec![
-        "Some required tools/files are missing; parts of the TUI/setup will not work."
-            .to_string(),
+        "Some required tools/files are missing; parts of the TUI/setup will not work.".to_string(),
         "".to_string(),
         "Missing:".to_string(),
     ];
@@ -2945,10 +2950,10 @@ fn startup_prereq_warnings(app: &AppState) -> Vec<String> {
 }
 
 fn try_cmd_text(candidates: &[Option<String>], args: &[&str]) -> Option<String> {
-    for cand in candidates.iter().cloned().flatten() {
-        match Command::new(&cand).args(args).output() {
+    for cand in candidates.iter().flatten() {
+        match Command::new(cand).args(args).output() {
             Ok(out) if out.status.success() => {
-                return Some(String::from_utf8_lossy(&out.stdout).to_string())
+                return Some(String::from_utf8_lossy(&out.stdout).to_string());
             }
             _ => continue,
         }
@@ -3025,30 +3030,31 @@ fn parse_xrandr_monitors(text: &str) -> Vec<MonitorInfo> {
 
         if current_name.is_some() {
             let lt = l.trim_start();
-            if let Some(tok) = lt.split_whitespace().next() {
-                if tok.contains('x')
-                    && tok.chars()
+            if let Some(tok) = lt.split_whitespace().next()
+                && tok.contains('x')
+                && tok
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+            {
+                let hz = lt
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim_end_matches(['*', '+']);
+                if !hz.is_empty()
+                    && hz
+                        .chars()
                         .next()
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false)
                 {
-                    let hz = lt
-                        .split_whitespace()
-                        .nth(1)
-                        .unwrap_or("")
-                        .trim_end_matches(['*', '+']);
-                    if !hz.is_empty()
-                        && hz.chars()
-                            .next()
-                            .map(|c| c.is_ascii_digit())
-                            .unwrap_or(false)
-                    {
-                        current_modes.push(format!("{}@{}", tok, hz));
-                    } else {
-                        current_modes.push(tok.to_string());
-                    }
+                    current_modes.push(format!("{}@{}", tok, hz));
+                } else {
+                    current_modes.push(tok.to_string());
                 }
-            }
+            };
         }
     }
     flush(&mut out, &mut current_name, &mut current_modes);
@@ -3080,7 +3086,11 @@ fn discover_drm_connectors() -> Vec<MonitorInfo> {
         if status.trim() != "connected" {
             continue;
         }
-        let pretty = name.splitn(2, '-').nth(1).unwrap_or(&name).to_string();
+        let pretty = name
+            .split_once('-')
+            .map(|x| x.1)
+            .unwrap_or(&name)
+            .to_string();
         out.push(MonitorInfo {
             name: pretty,
             modes: vec!["<unknown>".to_string()],
@@ -3227,7 +3237,8 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     let mut sev: Option<StepSeverity> = None;
     if lower.contains("[error]") || lower.starts_with("error: ") {
         sev = Some(StepSeverity::Error);
-    } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ") {
+    } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ")
+    {
         sev = Some(StepSeverity::Warning);
     }
     if let Some(sev_val) = sev
@@ -3374,7 +3385,11 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
             if let Some(title) = get_title_for_fn(&fname)
                 && !out.iter().any(|s| s.title == title)
             {
-                out.push(SetupSection { title, done: false, severity: StepSeverity::None });
+                out.push(SetupSection {
+                    title,
+                    done: false,
+                    severity: StepSeverity::None,
+                });
             }
         }
     }

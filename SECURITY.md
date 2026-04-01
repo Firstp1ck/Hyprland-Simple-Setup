@@ -8,8 +8,8 @@ are receiving security fixes.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| <0.3.0  | :x:                |
-| 0.3.0   | :white_check_mark: |
+| 0.6.x   | :white_check_mark: |
+| < 0.6.0   | :x:                |
 | x.x.x   | :x:                |
 
 ## Reporting a Vulnerability
