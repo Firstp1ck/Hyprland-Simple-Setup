@@ -42,8 +42,27 @@ format_repo_label() {
 }
 
 discover_git_repos() {
-  local -a roots=("/")
+  # Defaulting to filesystem root (/) makes discovery expensive/noisy on most systems:
+  # it traverses many unrelated/unreadable directories and can slow down the picker.
+  # Prefer user locations by default; opt in to scanning / via REPOS_WOFI_INCLUDE_ROOT=1
+  # or by explicitly listing / in REPOS_WOFI_ROOTS.
+  local -a roots=()
   local max_depth="${REPOS_WOFI_MAX_DEPTH:-6}"
+
+  if [[ -n "${REPOS_WOFI_ROOTS:-}" ]]; then
+    # Colon-separated list of roots, e.g. "$HOME:$HOME/GitHub:/mnt/SSD_NVME_4TB/GitHub"
+    IFS=':' read -r -a roots <<<"${REPOS_WOFI_ROOTS}"
+  else
+    roots=(
+      "$HOME"
+      "$HOME/GitHub"
+      "$HOME/Github"
+      "$HOME/Projects"
+    )
+    if [[ "${REPOS_WOFI_INCLUDE_ROOT:-0}" == "1" ]]; then
+      roots+=("/")
+    fi
+  fi
 
   local root
   for root in "${roots[@]}"; do
@@ -69,7 +88,7 @@ discover_git_repos() {
 
 # Collect repos
 repos="$(discover_git_repos || true)"
-[[ -n "$repos" ]] || { die "No git repos found (searched: /, max depth: ${REPOS_WOFI_MAX_DEPTH:-6})"; exit 1; }
+[[ -n "$repos" ]] || { die "No git repos found (max depth: ${REPOS_WOFI_MAX_DEPTH:-6}). Configure search roots via REPOS_WOFI_ROOTS or set REPOS_WOFI_INCLUDE_ROOT=1."; exit 1; }
 
 # Pick repo
 declare -A __label_counts=()

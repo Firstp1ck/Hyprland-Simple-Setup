@@ -7,11 +7,14 @@ set -gx LANGUAGE de_CH:en_US
 set -gx EDITOR nvim
 set -gx VISUAL nvim
 set -x TERMINAL alacritty
-set -x TERM alacritty
 set -x BROWSER zen
 set -gx MANPAGER "nvim +Man!"
 
-# Path Settings - fixed to avoid literal $PATH
+# PATH settings
+# NOTE: This replaces PATH with a fixed list and does not preserve the inherited $PATH.
+# That can drop distro/user-provided entries (e.g. from display/login managers, direnv, asdf, etc.).
+# Prefer appending/prepending to the existing PATH (fish_add_path or `set -gx PATH <new> $PATH`)
+# unless you intentionally want a fully fixed PATH.
 set -x PATH /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin \
   $HOME/go/bin \
   $HOME/.local/bin \
@@ -28,7 +31,10 @@ set -x PATH /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin \
   $HOME/.npm-global/bin
 
 
-# Make scripts executable (interactive shells only; skip if 'find' missing)
+# Make scripts executable
+# NOTE: This currently runs `find ... -exec chmod +x` on every interactive shell start.
+# That can be expensive and also mutates files as a side effect of launching a shell.
+# Consider moving this to setup-time or a one-shot command instead.
 set -l SCRIPTS_DIR_EXE \
   $HOME/.local/scripts \
   $HOME/.local/share/applications \

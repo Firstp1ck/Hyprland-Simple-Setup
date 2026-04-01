@@ -191,7 +191,7 @@
         "exec-if": "which waybar-module-pacman-updates",
         "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
         "menu": "on-click-right",
-        "menu-file": "~/.config/waybar/update_menu.xml"
+        "menu-file": "$HOME/.config/waybar/update_menu.xml"
     },
 
     "custom/notification": {

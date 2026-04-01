@@ -189,6 +189,19 @@ struct AppState {
     add_packages_append_mode: bool,
 }
 
+fn sync_terminal_package_selection(app: &mut AppState) {
+    // `packages.json` includes both terminals. Preflight "terminal choice" determines which one is
+    // enabled by default, while still allowing manual overrides in the package selector.
+    let want_kitty = app.preflight.terminal_choice == 1;
+    let want_alacritty = app.preflight.terminal_choice == 2;
+
+    if app.pacman_sel_map.contains_key("kitty") || app.pacman_sel_map.contains_key("alacritty") {
+        app.pacman_sel_map.insert("kitty".to_string(), want_kitty);
+        app.pacman_sel_map
+            .insert("alacritty".to_string(), want_alacritty);
+    }
+}
+
 impl AppState {
     fn new(rx: Receiver<String>, tx: Sender<String>, setup_script: Option<PathBuf>) -> Self {
         let mut list_state = ListState::default();
@@ -289,6 +302,7 @@ impl AppState {
                     s.aur_sel_map.insert(p.clone(), true);
                 }
             }
+            sync_terminal_package_selection(&mut s);
         }
         // Check monitor setup availability early (before Hyprland is installed/running).
         let mut startup_warnings: Vec<String> = Vec::new();
@@ -1330,9 +1344,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Simple info popup (dismiss with Enter/Esc)
     if app.editing && app.edit_kind == EditKind::Info {
         let area_w = area.width as i32;
-        let popup_w = (area_w * 3 / 5).max(40) as u16;
+        // Clamp to avoid underflow in `popup_rect.{width,height} - 2` on tiny terminals.
+        let desired_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_w = if area.width < 4 {
+            area.width
+        } else {
+            desired_w.min(area.width)
+        };
         let msg_lines = app.info_lines.len().max(1) as u16;
-        let popup_h = (msg_lines + 4).min(area.height.saturating_sub(4)); // title + msg + tip
+        let desired_h = msg_lines.saturating_add(4); // title + msg + tip
+        let popup_h = if area.height < 4 {
+            area.height
+        } else {
+            desired_h.min(area.height)
+        };
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
         let popup_rect = Rect {
@@ -1353,8 +1378,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let inner = Rect {
             x: popup_rect.x + 1,
             y: popup_rect.y + 1,
-            width: popup_rect.width - 2,
-            height: popup_rect.height - 2,
+            width: popup_rect.width.saturating_sub(2),
+            height: popup_rect.height.saturating_sub(2),
         };
         let msg_h = inner.height.saturating_sub(1);
         let inner_chunks = Layout::default()
@@ -1379,8 +1404,19 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Add Packages validation warning popup
     if app.editing && app.edit_kind == EditKind::AddPackagesWarning {
         let area_w = area.width as i32;
-        let popup_w = (area_w * 3 / 5).max(40) as u16;
-        let popup_h = (app.warning_lines.len() as u16 + 5).min(area.height.saturating_sub(4));
+        // Clamp to avoid underflow in `popup_rect.{width,height} - 2` on tiny terminals.
+        let desired_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_w = if area.width < 4 {
+            area.width
+        } else {
+            desired_w.min(area.width)
+        };
+        let desired_h = (app.warning_lines.len() as u16).saturating_add(5);
+        let popup_h = if area.height < 4 {
+            area.height
+        } else {
+            desired_h.min(area.height)
+        };
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
         let popup_rect = Rect {
@@ -1400,8 +1436,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let inner = Rect {
             x: popup_rect.x + 1,
             y: popup_rect.y + 1,
-            width: popup_rect.width - 2,
-            height: popup_rect.height - 2,
+            width: popup_rect.width.saturating_sub(2),
+            height: popup_rect.height.saturating_sub(2),
         };
         let rows = Layout::default()
             .direction(Direction::Vertical)
@@ -2516,6 +2552,7 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
                 v = 1;
             }
             app.preflight.terminal_choice = v as u8;
+            sync_terminal_package_selection(app);
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
@@ -3020,6 +3057,7 @@ fn parse_xrandr_monitors(text: &str) -> Vec<MonitorInfo> {
         let mut parsed = std::mem::take(&mut mi.modes);
         parsed.retain(|m| !m.is_empty());
         parsed.sort_by(|a, b| compare_modes_by_aspect_then_size(a, b));
+        parsed.dedup();
         mi.modes = parsed;
     }
     out

@@ -467,29 +467,34 @@ ensure_monitors_conf() {
     fi
 
     print_message "Auto-populating monitors.conf with detected monitors..."
-    local offset=0
-    local primary_width=0
-    local first=true
     local all_names=()
+    local monitor_lines=()
+    local x_offset=0
     while IFS= read -r mon_name; do
         [ -z "$mon_name" ] && continue
         all_names+=("$mon_name")
-        local pos
-        if [ "$first" = true ]; then
-            pos="0x0"
-            first=false
-            local res
-            res=$(hyprctl monitors 2>/dev/null | awk -v name="$mon_name" '
-                /^[[:space:]]*Monitor /{found=($2==name)}
-                found && /^[[:space:]]*[0-9]+x[0-9]+@/{split($1,a,"x"); split(a[2],b,"@"); print a[1]; exit}
-            ')
-            primary_width="${res:-0}"
-        else
-            pos="${primary_width}x0"
+        local width
+        width=$(hyprctl monitors 2>/dev/null | awk -v name="$mon_name" '
+            /^[[:space:]]*Monitor /{found=($2==name)}
+            found && /^[[:space:]]*[0-9]+x[0-9]+@/{split($1,a,"x"); split(a[2],b,"@"); print a[1]; exit}
+        ')
+        if ! [[ "${width:-}" =~ ^[0-9]+$ ]]; then
+            width=0
         fi
-        sed -i --follow-symlinks "1i monitor=${mon_name},preferred,${pos},1" "$monitors_conf"
+
+        local pos="${x_offset}x0"
+        monitor_lines+=("monitor=${mon_name},preferred,${pos},1")
         print_message "  Added monitor=${mon_name},preferred,${pos},1"
+        x_offset=$((x_offset + width))
     done <<< "$monitor_names"
+
+    # Append in detected order (avoid reversing via repeated "insert at top").
+    if [ "${#monitor_lines[@]}" -gt 0 ]; then
+        {
+            echo
+            printf '%s\n' "${monitor_lines[@]}"
+        } >> "$monitors_conf"
+    fi
 
     # Add workspace assignments for detected monitors
     if [ "${#all_names[@]}" -gt 0 ]; then
@@ -526,8 +531,7 @@ apply_monitor_config_from_env() {
 
     local entry
     local parsed_any=false
-    local first=true
-    local primary_width=0
+    local x_offset=0
     local monitor_lines=()
     local monitor_names=()
     IFS=';' read -ra entries <<< "$monitor_config"
@@ -542,20 +546,15 @@ apply_monitor_config_from_env() {
             continue
         fi
 
-        local offset
-        if [ "$first" = true ]; then
-            offset="0x0"
-            first=false
-            primary_width="${cfg%%x*}"
-            if ! [[ "$primary_width" =~ ^[0-9]+$ ]]; then
-                primary_width=0
-            fi
-        else
-            offset="${primary_width}x0"
+        local width="${cfg%%x*}"
+        if ! [[ "$width" =~ ^[0-9]+$ ]]; then
+            width=0
         fi
+        local offset="${x_offset}x0"
         monitor_lines+=("monitor=${nm},${cfg},${offset},${sc}")
         monitor_names+=("$nm")
         parsed_any=true
+        x_offset=$((x_offset + width))
     done
 
     if [ "$parsed_any" != true ]; then
@@ -1680,13 +1679,11 @@ configure_terminal() {
     if [ -f "$fish_conf" ]; then
         print_message "Updating terminal in fish config"
         execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf'" "Update TERMINAL in fish config"
-        execute_command "sed -i -E 's|^set -x TERM .*|set -x TERM $terminal_name|' '$fish_conf'" "Update TERM in fish config"
     fi
     
     if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
         print_message "Updating terminal in runtime fish config"
         execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf_runtime'" "Update TERMINAL in runtime fish config"
-        execute_command "sed -i -E 's|^set -x TERM .*|set -x TERM $terminal_name|' '$fish_conf_runtime'" "Update TERM in runtime fish config"
     fi
 
     # Update scripts that reference alacritty specifically
@@ -1699,7 +1696,7 @@ configure_terminal() {
         # Replace alacritty command calls but preserve INSIDE_ALACRITTY variable name
         execute_command "sed -i -E 's|alacritty -t|$terminal_name -t|g' '$notes_script'" "Update terminal command in notes.sh"
         execute_command "sed -i -E 's|\\\"alacritty\\\"|\\\"$terminal_name\\\"|g' '$notes_script'" "Update terminal string in notes.sh"
-        execute_command "sed -i -E 's|TERM != \\\"alacritty\\\"|TERM != \\\"$terminal_name\\\"|g' '$notes_script'" "Update TERM check in notes.sh"
+        execute_command "sed -i -E 's|\\[ \\\"\\$TERM\\\" != \\\"alacritty\\\" \\]|[ \\\"\\$TERMINAL\\\" != \\\"$terminal_name\\\" ]|g' '$notes_script'" "Update terminal detection in notes.sh"
     fi
     
     if [ -f "$float_calendar_script" ]; then
