@@ -308,7 +308,8 @@ is_pacman_group_installed() {
 # Detect first Hyprland monitor name from `hyprctl monitors`
 get_first_hypr_monitor() {
     command -v hyprctl >/dev/null 2>&1 || return 1
-    hyprctl monitors 2>/dev/null | awk '/^Monitor /{print $2; exit}'
+    # Be tolerant to any leading whitespace in hyprctl output
+    hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2; exit}'
 }
 
 # Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor
@@ -2117,7 +2118,7 @@ configure_monitor() {
         print_message "Hyprland monitor configuration:"
         echo "$monitor_output"
         local monitor_count
-        monitor_count=$(echo "$monitor_output" | grep -E -c "^Monitor")
+        monitor_count=$(echo "$monitor_output" | grep -E -c "^[[:space:]]*Monitor")
         print_message "Detected $monitor_count monitor(s) on Hyprland."
         if [ "$monitor_count" -eq 0 ]; then
             print_warning "No monitors detected via hyprctl monitors."
@@ -2128,7 +2129,7 @@ configure_monitor() {
         local monitor_names=()
         while IFS= read -r line; do
             monitor_names+=("$(echo "$line" | awk '{print $2}')")
-        done < <(echo "$monitor_output" | grep "^Monitor")
+        done < <(echo "$monitor_output" | grep -E "^[[:space:]]*Monitor")
 
         # Initialize variables for monitor configuration
         local primary_monitor=""

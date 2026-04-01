@@ -2716,19 +2716,25 @@ fn discover_hypr_monitors() -> Vec<MonitorInfo> {
     let mut monitors: Vec<MonitorInfo> = Vec::new();
     let mut current: Option<MonitorInfo> = None;
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("Monitor ") {
+        let l = line.trim_start();
+        if let Some(rest) = l.strip_prefix("Monitor ") {
             if let Some(mi) = current.take() {
                 monitors.push(mi);
             }
-            let name = rest.split_whitespace().next().unwrap_or("").to_string();
+            let name = rest
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches([':', ','])
+                .to_string();
             current = Some(MonitorInfo {
                 name,
                 modes: Vec::new(),
             });
-        } else if line.trim_start().starts_with("availableModes:")
+        } else if l.starts_with("availableModes:")
             && let Some(mi) = current.as_mut()
         {
-            let modes_str = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
+            let modes_str = l.split_once(':').map(|x| x.1).unwrap_or("").trim();
             let mut parsed: Vec<String> = modes_str
                 .split_whitespace()
                 .filter(|s| s.contains('x'))
