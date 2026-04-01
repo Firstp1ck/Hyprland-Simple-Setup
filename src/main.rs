@@ -2017,6 +2017,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 }
                 KeyCode::Char('s') => {
                     app.preflight.monitor_config = app.mw_buffer.clone();
+                    if !app.preflight.monitor_config.trim().is_empty() {
+                        app.preflight.monitor_setup_enabled = true;
+                    }
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }

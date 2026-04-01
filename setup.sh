@@ -407,13 +407,13 @@ ensure_wallpaper_monitors() {
     local current_line
     current_line=$(grep -E '^[[:space:]]*MONITORS=' "$wallpaper_conf" 2>/dev/null || true)
 
-    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR)
+    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR_N)
     local need_set=false
     if [ -z "$current_line" ]; then
         need_set=true
-    elif echo "$current_line" | grep -q 'MONITOR'; then
+    elif echo "$current_line" | grep -qE 'MONITORS=\(\)'; then
         need_set=true
-    elif echo "$current_line" | grep -q 'MONITORS=()'; then
+    elif echo "$current_line" | grep -qE 'MONITOR_[0-9]'; then
         need_set=true
     fi
 
@@ -426,9 +426,69 @@ ensure_wallpaper_monitors() {
         fi
         print_message "Auto-detected monitor: $first_mon"
         if echo "$current_line" | grep -q 'MONITORS='; then
-            execute_command "sed -i -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
+            execute_command "sed -i --follow-symlinks -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
         else
             execute_command "printf '%s\n' 'MONITORS=(\"$first_mon\")' >> '$wallpaper_conf'" "Append MONITORS to wallpaper config"
+        fi
+    fi
+}
+
+# Get ALL Hyprland monitor names (one per line).
+get_all_hypr_monitors() {
+    command -v hyprctl >/dev/null 2>&1 || return 1
+    hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2}'
+}
+
+# Auto-populate monitors.conf when it contains no active (uncommented) monitor= lines.
+# Generates a basic monitor=NAME,preferred,auto,1 entry for each detected monitor.
+ensure_monitors_conf() {
+    local monitors_conf="${1:-$HOME/.config/hypr/sources_specific/monitors.conf}"
+    [ -f "$monitors_conf" ] || return 0
+
+    # Check if there are already active monitor= lines
+    if grep -qE '^[[:space:]]*monitor=' "$monitors_conf" 2>/dev/null; then
+        return 0
+    fi
+
+    local monitor_names
+    monitor_names=$(get_all_hypr_monitors || true)
+    if [ -z "$monitor_names" ]; then
+        print_warning "Could not auto-detect monitors via hyprctl; leaving monitors.conf unchanged."
+        return 0
+    fi
+
+    print_message "Auto-populating monitors.conf with detected monitors..."
+    local offset=0
+    local primary_width=0
+    local first=true
+    local all_names=()
+    while IFS= read -r mon_name; do
+        [ -z "$mon_name" ] && continue
+        all_names+=("$mon_name")
+        local pos
+        if [ "$first" = true ]; then
+            pos="0x0"
+            first=false
+            local res
+            res=$(hyprctl monitors 2>/dev/null | awk -v name="$mon_name" '
+                /^[[:space:]]*Monitor /{found=($2==name)}
+                found && /^[[:space:]]*[0-9]+x[0-9]+@/{split($1,a,"x"); split(a[2],b,"@"); print a[1]; exit}
+            ')
+            primary_width="${res:-0}"
+        else
+            pos="${primary_width}x0"
+        fi
+        sed -i --follow-symlinks "1i monitor=${mon_name},preferred,${pos},1" "$monitors_conf"
+        print_message "  Added monitor=${mon_name},preferred,${pos},1"
+    done <<< "$monitor_names"
+
+    # Add workspace assignments for detected monitors
+    if [ "${#all_names[@]}" -gt 0 ]; then
+        local primary="${all_names[0]}"
+        local secondary="${all_names[1]:-$primary}"
+        printf '\nworkspace=1,monitor:%s,default:true\n' "$primary" >> "$monitors_conf"
+        if [ "${#all_names[@]}" -gt 1 ]; then
+            printf 'workspace=2,monitor:%s\n' "$secondary" >> "$monitors_conf"
         fi
     fi
 }
@@ -1201,7 +1261,7 @@ update_configs() {
         execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory ($(basename "$wallpaper_conf"))"
         # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
         if [ -f "$wallpaper_conf" ]; then
-            execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
+            execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i --follow-symlinks -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
         else
             # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
             execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config ($(basename "$wallpaper_conf"))"
@@ -1210,7 +1270,14 @@ update_configs() {
         # Ensure MONITORS is set (auto-detect first monitor if user did not set)
         ensure_wallpaper_monitors "$wallpaper_conf"
     done
-    
+
+    # Auto-populate monitors.conf if it has no active monitor= lines
+    local monitors_conf_runtime="$HOME/.config/hypr/sources_specific/monitors.conf"
+    local monitors_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+    for mc in "$monitors_conf_runtime" "$monitors_conf_source"; do
+        [ -f "$mc" ] && ensure_monitors_conf "$mc"
+    done
+
     print_message "Configuration files updated with user input."
 }
 
@@ -2191,8 +2258,20 @@ configure_monitor() {
                 print_message "Non-interactive: proceeding with monitor setup"
                 ;;
             *)
-                print_message "Non-interactive: skipping monitor setup"
-                track_config_status "Monitor Setup" "$CIRCLE (Skipped by config)"
+                print_message "Non-interactive: MONITOR_SETUP_ENABLED is not set; falling back to auto-detection"
+                local mc
+                for mc in \
+                    "$HOME/.config/hypr/sources_specific/monitors.conf" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"; do
+                    [ -f "$mc" ] && ensure_monitors_conf "$mc"
+                done
+                local wc
+                for wc in \
+                    "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+                    [ -f "$wc" ] && ensure_wallpaper_monitors "$wc"
+                done
+                track_config_status "Monitor Setup" "$CIRCLE (Auto-detected)"
                 return 0
                 ;;
         esac
@@ -2358,9 +2437,9 @@ EOF
 
             # Update monitor configuration
             if grep -q "^monitor=${monitor_name}," "$monitors_conf_file"; then
-                sed -i "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
+                sed -i --follow-symlinks "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
             else
-                sed -i "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
+                sed -i --follow-symlinks "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
             fi
 
             configured_monitors+=("$monitor_name")
@@ -2404,7 +2483,7 @@ EOF
         for wc in "${wallpaper_confs[@]}"; do
             if [ -f "$wc" ]; then
                 if grep -q "^MONITORS=" "$wc"; then
-                    sed -i "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wc"
+                    sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wc"
                 else
                     echo "MONITORS=($monitors_str)" >> "$wc"
                 fi
@@ -2415,9 +2494,9 @@ EOF
         done
 
         # Remove any remaining placeholder text
-        sed -i '/MONITOR_[0-9]/d' "$monitors_conf_file"
+        sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$monitors_conf_file"
         for wc in "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
-            [ -f "$wc" ] && sed -i '/MONITOR_[0-9]/d' "$wc"
+            [ -f "$wc" ] && sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$wc"
         done
 
         # Keep stow/source copy in sync when it exists (same approach as wallpaper config)
