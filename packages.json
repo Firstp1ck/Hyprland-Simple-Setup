@@ -173,7 +173,9 @@
       "input-remapper-2"
     ],
     "cli_tools": [
-      "lsplug"
+      "lsplug",
+      "pacsea-bin",
+      "usrgrp-manager-bin"
     ]
   },
   "package_descriptions": {
@@ -322,7 +324,9 @@
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
     "lsplug": "Monitor plug/unplug events",
-    "input-remapper-2": "Mouse and keyboard button remapper"
+    "input-remapper-2": "Mouse and keyboard button remapper",
+    "pacsea-bin": "Package search and install",
+    "usrgrp-manager-bin": "User and group manager"
   }
 }
 
