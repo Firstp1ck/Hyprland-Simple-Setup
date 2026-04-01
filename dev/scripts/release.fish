@@ -396,33 +396,17 @@ function phase4_build_release
     
     set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
     
-    # Determine if this is a prerelease (version < 1.0.0)
-    set -l prerelease_flag ""
-    if is_prerelease_version "$new_ver"
-        set prerelease_flag "--prerelease"
-        log_info "Version < 1.0.0: Creating as prerelease"
-    else
-        log_info "Version >= 1.0.0: Creating as stable release"
-    end
+    # Always create stable (non-prerelease) GitHub releases.
+    log_info "Creating as stable (non-prerelease) release"
     
     if test "$DRY_RUN" = true
         log_info "[DRY-RUN] Would create GitHub release $tag with notes from $release_file"
-        if test -n "$prerelease_flag"
-            log_info "[DRY-RUN] Release would be marked as prerelease"
-        end
     else
         if test -f "$release_file"
             # Create release with notes (source-only; GitHub provides source archives automatically)
-            if test -n "$prerelease_flag"
-                gh release create "$tag" \
-                    --title "v$new_ver" \
-                    --prerelease \
-                    --notes-file "$release_file"
-            else
-                gh release create "$tag" \
-                    --title "v$new_ver" \
-                    --notes-file "$release_file"
-            end
+            gh release create "$tag" \
+                --title "v$new_ver" \
+                --notes-file "$release_file"
             
             if test $status -eq 0
                 log_success "GitHub release created"
