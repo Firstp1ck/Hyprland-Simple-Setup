@@ -21,7 +21,7 @@ NC='\033[0m'
 CHECK_MARK=$'\e[1;32m\u2714\e[0m'
 CROSS_MARK=$'\e[1;31m\u2718\e[0m'
 CIRCLE=$'\u25CB'
-LOG_FILE="${HOME}/Linux-Setup.log"
+LOG_FILE="${HOME}/Hyprland-Simple-Setup.log"
 
 # Arrays to store update statuses
 mirror_updates=()
@@ -1638,6 +1638,8 @@ aur_extras=(
     "rose-pine-hyprcursor"
     "waybar-module-pacman-updates-git"
     "wlogout"
+    "pacsea-bin"
+    "usrgrp-manager-bin"
     # "nerd-fonts-noto-sans-mono"
 )
 
@@ -1999,7 +2001,7 @@ configure_timeshift() {
     fi
 
     # Create an initial snapshot without a .snapshot suffix
-    if execute_command "sudo timeshift --create --comments 'Automated snapshot created by Linux-Setup script' --tags D" "Create initial Timeshift snapshot"; then
+    if execute_command "sudo timeshift --create --comments 'Automated snapshot created by Hyprland-Simple-Setup script' --tags D" "Create initial Timeshift snapshot"; then
         track_config_status "Timeshift Setup" "$CHECK_MARK"
     else
         track_config_status "Timeshift Setup" "$CROSS_MARK"

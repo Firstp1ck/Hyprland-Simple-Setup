@@ -119,14 +119,7 @@ alias sysen='systemctl enable'
 alias sysdis='systemctl disable'
 
 # Custom Scripts
-alias server='Start_ssh_server.sh'
-alias update='Start_System_setup.sh --function update_arch'
-alias update-o='Start_System_setup.sh --function update_specific_package'
-alias backup='Start_System_setup.sh --function system_backup'
-alias setup='Start_System_setup.sh'
 alias stows='Start_stow_solve.sh'
-alias note='Start_notes.sh'
-alias notes='Start_notes.sh'
 
 bind '"\e[A": history-search-backward'
 bind '"\e[B": history-search-forward'
@@ -136,12 +129,7 @@ set completion-ignore-case on
 set show-all-if-ambiguous on
 set completion-map-case on
 
-export SCRIPTS_DIR="$HOME/Dokumente/GitHub/Linux-Setup/Scripts"
-export PATH="$PATH:$SCRIPTS_DIR:$HOME/go/bin"
-
-if [ -d "$SCRIPTS_DIR" ]; then
-    find "$SCRIPTS_DIR" -type f -name "*.sh" -exec chmod +x {} \;
-fi
+export PATH="$PATH:$HOME/go/bin"
 
 # Language settings
 export LANG="de_CH.UTF-8"
@@ -159,19 +147,6 @@ export GIT_PS1_SHOWCOLORHINTS=1
 unset EDITOR
 export EDITOR=nvim
 export VISUAL=nvim
-
-# Path and environment variables for Ollama
-# export PATH=$PATH:/opt/rocm/bin:/opt/rocm/opencl/bin
-export OLLAMA_USE_GPU=1
-export OLLAMA_MAX_LOADED_MODELS=2
-export OLLAMA_NUM_PARALLEL=4
-export OLLAMA_MAX_QUEUE=512
-export OLLAMA_MODELS=/mnt/SSD_NVME_4TB/Ollama/
-export HSA_OVERRIDE_GFX_VERSION=11.0.1
-export ROCR_VISIBLE_DEVICES=0
-
-# export OLLAMA_HOST=0.0.0.0
-# chmod -R 775 $OLLAMA_MODELS
 
 #Java settings
 # export INSTALL4J_JAVA_HOME=/usr/lib/jvm/java-17-openjdk

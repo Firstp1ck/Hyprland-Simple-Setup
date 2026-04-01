@@ -191,10 +191,7 @@
         "exec-if": "which waybar-module-pacman-updates",
         "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
         "menu": "on-click-right",
-        "menu-file": "~/.config/waybar/update_menu.xml",
-        "menu-actions": {
-            "update": "alacritty -t Update -e /home/firstpick/Dokumente/GitHub/Linux-Setup/Scripts/Start_System_setup.sh --function update_arch"
-        }
+        "menu-file": "~/.config/waybar/update_menu.xml"
     },
 
     "custom/notification": {
@@ -242,7 +239,7 @@
         "menu-actions": {
             "keybinds": "~/.config/waybar/scripts/keybinds.py",
             "drun": "wofi --show drun --style ~/.config/wofi/menu.css",
-            "open_keybinds": "alacritty -t Keybinds -e nvim /home/firstpick/.config/hypr/sources/keybindings.conf",
+            "open_keybinds": "alacritty -t Keybinds -e nvim $HOME/.config/hypr/sources/keybindings.conf",
             "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
         }
     },

@@ -234,7 +234,7 @@ Notes:
 - **Supported:** Arch Linux, EndeavourOS (other distros may require manual adaptation)
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
-- **Logging:** All actions logged to `~/Linux-Setup.log`
+- **Logging:** All actions logged to `~/Hyprland-Simple-Setup.log`
 
 ## Project Structure
 
@@ -540,7 +540,7 @@ For more customization options, refer to:
 
 ## Troubleshooting
 
-- **Logs:** See `~/Linux-Setup.log`
+- **Logs:** See `~/Hyprland-Simple-Setup.log`
 - **Package verification:** The setup script checks and reports missing packages
 - **Configuration issues:** Modular config makes it easy to isolate and fix problems
 - **Scripts:** Helper scripts for common issues (e.g., fix dolphin etc.)

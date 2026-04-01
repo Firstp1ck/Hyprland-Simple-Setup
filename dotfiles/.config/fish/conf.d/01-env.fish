@@ -21,8 +21,6 @@ set -x PATH /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin \
   /usr/local/sbin /usr/local/bin /usr/lib/jvm/default/bin \
   /usr/bin/site_perl /usr/bin/vendor_perl /usr/bin/core_perl \
   /usr/lib/rustup/bin \
-  $HOME/Dokumente/GitHub/Linux-Setup/Scripts \
-  $HOME/Dokumente/GitHub/Open-Linux-Setup/Other \
   $HOME/.local/scripts \
   $HOME/.local/share/applications \
   $HOME/.config/hypr/scripts \
@@ -32,8 +30,6 @@ set -x PATH /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin \
 
 # Make scripts executable (interactive shells only; skip if 'find' missing)
 set -l SCRIPTS_DIR_EXE \
-  $HOME/Dokumente/GitHub/Linux-Setup/Scripts \
-  $HOME/Dokumente/GitHub/Open-Linux-Setup/Other \
   $HOME/.local/scripts \
   $HOME/.local/share/applications \
   $HOME/.config/hypr/scripts \
