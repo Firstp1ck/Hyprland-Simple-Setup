@@ -30,6 +30,14 @@ aur_updates=()
 failed_packages=()
 config_statuses=()
 
+# Final summary tracking arrays
+SUMMARY_HARD_FAILURES=()
+SUMMARY_WARNINGS=()
+SUMMARY_SOFT_ERRORS=()
+SUMMARY_SKIPPED=()
+declare -A _SEEN_RECOMMENDATIONS=()
+SUMMARY_RECOMMENDATIONS=()
+
 # Selected AUR helper (paru preferred if available)
 AUR_HELPER=""
 AUR_HELPER_CHECKED=""
@@ -231,6 +239,7 @@ execute_command() {
         print_verbose "Command executed: ${adjusted_cmd} (Exit code: $exit_code)"
         if [ $exit_code -ne 0 ]; then
             print_warning "Command for '$description' failed."
+            record_soft_error "$caller_function" "$description"
         fi
         # Throttle UI output similarly to dry-run
         sleep 0.05
@@ -683,6 +692,177 @@ track_config_status() {
     local config_name="$1"
     local status="$2"
     config_statuses+=("$config_name: $status")
+}
+
+record_hard_failure() {
+    local step="$1" detail="$2"
+    SUMMARY_HARD_FAILURES+=("[$step] $detail")
+}
+
+record_warning() {
+    local step="$1" detail="$2"
+    SUMMARY_WARNINGS+=("[$step] $detail")
+}
+
+record_soft_error() {
+    local step="$1" detail="$2"
+    SUMMARY_SOFT_ERRORS+=("[$step] $detail")
+}
+
+record_skipped() {
+    local step="$1" detail="$2"
+    SUMMARY_SKIPPED+=("[$step] $detail")
+}
+
+add_recommendation_once() {
+    local msg="$1"
+    if [[ -z "${_SEEN_RECOMMENDATIONS[$msg]+_}" ]]; then
+        _SEEN_RECOMMENDATIONS[$msg]=1
+        SUMMARY_RECOMMENDATIONS+=("$msg")
+    fi
+}
+
+build_summary_recommendations() {
+    local entry
+
+    for entry in "${SUMMARY_HARD_FAILURES[@]}"; do
+        case "$entry" in
+            *"install_pacman_packages"*)
+                add_recommendation_once "Re-run failed pacman installs: sudo pacman -S --needed <package>"
+                ;;
+            *"install_aur_extras"*)
+                add_recommendation_once "Re-run failed AUR installs: ${AUR_HELPER:-paru} -S --needed <package>"
+                ;;
+            *"update_arch_mirrors"*)
+                add_recommendation_once "Update mirrors manually: sudo reflector --verbose --protocol https --sort rate --latest 20 --save /etc/pacman.d/mirrorlist"
+                ;;
+            *"configure_bluetooth"*)
+                add_recommendation_once "Check bluetooth: sudo systemctl status bluetooth && sudo systemctl enable --now bluetooth"
+                ;;
+            *"configure_fish"*)
+                add_recommendation_once "Set shell manually: sudo chsh -s /usr/bin/fish \$USER"
+                ;;
+            *"configure_network_manager"*)
+                add_recommendation_once "Enable NetworkManager: sudo systemctl enable --now NetworkManager"
+                ;;
+            *"configure_environment"*"Neovim"*)
+                add_recommendation_once "Install Neovim manually: sudo pacman -S neovim"
+                ;;
+            *"configure_timeshift"*)
+                add_recommendation_once "Set up Timeshift manually: sudo pacman -S timeshift && sudo systemctl enable --now cronie.service"
+                ;;
+        esac
+    done
+
+    for entry in "${SUMMARY_SOFT_ERRORS[@]}"; do
+        case "$entry" in
+            *"update_arch_mirrors"*)
+                add_recommendation_once "Retry mirror update: sudo reflector --verbose --protocol https --sort rate --latest 20 --save /etc/pacman.d/mirrorlist"
+                ;;
+            *"update_pacman"*)
+                add_recommendation_once "Retry system update: sudo pacman -Syyu"
+                ;;
+            *"update_yay"*)
+                add_recommendation_once "Retry AUR update: ${AUR_HELPER:-paru} -Sua"
+                ;;
+            *"enable_sddm"*)
+                add_recommendation_once "Enable SDDM manually: sudo systemctl enable sddm"
+                ;;
+            *"EDITOR"*)
+                add_recommendation_once "Set EDITOR manually: systemctl --user set-environment EDITOR=nvim"
+                ;;
+            *"configure_timeshift"*)
+                add_recommendation_once "Create Timeshift snapshot manually: sudo timeshift --create --tags D"
+                ;;
+        esac
+    done
+
+    for entry in "${SUMMARY_WARNINGS[@]}"; do
+        case "$entry" in
+            *"wallpaper"*|*"Wallpaper"*)
+                add_recommendation_once "Verify wallpaper directory exists and contains images for swww/hyprpaper"
+                ;;
+            *"backup"*|*"Backup"*)
+                add_recommendation_once "Create a manual backup of ~/.config before making further changes"
+                ;;
+            *"workspace 11"*)
+                add_recommendation_once "Remove workspace 11 entries from Hyprland/Waybar configs to avoid phantom workspaces"
+                ;;
+            *"PAM"*|*"gnome-keyring"*)
+                add_recommendation_once "Verify PAM config: check /etc/pam.d/system-local-login for pam_gnome_keyring.so entries"
+                ;;
+            *"xdg-user-dirs"*)
+                add_recommendation_once "Run xdg-user-dirs-update manually to create standard user directories"
+                ;;
+        esac
+    done
+
+    if [ ${#SUMMARY_HARD_FAILURES[@]} -gt 0 ]; then
+        add_recommendation_once "Review the full log for details: $LOG_FILE"
+    fi
+}
+
+print_final_recommendation_summary() {
+    local total=$(( ${#SUMMARY_HARD_FAILURES[@]} + ${#SUMMARY_WARNINGS[@]} + ${#SUMMARY_SOFT_ERRORS[@]} + ${#SUMMARY_SKIPPED[@]} ))
+
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║            Final Setup Report                           ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+
+    if [ "$total" -eq 0 ]; then
+        echo -e "${GREEN}Everything completed without issues.${NC}"
+        echo ""
+        return
+    fi
+
+    if [ ${#SUMMARY_HARD_FAILURES[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${RED}Hard Failures (${#SUMMARY_HARD_FAILURES[@]}):${NC}"
+        for entry in "${SUMMARY_HARD_FAILURES[@]}"; do
+            echo -e "  ${RED}$CROSS_MARK${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_SOFT_ERRORS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}Soft Errors (${#SUMMARY_SOFT_ERRORS[@]}):${NC}"
+        for entry in "${SUMMARY_SOFT_ERRORS[@]}"; do
+            echo -e "  ${YELLOW}!${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_WARNINGS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}Warnings (${#SUMMARY_WARNINGS[@]}):${NC}"
+        for entry in "${SUMMARY_WARNINGS[@]}"; do
+            echo -e "  ${YELLOW}~${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_SKIPPED[@]} -gt 0 ]; then
+        echo ""
+        echo -e "Skipped Steps (${#SUMMARY_SKIPPED[@]}):"
+        for entry in "${SUMMARY_SKIPPED[@]}"; do
+            echo "  $CIRCLE $entry"
+        done
+    fi
+
+    build_summary_recommendations
+
+    if [ ${#SUMMARY_RECOMMENDATIONS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${GREEN}Recommendations:${NC}"
+        local i=1
+        for rec in "${SUMMARY_RECOMMENDATIONS[@]}"; do
+            echo -e "  ${i}. $rec"
+            ((i++))
+        done
+    fi
+
+    echo ""
+    echo "Log file: $LOG_FILE"
+    echo ""
 }
 
 list_packages() {
@@ -1871,6 +2051,7 @@ update_arch_mirrors() {
             if ! distro_install "pacman-mirrors"; then
                 print_error "pacman-mirrors installation failed. Aborting mirror update."
                 mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+                record_hard_failure "update_arch_mirrors" "Failed to install pacman-mirrors"
                 return 1
             fi
         fi
@@ -1878,6 +2059,7 @@ update_arch_mirrors() {
             mirror_updates+=("Arch Mirrors: $CHECK_MARK")
         else
             mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+            record_soft_error "update_arch_mirrors" "Manjaro mirror update failed"
         fi
         return 0
     fi
@@ -1885,6 +2067,7 @@ update_arch_mirrors() {
         print_message "Reflector not installed. Installing reflector..."
         if ! distro_install "reflector"; then
             print_error "Reflector installation failed. Aborting mirror update."
+            record_hard_failure "update_arch_mirrors" "Failed to install reflector"
             return 1
         fi
     fi
@@ -1892,6 +2075,7 @@ update_arch_mirrors() {
         mirror_updates+=("Arch Mirrors: $CHECK_MARK")
     else
         mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+        record_soft_error "update_arch_mirrors" "Reflector mirror update failed"
     fi
 }
 
@@ -1901,6 +2085,7 @@ update_pacman() {
         package_updates+=("Pacman Packages: $CHECK_MARK")
     else
         package_updates+=("Pacman Packages: $CROSS_MARK")
+        record_soft_error "update_pacman" "System package update (pacman -Syyu) failed"
     fi
 }
 
@@ -1911,6 +2096,7 @@ update_yay() {
         aur_updates+=("AUR Packages: $CHECK_MARK")
     else
         aur_updates+=("AUR Packages: $CROSS_MARK")
+        record_soft_error "update_yay" "AUR package update failed"
     fi
 }
 
@@ -2006,6 +2192,7 @@ install_pacman_packages() {
     for pkg in "${pkgs_to_install[@]}"; do
         if ! execute_command "sudo pacman -S --needed --noconfirm $pkg" "Installing $pkg"; then
             print_warning "Failed to install $pkg. Please install manually if issues persist."
+            record_hard_failure "install_pacman_packages" "Package '$pkg' failed to install via pacman"
         fi
     done
 }
@@ -2087,6 +2274,7 @@ install_aur_extras() {
     for pkg in "${aur_to_install[@]}"; do
         if ! execute_command "$AUR_HELPER -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
+            record_hard_failure "install_aur_extras" "AUR package '$pkg' failed to install via $AUR_HELPER"
         fi
     done
 }
@@ -2101,6 +2289,7 @@ configure_fish() {
         track_config_status "Default Shell (fish)" "$CHECK_MARK"
     else
         track_config_status "Default Shell (fish)" "$CROSS_MARK"
+        record_hard_failure "configure_fish" "Failed to set fish as default shell"
     fi
 
     print_message "Download fzf Repository for fzf file management integration in fish"
@@ -2126,7 +2315,7 @@ configure_environment() {
         print_message "Neovim is not installed. Installing..."
         if ! distro_install "neovim"; then
             print_error "Failed to install Neovim. Please install it manually."
-            echo "Configuration failed."
+            record_hard_failure "configure_environment" "Failed to install Neovim"
             return 1
         fi
     fi
@@ -2134,7 +2323,7 @@ configure_environment() {
     # Set EDITOR environment variable
     if ! execute_command "systemctl --user set-environment EDITOR=nvim" "Set EDITOR environment variable to nvim"; then
         print_error "Failed to set EDITOR environment variable."
-        echo "Configuration failed."
+        record_soft_error "configure_environment" "Failed to set EDITOR environment variable"
         return 1
     fi
 
@@ -2148,10 +2337,12 @@ configure_network_manager() {
             track_config_status "NetworkManager Setup" "$CHECK_MARK"
         else
             track_config_status "NetworkManager Setup" "$CROSS_MARK"
+            record_hard_failure "configure_network_manager" "Failed to enable NetworkManager"
         fi
     else
         print_warning "Network Manager tools not found. Skipping NetworkManager setup."
         track_config_status "NetworkManager Setup" "$CIRCLE (Not installed)"
+        record_skipped "configure_network_manager" "NetworkManager tools not installed"
     fi
 }
 
@@ -2160,12 +2351,14 @@ configure_wifi() {
     if ! ip link show wlan0 &>/dev/null; then
         print_warning "No wireless device (wlan0) found"
         track_config_status "WiFi Configuration" "$CIRCLE (No wireless device)"
+        record_skipped "configure_wifi" "No wireless device (wlan0) found"
         return 0
     fi
     if execute_command "sudo iw dev wlan0 set power_save off" "Disable WiFi power save"; then
         track_config_status "WiFi Configuration" "$CHECK_MARK"
     else
         track_config_status "WiFi Configuration" "$CROSS_MARK"
+        record_soft_error "configure_wifi" "Failed to disable WiFi power save"
     fi
 }
 
@@ -2176,6 +2369,7 @@ configure_bluetooth() {
             print_message "Installing missing package: $pkg"
             if ! distro_install "$pkg"; then
                 print_error "Failed to install $pkg. Aborting Bluetooth configuration."
+                record_hard_failure "configure_bluetooth" "Failed to install bluetooth package: $pkg"
                 return 1
             fi
         fi
@@ -2186,6 +2380,7 @@ configure_bluetooth() {
         track_config_status "Bluetooth Setup" "$CHECK_MARK"
     else
         track_config_status "Bluetooth Setup" "$CROSS_MARK"
+        record_hard_failure "configure_bluetooth" "Failed to enable bluetooth service"
     fi
 }
 
@@ -2195,6 +2390,7 @@ configure_gnome_keyring() {
     if [ "$XDG_CURRENT_DESKTOP" = "KDE" ] || [ "$XDG_CURRENT_DESKTOP" = "plasma" ] || pgrep -x "plasmashell" > /dev/null; then
         print_message "KDE environment detected. Skipping gnome-keyring configuration."
         track_config_status "Gnome-keyring Setup" "$CIRCLE (Not needed in KDE)"
+        record_skipped "configure_gnome_keyring" "KDE environment detected, gnome-keyring not needed"
         return 0
     fi
 
@@ -2276,6 +2472,7 @@ configure_gnome_keyring() {
         track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
     else
         track_config_status "Gnome-keyring Setup" "$CIRCLE (Manual verification needed)"
+        record_warning "configure_gnome_keyring" "PAM configuration for gnome-keyring may need manual verification"
     fi
 }
 
@@ -2285,6 +2482,7 @@ configure_filepicker() {
     if ! check_hyprland; then
         print_message "Not running in Hyprland. Skipping filepicker configuration."
         track_config_status "Filepicker Setup" "$CIRCLE (Not in Hyprland)"
+        record_skipped "configure_filepicker" "Not running in Hyprland session"
         return 0
     fi
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
@@ -2373,6 +2571,7 @@ configure_timeshift() {
     if pacman -Qq cachyos-snapper-support &>/dev/null; then
         print_message "Detected 'cachyos-snapper-support'. Skipping Timeshift configuration."
         track_config_status "Timeshift Setup" "$CIRCLE (Using CachyOS Snapper)"
+        record_skipped "configure_timeshift" "CachyOS Snapper support detected, Timeshift not needed"
         return 0
     fi
 
@@ -2380,6 +2579,7 @@ configure_timeshift() {
     if ! command -v timeshift &>/dev/null; then
         if ! distro_install "timeshift"; then
             track_config_status "Timeshift Setup" "$CROSS_MARK"
+            record_hard_failure "configure_timeshift" "Failed to install Timeshift"
             return 1
         fi
     fi
@@ -2387,6 +2587,7 @@ configure_timeshift() {
     # Enable the cronie service (required for scheduling snapshots)
     if ! execute_command "sudo systemctl enable --now cronie.service" "Enable Cronie for Timeshift scheduling"; then
         track_config_status "Timeshift Setup" "$CROSS_MARK"
+        record_hard_failure "configure_timeshift" "Failed to enable cronie service for Timeshift scheduling"
         return 1
     fi
 
@@ -2395,6 +2596,7 @@ configure_timeshift() {
         track_config_status "Timeshift Setup" "$CHECK_MARK"
     else
         track_config_status "Timeshift Setup" "$CROSS_MARK"
+        record_soft_error "configure_timeshift" "Failed to create initial Timeshift snapshot"
     fi
 }
 
@@ -2405,6 +2607,7 @@ configure_grub_btrfsd() {
     if ! check_bootloader "grub"; then
         print_warning "Bootloader is not GRUB. Skipping grub-btrfsd configuration."
         track_config_status "grub-btrfsd Configuration" "$CIRCLE (Not GRUB bootloader)"
+        record_skipped "configure_grub_btrfsd" "Bootloader is not GRUB"
         return 0
     fi
 
@@ -2412,6 +2615,7 @@ configure_grub_btrfsd() {
     if ! mount | grep "on / type btrfs" > /dev/null; then
         print_warning "Root filesystem is not BTRFS. Skipping grub-btrfsd configuration."
         track_config_status "grub-btrfsd Configuration" "$CIRCLE (Not BTRFS filesystem)"
+        record_skipped "configure_grub_btrfsd" "Root filesystem is not BTRFS"
         return 0
     fi
 
@@ -2735,6 +2939,7 @@ configure_sddm_theme() {
     if ! systemctl is-enabled sddm &>/dev/null; then
         print_message "SDDM is not enabled as display manager. Skipping theme configuration."
         track_config_status "SDDM Theme Setup" "$CIRCLE (Not enabled)"
+        record_skipped "configure_sddm_theme" "SDDM is not enabled as display manager"
         return 0
     fi
 
@@ -2809,9 +3014,11 @@ enable_sddm_last() {
             print_message "SDDM has been enabled."
         else
             print_warning "Failed to enable SDDM. You can try manually: sudo systemctl enable sddm"
+            record_soft_error "enable_sddm_last" "Failed to enable SDDM"
         fi
     else
         print_warning "systemctl not available; skipping SDDM enable."
+        record_skipped "enable_sddm_last" "systemctl not available"
     fi
 }
 
@@ -2849,6 +3056,7 @@ verify_workspace_config() {
         print_message "No configuration found that pre-creates workspace 11."
     else
         print_warning "Please review the above files and remove workspace 11 entries."
+        record_warning "verify_workspace_config" "Found $issues file(s) with explicit workspace 11 mappings"
     fi
 
     if command -v hyprctl >/dev/null 2>&1; then
@@ -2885,6 +3093,7 @@ main() {
         print_message "xdg-user-dirs not found. Installing..."
         if ! distro_install "xdg-user-dirs"; then
             print_error "Failed to install xdg-user-dirs"
+            record_hard_failure "main" "Failed to install xdg-user-dirs"
             return 1
         fi
     fi
@@ -2893,6 +3102,7 @@ main() {
         print_message "User Environment created"
     else
         print_warning "User Environment could not be created!"
+        record_warning "main" "xdg-user-dirs-update failed"
     fi
     
     check_dependencies
@@ -2902,7 +3112,10 @@ main() {
     if ! validate_wallpaper_dir; then
         if [ "$NON_INTERACTIVE" = "true" ]; then
             case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
-                true|1|yes|y|Y) print_warning "Continuing despite wallpaper validation failure (auto)" ;;
+                true|1|yes|y|Y)
+                    print_warning "Continuing despite wallpaper validation failure (auto)"
+                    record_warning "main" "Wallpaper directory validation failed (continued anyway)"
+                    ;;
                 *) print_error "Setup aborted due to wallpaper validation failure (non-interactive)"; exit 1 ;;
             esac
         else
@@ -2911,6 +3124,7 @@ main() {
                 print_error "Setup aborted by user"
                 exit 1
             fi
+            record_warning "main" "Wallpaper directory validation failed (user chose to continue)"
         fi
     fi
     
@@ -2923,6 +3137,7 @@ main() {
             print_message "Backup created successfully at: $backup_dir"
         else
             print_error "Failed to create backup of .config directory"
+            record_warning "main" "Backup of .config directory failed"
             if [ "$NON_INTERACTIVE" = "true" ]; then
                 case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
                     true|1|yes|y|Y) print_warning "Continuing despite backup failure (auto)" ;;
@@ -2938,6 +3153,7 @@ main() {
         fi
     else
         print_warning ".config directory not found, skipping backup"
+        record_skipped "main" ".config directory not found, backup skipped"
     fi
 
     update_arch_mirrors
@@ -2970,6 +3186,7 @@ main() {
     print_dry_run_summary
     print_status_summary
     verify_workspace_config
+    print_final_recommendation_summary
 
     # As the very last step, enable and start SDDM (may end current session)
     enable_sddm_last
