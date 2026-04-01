@@ -21,5 +21,11 @@ set -x fish_history default
 # Vim Mode
 fish_vi_key_bindings
 
+# Source Starship Prompt
+starship init fish | source
+
 # Initialize zoxide
-zoxide init fish | source
+if type -q zoxide
+    zoxide init fish | source
+end
+

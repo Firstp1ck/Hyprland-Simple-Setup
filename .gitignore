@@ -18,3 +18,6 @@ RELEASE.md
 /target
 
 Documents/*
+
+dev/COMMIT
+dev/PR/*

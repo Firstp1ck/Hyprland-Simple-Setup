@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 sleep 5 # Wait for 5 seconds to allow processes to start
 
@@ -8,7 +8,7 @@ check_process() {
     if ! command -v "$1" &>/dev/null; then
         return 0
     fi
-    
+
     # Check if the process is running
     local process_name="$1"
     if ! pgrep -f "$process_name" >/dev/null; then
@@ -44,6 +44,7 @@ check_numlock_setting() {
 
 # Array of processes to check (extracted from autostart.conf)
 processes=(
+    "tor"
     "polkitd"
     "nm-applet"
     "hyprpaper"
@@ -51,12 +52,17 @@ processes=(
     "wl-clip-persist"
     "wl-clipboard-history"
     "swaync"
-    "swaync-client"    
+    "swaync-client"
     "hypridle"
     "xwaylandvideobridge"
+    "input-remapper"
     "waybar"
+    "Telegram"
+    "wasistlos"
     "hyprsunset"
-    "kitty"
+    "conky"
+    "fcitx5"
+    "bluetoothd"
 )
 
 # Counter for failed processes
@@ -94,3 +100,4 @@ fi
 rm -f /tmp/dolphin-fix-ran
 rm -f /tmp/wallpaper-change-ran
 rm -f /tmp/numlock-set
+rm -f /tmp/rsync_success

@@ -81,6 +81,7 @@ enum UiMode {
 struct PreflightConfig {
     prompt_default_yes: bool,
     fish_language_choice: u8, // 1,2,3
+    terminal_choice: u8, // 1=kitty, 2=alacritty
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -93,6 +94,7 @@ struct PreflightConfig {
 enum PreflightField {
     EnvPromptDefaultYn,
     EnvFishLanguageChoiceOverride,
+    EnvTerminalChoice,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
@@ -178,8 +180,26 @@ struct AppState {
     pkg_descs: HashMap<String, String>,
     // Generic lines for warning popups (e.g., Add Packages validation)
     warning_lines: Vec<String>,
+    // Generic info popup content
+    info_title: String,
+    info_lines: Vec<String>,
+    // Monitor wizard availability (based on installed tools / sysfs)
+    monitor_setup_available: bool,
     // If true, Add Packages editor acts as append-only (opened via Enter)
     add_packages_append_mode: bool,
+}
+
+fn sync_terminal_package_selection(app: &mut AppState) {
+    // `packages.json` includes both terminals. Preflight "terminal choice" determines which one is
+    // enabled by default, while still allowing manual overrides in the package selector.
+    let want_kitty = app.preflight.terminal_choice == 1;
+    let want_alacritty = app.preflight.terminal_choice == 2;
+
+    if app.pacman_sel_map.contains_key("kitty") || app.pacman_sel_map.contains_key("alacritty") {
+        app.pacman_sel_map.insert("kitty".to_string(), want_kitty);
+        app.pacman_sel_map
+            .insert("alacritty".to_string(), want_alacritty);
+    }
 }
 
 impl AppState {
@@ -223,6 +243,7 @@ impl AppState {
             preflight: PreflightConfig {
                 prompt_default_yes: true,
                 fish_language_choice: 1,
+                terminal_choice: 1, // Default to kitty
                 wallpaper_dir: default_wallpaper,
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
@@ -260,6 +281,9 @@ impl AppState {
             user_added_src: HashMap::new(),
             pkg_descs: HashMap::new(),
             warning_lines: Vec::new(),
+            info_title: "Info".to_string(),
+            info_lines: Vec::new(),
+            monitor_setup_available: true,
             add_packages_append_mode: false,
         };
         // Load packages.json if present
@@ -278,6 +302,24 @@ impl AppState {
                     s.aur_sel_map.insert(p.clone(), true);
                 }
             }
+            sync_terminal_package_selection(&mut s);
+        }
+        // Check monitor setup availability early (before Hyprland is installed/running).
+        let mut startup_warnings: Vec<String> = Vec::new();
+
+        // General TUI/setup prerequisites
+        startup_warnings.extend(startup_prereq_warnings(&s));
+
+        // Monitor wizard prerequisites
+        let (avail, mon_lines) = monitor_setup_availability();
+        s.monitor_setup_available = avail;
+        if !avail {
+            s.preflight.monitor_setup_enabled = false;
+            startup_warnings.extend(mon_lines);
+        }
+
+        if !startup_warnings.is_empty() {
+            show_info(&mut s, "Startup checks", startup_warnings);
         }
         s
     }
@@ -667,6 +709,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         "Fish language",
         format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
         sel(PreflightField::EnvFishLanguageChoiceOverride),
+    ));
+    rows.push(mk(
+        "1/2",
+        "Terminal",
+        format!("{} (1=kitty,2=alacritty)", pf.terminal_choice),
+        sel(PreflightField::EnvTerminalChoice),
     ));
     rows.push(mk(
         "Edit",
@@ -1296,8 +1344,20 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Simple info popup (dismiss with Enter/Esc)
     if app.editing && app.edit_kind == EditKind::Info {
         let area_w = area.width as i32;
-        let popup_w = (area_w * 3 / 5).max(28) as u16;
-        let popup_h = 5u16; // title + message + tip
+        // Clamp to avoid underflow in `popup_rect.{width,height} - 2` on tiny terminals.
+        let desired_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_w = if area.width < 4 {
+            area.width
+        } else {
+            desired_w.min(area.width)
+        };
+        let msg_lines = app.info_lines.len().max(1) as u16;
+        let desired_h = msg_lines.saturating_add(4); // title + msg + tip
+        let popup_h = if area.height < 4 {
+            area.height
+        } else {
+            desired_h.min(area.height)
+        };
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
         let popup_rect = Rect {
@@ -1309,7 +1369,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
         f.render_widget(Clear, popup_rect);
         let popup_block = Block::default()
-            .title("Info")
+            .title(app.info_title.clone())
             .borders(Borders::ALL)
             .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
             .border_style(Style::default().fg(app.theme.mauve));
@@ -1318,18 +1378,23 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let inner = Rect {
             x: popup_rect.x + 1,
             y: popup_rect.y + 1,
-            width: popup_rect.width - 2,
-            height: popup_rect.height - 2,
+            width: popup_rect.width.saturating_sub(2),
+            height: popup_rect.height.saturating_sub(2),
         };
+        let msg_h = inner.height.saturating_sub(1);
         let inner_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Length(1)])
+            .constraints([Constraint::Length(msg_h), Constraint::Length(1)])
             .split(inner);
 
-        let msg = Paragraph::new(Text::from(vec![Line::from(
-            "Password is required to run unattended setup.",
-        )]))
-        .style(Style::default().fg(app.theme.text));
+        let lines: Vec<Line> = if app.info_lines.is_empty() {
+            vec![Line::from("")]
+        } else {
+            app.info_lines.iter().map(|l| Line::from(l.clone())).collect()
+        };
+        let msg = Paragraph::new(Text::from(lines))
+            .style(Style::default().fg(app.theme.text))
+            .wrap(Wrap { trim: false });
         f.render_widget(msg, inner_chunks[0]);
 
         let tip = Paragraph::new(Text::from(vec![Line::from("Press Enter or Esc to close")]))
@@ -1339,8 +1404,19 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Add Packages validation warning popup
     if app.editing && app.edit_kind == EditKind::AddPackagesWarning {
         let area_w = area.width as i32;
-        let popup_w = (area_w * 3 / 5).max(40) as u16;
-        let popup_h = (app.warning_lines.len() as u16 + 5).min(area.height.saturating_sub(4));
+        // Clamp to avoid underflow in `popup_rect.{width,height} - 2` on tiny terminals.
+        let desired_w = (area_w * 3 / 5).max(40) as u16;
+        let popup_w = if area.width < 4 {
+            area.width
+        } else {
+            desired_w.min(area.width)
+        };
+        let desired_h = (app.warning_lines.len() as u16).saturating_add(5);
+        let popup_h = if area.height < 4 {
+            area.height
+        } else {
+            desired_h.min(area.height)
+        };
         let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
         let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
         let popup_rect = Rect {
@@ -1360,8 +1436,8 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         let inner = Rect {
             x: popup_rect.x + 1,
             y: popup_rect.y + 1,
-            width: popup_rect.width - 2,
-            height: popup_rect.height - 2,
+            width: popup_rect.width.saturating_sub(2),
+            height: popup_rect.height.saturating_sub(2),
         };
         let rows = Layout::default()
             .direction(Direction::Vertical)
@@ -1673,6 +1749,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         "FISH_LANGUAGE_CHOICE_OVERRIDE",
         pf.fish_language_choice.to_string(),
     );
+    cmd.env(
+        "TERMINAL_CHOICE_OVERRIDE",
+        pf.terminal_choice.to_string(),
+    );
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -1973,6 +2053,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 }
                 KeyCode::Char('s') => {
                     app.preflight.monitor_config = app.mw_buffer.clone();
+                    if !app.preflight.monitor_config.trim().is_empty() {
+                        app.preflight.monitor_setup_enabled = true;
+                    }
                     app.editing = false;
                     app.edit_kind = EditKind::None;
                 }
@@ -2365,8 +2448,11 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 PreflightField::Start => {
                     if app.preflight.password.is_empty() {
                         // Show small info popup instead of only logging
-                        app.editing = true;
-                        app.edit_kind = EditKind::Info;
+                        show_info(
+                            app,
+                            "Password required",
+                            vec!["Password is required to run unattended setup.".to_string()],
+                        );
                         return Ok(false);
                     }
                     if app.preflight.dry_run {
@@ -2412,7 +2498,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvTerminalChoice,
+        PreflightField::EnvTerminalChoice => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
@@ -2430,7 +2517,8 @@ fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvTerminalChoice => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvTerminalChoice,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
@@ -2454,6 +2542,17 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
                 v = 1;
             }
             app.preflight.fish_language_choice = v as u8;
+        }
+        PreflightField::EnvTerminalChoice => {
+            let mut v = app.preflight.terminal_choice as i32 + delta;
+            if v < 1 {
+                v = 2;
+            }
+            if v > 2 {
+                v = 1;
+            }
+            app.preflight.terminal_choice = v as u8;
+            sync_terminal_package_selection(app);
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
@@ -2479,6 +2578,15 @@ fn toggle_boolean_field(app: &mut AppState) {
             app.preflight.prompt_default_yes = !app.preflight.prompt_default_yes
         }
         PreflightField::EnvMonitorSetupEnabled => {
+            if !app.monitor_setup_available {
+                show_info(
+                    app,
+                    "Monitor setup not available",
+                    monitor_setup_availability().1,
+                );
+                app.preflight.monitor_setup_enabled = false;
+                return;
+            }
             app.preflight.monitor_setup_enabled = !app.preflight.monitor_setup_enabled
         }
         PreflightField::EnvAutoContinueOnWarnings => {
@@ -2497,6 +2605,15 @@ fn begin_editing(app: &mut AppState) {
             app.edit_buffer = app.preflight.wallpaper_dir.clone();
         }
         PreflightField::EnvMonitorConfig => {
+            if !app.monitor_setup_available {
+                show_info(
+                    app,
+                    "Monitor setup not available",
+                    monitor_setup_availability().1,
+                );
+                app.preflight.monitor_setup_enabled = false;
+                return;
+            }
             if !app.preflight.monitor_setup_enabled {
                 // Ask to enable
                 app.editing = true;
@@ -2681,29 +2798,187 @@ fn apply_edit_buffer(app: &mut AppState) {
 }
 
 fn discover_hypr_monitors() -> Vec<MonitorInfo> {
-    // Fallback to empty list if hyprctl not present or parsing fails
-    let output = Command::new("hyprctl").arg("monitors").output();
-    let text = match output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
-        _ => return Vec::new(),
-    };
+    // Best-effort discovery:
+    // 1) hyprctl monitors (when Hyprland is running)
+    // 2) xrandr --query (works before Hyprland is installed; includes Virtual-* outputs)
+    // 3) DRM sysfs connectors (last resort; names like card0-DP-1)
+    if let Some(text) = try_cmd_text(
+        &[
+            std::env::var("HYPRCTL").ok(),
+            Some("hyprctl".to_string()),
+            Some("/usr/sbin/hyprctl".to_string()),
+            Some("/usr/local/sbin/hyprctl".to_string()),
+            Some("/usr/local/bin/hyprctl".to_string()),
+        ],
+        &["monitors"],
+    ) {
+        let mons = parse_hyprctl_monitors(&text);
+        if !mons.is_empty() {
+            return mons;
+        }
+    }
 
+    if let Some(text) = try_cmd_text(
+        &[
+            std::env::var("XRANDR").ok(),
+            Some("xrandr".to_string()),
+            Some("/usr/bin/xrandr".to_string()),
+            Some("/usr/sbin/xrandr".to_string()),
+        ],
+        &["--query"],
+    ) {
+        let mons = parse_xrandr_monitors(&text);
+        if !mons.is_empty() {
+            return mons;
+        }
+    }
+
+    discover_drm_connectors()
+}
+
+fn show_info(app: &mut AppState, title: &str, lines: Vec<String>) {
+    app.info_title = title.to_string();
+    app.info_lines = lines;
+    app.editing = true;
+    app.edit_kind = EditKind::Info;
+}
+
+fn monitor_setup_availability() -> (bool, Vec<String>) {
+    let has_hyprctl = has_any_cmd(&[
+        std::env::var("HYPRCTL").ok(),
+        Some("hyprctl".to_string()),
+        Some("/usr/sbin/hyprctl".to_string()),
+        Some("/usr/local/sbin/hyprctl".to_string()),
+        Some("/usr/local/bin/hyprctl".to_string()),
+    ]);
+    let has_xrandr = has_any_cmd(&[
+        std::env::var("XRANDR").ok(),
+        Some("xrandr".to_string()),
+        Some("/usr/bin/xrandr".to_string()),
+        Some("/usr/sbin/xrandr".to_string()),
+    ]);
+    let has_drm = fs::read_dir("/sys/class/drm")
+        .ok()
+        .and_then(|mut it| it.next().transpose().ok().flatten())
+        .is_some();
+
+    let available = has_hyprctl || has_xrandr || has_drm;
+    if available {
+        return (true, Vec::new());
+    }
+
+    let mut lines = vec![
+        "Monitor setup wizard is unavailable because no monitor discovery backend was found."
+            .to_string(),
+        "".to_string(),
+        "Install one of these tools and restart the TUI:".to_string(),
+        "- xrandr (Xorg)".to_string(),
+        "- hyprctl (Hyprland)".to_string(),
+        "".to_string(),
+        "If you are in a very minimal/container environment, also ensure `/sys/class/drm` is available."
+            .to_string(),
+    ];
+    // Keep popup reasonably short on small terminals
+    if lines.len() > 10 {
+        lines.truncate(10);
+    }
+    (false, lines)
+}
+
+fn has_any_cmd(candidates: &[Option<String>]) -> bool {
+    candidates
+        .iter()
+        .cloned()
+        .flatten()
+        .any(|c| Command::new(c).arg("--version").output().is_ok())
+}
+
+fn startup_prereq_warnings(app: &AppState) -> Vec<String> {
+    let mut missing: Vec<String> = Vec::new();
+
+    if !has_any_cmd(&[
+        std::env::var("BASH").ok(),
+        Some("bash".to_string()),
+        Some("/usr/bin/bash".to_string()),
+    ]) {
+        missing.push("bash".to_string());
+    }
+
+    if !has_any_cmd(&[
+        std::env::var("SCRIPT").ok(),
+        Some("script".to_string()),
+        Some("/usr/bin/script".to_string()),
+        Some("/usr/sbin/script".to_string()),
+    ]) {
+        missing.push("script (util-linux)".to_string());
+    }
+
+    // setup.sh uses sudo heavily; without it the install flow can't work.
+    if !has_any_cmd(&[
+        std::env::var("SUDO").ok(),
+        Some("sudo".to_string()),
+        Some("/usr/bin/sudo".to_string()),
+    ]) {
+        missing.push("sudo".to_string());
+    }
+
+    if app.setup_script.is_none() {
+        missing.push("setup.sh (not found)".to_string());
+    }
+
+    if missing.is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = vec![
+        "Some required tools/files are missing; parts of the TUI/setup will not work."
+            .to_string(),
+        "".to_string(),
+        "Missing:".to_string(),
+    ];
+    for m in missing {
+        lines.push(format!("- {}", m));
+    }
+    lines.push("".to_string());
+    lines.push("Install the missing tools and restart the TUI.".to_string());
+    lines
+}
+
+fn try_cmd_text(candidates: &[Option<String>], args: &[&str]) -> Option<String> {
+    for cand in candidates.iter().cloned().flatten() {
+        match Command::new(&cand).args(args).output() {
+            Ok(out) if out.status.success() => {
+                return Some(String::from_utf8_lossy(&out.stdout).to_string())
+            }
+            _ => continue,
+        }
+    }
+    None
+}
+
+fn parse_hyprctl_monitors(text: &str) -> Vec<MonitorInfo> {
     let mut monitors: Vec<MonitorInfo> = Vec::new();
     let mut current: Option<MonitorInfo> = None;
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("Monitor ") {
+        let l = line.trim_start();
+        if let Some(rest) = l.strip_prefix("Monitor ") {
             if let Some(mi) = current.take() {
                 monitors.push(mi);
             }
-            let name = rest.split_whitespace().next().unwrap_or("").to_string();
+            let name = rest
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches([':', ','])
+                .to_string();
             current = Some(MonitorInfo {
                 name,
                 modes: Vec::new(),
             });
-        } else if line.trim_start().starts_with("availableModes:")
+        } else if l.starts_with("availableModes:")
             && let Some(mi) = current.as_mut()
         {
-            let modes_str = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
+            let modes_str = l.split_once(':').map(|x| x.1).unwrap_or("").trim();
             let mut parsed: Vec<String> = modes_str
                 .split_whitespace()
                 .filter(|s| s.contains('x'))
@@ -2717,6 +2992,103 @@ fn discover_hypr_monitors() -> Vec<MonitorInfo> {
         monitors.push(mi);
     }
     monitors
+}
+
+fn parse_xrandr_monitors(text: &str) -> Vec<MonitorInfo> {
+    let mut out: Vec<MonitorInfo> = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_modes: Vec<String> = Vec::new();
+
+    fn flush(
+        out: &mut Vec<MonitorInfo>,
+        current_name: &mut Option<String>,
+        current_modes: &mut Vec<String>,
+    ) {
+        if let Some(name) = current_name.take() {
+            let mut modes = std::mem::take(current_modes);
+            modes.dedup();
+            if modes.is_empty() {
+                modes.push("<unknown>".to_string());
+            }
+            out.push(MonitorInfo { name, modes });
+        }
+    }
+
+    for line in text.lines() {
+        let l = line.trim_end();
+        if !l.starts_with(' ') && !l.starts_with('\t') && l.contains(" connected") {
+            flush(&mut out, &mut current_name, &mut current_modes);
+            let name = l.split_whitespace().next().unwrap_or("").to_string();
+            current_name = Some(name);
+            continue;
+        }
+
+        if current_name.is_some() {
+            let lt = l.trim_start();
+            if let Some(tok) = lt.split_whitespace().next() {
+                if tok.contains('x')
+                    && tok.chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                {
+                    let hz = lt
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim_end_matches(['*', '+']);
+                    if !hz.is_empty()
+                        && hz.chars()
+                            .next()
+                            .map(|c| c.is_ascii_digit())
+                            .unwrap_or(false)
+                    {
+                        current_modes.push(format!("{}@{}", tok, hz));
+                    } else {
+                        current_modes.push(tok.to_string());
+                    }
+                }
+            }
+        }
+    }
+    flush(&mut out, &mut current_name, &mut current_modes);
+
+    for mi in out.iter_mut() {
+        let mut parsed = std::mem::take(&mut mi.modes);
+        parsed.retain(|m| !m.is_empty());
+        parsed.sort_by(|a, b| compare_modes_by_aspect_then_size(a, b));
+        parsed.dedup();
+        mi.modes = parsed;
+    }
+    out
+}
+
+fn discover_drm_connectors() -> Vec<MonitorInfo> {
+    let mut out: Vec<MonitorInfo> = Vec::new();
+    let Ok(entries) = fs::read_dir("/sys/class/drm") else {
+        return out;
+    };
+    for ent in entries.flatten() {
+        let name = ent.file_name().to_string_lossy().to_string();
+        if !name.starts_with("card") || !name.contains('-') {
+            continue;
+        }
+        let status_path = ent.path().join("status");
+        let Ok(status) = fs::read_to_string(status_path) else {
+            continue;
+        };
+        if status.trim() != "connected" {
+            continue;
+        }
+        let pretty = name.splitn(2, '-').nth(1).unwrap_or(&name).to_string();
+        out.push(MonitorInfo {
+            name: pretty,
+            modes: vec!["<unknown>".to_string()],
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.dedup_by(|a, b| a.name == b.name);
+    out
 }
 
 fn aspect_ratio_label(mode: &str) -> Option<String> {

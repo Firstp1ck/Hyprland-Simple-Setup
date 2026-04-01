@@ -1,0 +1,9 @@
+# This file contains fish universal variable definitions.
+# VERSION: 3.0
+# Note: This file is user-specific and will be generated automatically by fish.
+# Users should configure their own paths as needed.
+SETUVAR __fish_initialized:4300
+SETUVAR fish_greeting:
+# fish_user_paths will be set by the user's system automatically
+# Example paths that might be added:
+# SETUVAR fish_user_paths:$HOME/.local/bin\x1e$HOME/.local/share/applications\x1e$HOME/.config/hypr/scripts\x1e$HOME/.config/waybar/scripts

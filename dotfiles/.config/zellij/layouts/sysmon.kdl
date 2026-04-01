@@ -1,0 +1,18 @@
+layout {
+  tab name="sysmon" {
+    pane split_direction="Vertical" {
+      pane {
+        command "btop"
+      }
+      pane split_direction="Horizontal" {
+        pane {
+          command "bash"
+          args "-lc" "fastfetch; read -n1 -rp 'Press any key to close...'"
+        }
+        pane {
+          command "cava"
+        }
+      }
+    }
+  }
+}

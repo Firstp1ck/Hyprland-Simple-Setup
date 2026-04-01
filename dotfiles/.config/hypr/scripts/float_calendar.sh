@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Launch calcurse in kitty
-hyprctl dispatch exec "kitty -e calcurse"
+# Launch calcurse in alacritty
+hyprctl dispatch exec "alacritty -e calcurse"
 
 # Wait for the window to appear (adjust sleep if needed)
 sleep 0.2

@@ -23,6 +23,7 @@
       "xdg-desktop-portal-hyprland"
     ],
     "desktop_evnironment": [
+      "alacritty",
       "dolphin",
       "grim",
       "htop",
@@ -124,9 +125,10 @@
       "dysk",
       "duf",
       "bat",
-      "lsd",
+      "eza",
       "btop",
       "zoxide",
+      "starship",
       "lshw",
       "ntfs-3g",
       "firewalld",
@@ -135,7 +137,12 @@
       "zellij",
       "calcurse",
       "psensor",
-      "konsole"
+      "konsole",
+      "playerctl",
+      "brightnessctl",
+      "reflector",
+      "libnotify",
+      "jq"
     ],
     "gui_tools": []
   },
@@ -143,6 +150,9 @@
     "core_hyprland": [
       "pyprland",
       "hyprsunset"
+    ],
+    "browser": [
+      "zen-browser-bin"
     ],
     "screenshots": [
       "hyprshot"
@@ -159,7 +169,8 @@
     "system_integration": [
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
-      "waybar-module-pacman-updates-git"
+      "waybar-module-pacman-updates-git",
+      "input-remapper-2"
     ],
     "cli_tools": [
       "lsplug"
@@ -187,6 +198,7 @@
     "hyprland": "Hyprland compositor",
     "xdg-desktop-portal-hyprland": "Portal backend for Hyprland",
 
+    "alacritty": "GPU terminal emulator",
     "dolphin": "KDE file manager",
     "grim": "Wayland screenshot tool",
     "htop": "Interactive process viewer",
@@ -250,6 +262,7 @@
 
     "vivaldi": "Vivaldi web browser",
     "vivaldi-ffmpeg-codecs": "Proprietary media codecs",
+    "zen-browser-bin": "Zen Browser (binary, AUR)",
 
     "xdg-desktop-portal-gtk": "GTK portal backend",
     "xdg-desktop-portal-kde": "KDE portal backend",
@@ -278,9 +291,10 @@
     "dysk": "Disk utility",
     "duf": "Disk usage/free viewer",
     "bat": "cat with syntax highlight",
-    "lsd": "ls with icons",
+    "eza": "Modern replacement for ls",
     "btop": "Resource monitor",
     "zoxide": "Smarter cd command",
+    "starship": "Cross-shell prompt",
     "lshw": "Hardware lister",
     "ntfs-3g": "NTFS driver",
     "firewalld": "Firewall daemon",
@@ -290,6 +304,11 @@
     "calcurse": "CLI calendar and tasks",
     "psensor": "Hardware sensors monitor",
     "konsole": "KDE terminal",
+    "playerctl": "Media player control",
+    "brightnessctl": "Brightness control utility",
+    "reflector": "Arch mirrorlist updater",
+    "libnotify": "Desktop notifications library",
+    "jq": "JSON processor",
 
     "pyprland": "Hyprland plugin manager",
     "hyprsunset": "Night light for Hyprland",
@@ -302,7 +321,8 @@
     "xwaylandvideobridge": "XWayland capture bridge",
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
-    "lsplug": "Monitor plug/unplug events"
+    "lsplug": "Monitor plug/unplug events",
+    "input-remapper-2": "Mouse and keyboard button remapper"
   }
 }
 

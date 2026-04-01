@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-LOG_FILE="${HOME}/Linux-Setup.log"
+LOG_FILE="${HOME}/Hyprland-Simple-Setup.log"
 
 # Give notification daemon a moment to start
 sleep 3

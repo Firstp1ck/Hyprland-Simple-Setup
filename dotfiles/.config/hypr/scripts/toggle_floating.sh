@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 floating=$(hyprctl activewindow -j | jq '.floating')
 window=$(hyprctl activewindow -j | jq '.initialClass' | tr -d "\"")
@@ -26,7 +26,7 @@ function handle() {
 }
 
 case $window in
-kitty) handle "50%" "55%" ;;
+alacritty) handle "50%" "55%" ;;
 *) handle "70%" "70%" ;;
 esac
 

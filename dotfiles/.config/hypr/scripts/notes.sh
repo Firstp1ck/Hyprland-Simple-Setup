@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# If not running inside kitty, re-exec in kitty (without --hold)
-if [ -z "$KITTY_WINDOW_ID" ]; then
-    exec kitty --title Notes bash "$0" "$@"
+# If launched directly (not from a terminal), re-exec in the selected terminal.
+# Note: $TERM is a terminfo entry (often not the terminal binary name), so use $TERMINAL instead.
+if [ -z "${INSIDE_TERMINAL:-}" ]; then
+    exec env INSIDE_TERMINAL=1 "$HOME/.config/hypr/scripts/term_exec.sh" --title Notes -- bash "$0" "$@"
 fi
 
 notes_dir="$HOME/Dokumente/0_Notes"

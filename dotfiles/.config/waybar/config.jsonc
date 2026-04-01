@@ -2,34 +2,42 @@
 {
     "layer": "top", // Waybar at top layer
     "spacing": 10, // Gaps between modules
+    // "on-sigusr1": "hide", // Hide waybar when SIGUSR1 is received
+    "on-sigusr2": "show", // Show waybar when SIGUSR2 is received
     "modules-left": [
         "custom/power",
         "custom/menu",
+        "custom/lmstudio",
         "tray",
         "hyprland/workspaces",
-        "hyprland/submap",
-        "custom/clipboard"
+        "hyprland/submap"
     ],
     "modules-right": [
         "wlr/taskbar",
-        "custom/weather",
         "pulseaudio",
-        // "custom/brightness",
-        "network",
-        "power-profiles-daemon",
+        "backlight",
         "temperature",
         "keyboard-state",
+        "custom/razerbattery",
         "battery",
+        "network",
+        "custom/vpn",
         "bluetooth",
         "custom/updates",
         "custom/notification",
-        "clock"
+        "clock",
+        "custom/input-method"
         // Unused Modules
+        // "hyprland/language",
+        // "custom/weather",
+        // "custom/brightness",
+        // "power-profiles-daemon",
         // "idle_inhibitor",
         // "cpu",
         // "memory",
+        // "custom/clipboard"
     ],
-    
+
     // Modules configuration
     "keyboard-state": {
         "numlock": true,
@@ -49,8 +57,10 @@
         "on-click": "activate",
         "on-click-middle": "close",
         "ignore-list": [
-        "kitty",
-        "xwaylandvideobridge"
+        "alacritty",
+        "xwaylandvideobridge",
+        "org.pulseaudio.pavucontrol",
+        "alacritty-dropterm"
         ],
         "app_ids-mapping": {
         "firefoxdeveloperedition": "firefox-developer-edition"
@@ -82,7 +92,7 @@
         "critical-threshold": 80,
         "format": " {temperatureC}°C {icon}",
         "format-icons": ["", "", ""],
-        "on-click": "psensor"
+        "on-click": "$HOME/.config/waybar/scripts/sensor.sh"
     },
 
     "battery": {
@@ -111,18 +121,10 @@
         }
     },
 
-    "network": {
-        "format-wifi": "{signalStrength}% ",
-        "format-ethernet": "Connected ",
-        "tooltip-format": "{ifname} via {gwaddr} ",
-        "format-linked": "{ifname} (No IP) ",
-        "format-disconnected": "Disconnected ⚠",
-        "format-alt": "{ifname}: {ipaddr}/{cidr}",
-        "on-click-right": "nm-connection-editor"
-    },
 
     "pulseaudio": {
         "on-click": "pavucontrol",
+        "on-click-right": "$HOME/.config/waybar/scripts/alsamixer.sh",
         "format": "{volume}% {icon} {format_source}",
         "format-bluetooth": "{volume}% {icon} {format_source}",
         "format-bluetooth-muted": " {icon} {format_source}",
@@ -153,34 +155,31 @@
         "on-click-right": "$HOME/.config/hypr/scripts/toggle_bluetooth.sh"
     },
 
-    "custom/weather": {
-        "format": "{}",
-        "format-alt": "{alt}:{}",
-        "format-alt-click": "click",
-        "interval": 3600,
-        "return-type": "json",
-        "exec": "$HOME/.config/waybar/scripts/weather.py",
-        "tooltip": true,
-        "on-click": "$HOME/.config/waybar/scripts/weather.sh"
+    "network": {
+        "format-wifi": "{signalStrength}% ",
+        "format-ethernet": "󰖟",
+        "tooltip-format": "{ifname} via {gwaddr} ",
+        "format-linked": "{ifname} (No IP) ",
+        "format-disconnected": "⚠",
+        // "format-alt": "{ifname}: {ipaddr}/{cidr}",
+        "on-click-right": "$HOME/.config/waybar/scripts/nmtui.sh",
+        "on-click": "$HOME/.config/waybar/scripts/nmtui-connect.sh"
     },
 
-    // TODO: Could lead to freezes and crashes due to ddcutil checking monitors through a loop
-    // "custom/brightness": {
-    // "exec": "ddcutil -b 8 getvcp 10 -t | awk '{print $4}'",
-    // "interval": 1,
-    // "format": " {}%",
-    // "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
-    // "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
-    // "menu": "on-click-right",
-    // "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
-    // "menu-actions": {
-    //     "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
-    //     "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
-    //     "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
-    //     "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
-    //     "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
-    //     }
-    // },
+    "backlight": {
+        "device": "amd_gpu_bl1",
+        "format": "{icon} {percent}%",
+        "format-icons": ["", "", ""],
+        "menu": "on-click-right",
+        "menu-file": "$HOME/.config/waybar/backlight_menu.xml",
+        "menu-actions": {
+            "set-to-100": "$HOME/.config/waybar/scripts/backlight.sh 100",
+            "set-to-75": "$HOME/.config/waybar/scripts/backlight.sh 75",
+            "set-to-50": "$HOME/.config/waybar/scripts/backlight.sh 50",
+            "set-to-25": "$HOME/.config/waybar/scripts/backlight.sh 25",
+            "set-to-10": "$HOME/.config/waybar/scripts/backlight.sh 10"
+            }
+    },
 
     "custom/updates": {
         "format": "{}{icon}",
@@ -191,11 +190,11 @@
         },
         "exec-if": "which waybar-module-pacman-updates",
         "exec": "waybar-module-pacman-updates --no-zero-output --interval-seconds 60 --network-interval-seconds 60 --tooltip-align-columns monospace",
-        "on-click": "$HOME/.config/waybar/scripts/update.sh"
+        "menu": "on-click-right",
+        "menu-file": "$HOME/.config/waybar/update_menu.xml"
     },
 
     "custom/notification": {
-        "tooltip": false,
         "format": "{} {icon}",
         "format-icons": {
           "notification": "<span foreground='red'><sup></sup></span>",
@@ -217,15 +216,16 @@
 
     "custom/power": {
     "format": " ⏻ ",
+    "tooltip": false,
     "on-click": "wlogout --protocol layer-shell",
     "menu": "on-click-right",
     "menu-file": "$HOME/.config/waybar/power_menu.xml", // Menu file in resources folder
-    "menu-actions": {
-        "shutdown": "shutdown",
-        "reboot": "reboot",
-        "suspend": "systemctl suspend",
-        "hibernate": "systemctl hibernate",
-        "logout": "hyprctl dispatch exit"
+        "menu-actions": {
+        "shutdown": "~/.config/waybar/scripts/power_action.sh shutdown",
+        "reboot": "~/.config/waybar/scripts/power_action.sh reboot",
+        "suspend": "~/.config/waybar/scripts/power_action.sh suspend",
+        "hibernate": "~/.config/waybar/scripts/power_action.sh hibernate",
+        "logout": "~/.config/waybar/scripts/power_action.sh logout"
         }
     },
 
@@ -239,18 +239,59 @@
         "menu-actions": {
             "keybinds": "~/.config/waybar/scripts/keybinds.py",
             "drun": "wofi --show drun --style ~/.config/wofi/menu.css",
-            "open_keybinds": "kitty nvim ~/.config/hypr/sources/keybindings.conf",
+            "open_keybinds": "alacritty -t Keybinds -e nvim $HOME/.config/hypr/sources/keybindings.conf",
             "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
         }
     },
 
-    "custom/clipboard": {
-        "format": "󰅌",
-        "exec": "wl-clipboard-history -p",
+    "custom/razerbattery": {
+        "exec-if": "$HOME/.config/waybar/scripts/check_razer.sh",
+        "exec": "$HOME/.config/waybar/scripts/mouse_battery.sh",
+        "interval": 15,
+        "return-type": "text",
+        "tooltip": true,
+        "tooltip-format": "Razer Naga Pro V2\nBattery: {}"
+    },
+
+    "custom/input-method": {
+        "exec": "$HOME/.config/waybar/scripts/keyboardlayout_status.sh",
+        "interval": 1,
+        "on-click": "$HOME/.config/hypr/scripts/toggle_keyboardlayouts.sh"
+    },
+
+    "custom/vpn": {
+        "exec": "$HOME/.config/waybar/scripts/vpn_status.sh",
         "interval": 5,
-        "on-click": "$HOME/.config/waybar/scripts/clipboard.sh"
+        "return-type": "json",
+        "tooltip": true,
+        "on-click": "$HOME/.config/waybar/scripts/vpn_toggle_wrapper.sh toggle",
+        "on-click-right": "$HOME/.config/waybar/scripts/vpn_toggle_wrapper.sh status"
+    },
+
+    "custom/lmstudio": {
+        "exec": "$HOME/.config/waybar/scripts/lmstudio_status.sh",
+        "interval": 10,
+        "return-type": "json",
+        "tooltip": true,
+        "on-click": "$HOME/.config/waybar/scripts/lmstudio_open_chat.sh",
+        "menu": "on-click-right",
+        "menu-file": "$HOME/.config/waybar/lmstudio_menu.xml",
+        "menu-actions": {
+            "google-gemma-3-12b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"google/gemma-3-12b\"",
+            "mistralai-devstral-small-2-2512": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"mistralai/devstral-small-2-2512\"",
+            "mistralai-ministral-3-14b-reasoning": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"mistralai/ministral-3-14b-reasoning\"",
+            "nemotron-orchestrator-8b-deepseek-v3.2-speciale-distill": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"nemotron-orchestrator-8b-deepseek-v3.2-speciale-distill\"",
+            "openai-gpt-oss-20b-abliterated-uncensored-neo-imatrix": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"openai-gpt-oss-20b-abliterated-uncensored-neo-imatrix\"",
+            "openai-gpt-oss-20b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"openai/gpt-oss-20b\"",
+            "pixtral-12b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"pixtral-12b\"",
+            "qwen3-8b-deepseek-v3.2-speciale-distill": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen3-8b-deepseek-v3.2-speciale-distill\"",
+            "wizard-vicuna-30b-uncensored": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"wizard-vicuna-30b-uncensored\"",
+            "zai-org-glm-4.6v-flash": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"zai-org/glm-4.6v-flash\""
+        }
     }
+
 }
+
 
 // Unused Modules
     // Shows the window title in the taskbar
@@ -274,4 +315,43 @@
     // },
     // "memory": {
     //     "format": "{}% "
+    // },
+
+    // "custom/weather": {
+    //     "format": "{}",
+    //     "format-alt": "{alt}:{}",
+    //     "format-alt-click": "click",
+    //     "interval": 3600,
+    //     "return-type": "json",
+    //     "exec": "$HOME/.config/waybar/scripts/weather.py",
+    //     "tooltip": true,
+    //     "on-click": "$HOME/.config/waybar/scripts/weather_tui.sh"
+    // },
+
+    // "custom/brightness": {
+    // "exec": "$HOME/.config/waybar/scripts/brightness.sh",
+    // "interval": 5,
+    // "format": " {}%",
+    // "on-scroll-down": "$HOME/.config/waybar/scripts/brightness.sh -10",
+    // "on-scroll-up": "$HOME/.config/waybar/scripts/brightness.sh +10",
+    // "menu": "on-click-right",
+    // "menu-file": "$HOME/.config/waybar/brightness_menu.xml",
+    // "menu-actions": {
+    //     "set-to-100": "$HOME/.config/waybar/scripts/brightness.sh 100",
+    //     "set-to-75": "$HOME/.config/waybar/scripts/brightness.sh 75",
+    //     "set-to-50": "$HOME/.config/waybar/scripts/brightness.sh 50",
+    //     "set-to-25": "$HOME/.config/waybar/scripts/brightness.sh 25",
+    //     "set-to-10": "$HOME/.config/waybar/scripts/brightness.sh 10"
+    //     }
+    // },
+
+    // "custom/clipboard": {
+    //     "format": "󰅌",
+    //     "exec": "wl-clipboard-history -p",
+    //     "interval": 5,
+    //     "on-click": "$HOME/.config/waybar/scripts/clipboard.sh"
+    // },
+
+    // "hyprland/language": {
+    // "format": "{short} 🇨🇭"
     // },

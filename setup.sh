@@ -21,7 +21,7 @@ NC='\033[0m'
 CHECK_MARK=$'\e[1;32m\u2714\e[0m'
 CROSS_MARK=$'\e[1;31m\u2718\e[0m'
 CIRCLE=$'\u25CB'
-LOG_FILE="${HOME}/Linux-Setup.log"
+LOG_FILE="${HOME}/Hyprland-Simple-Setup.log"
 
 # Arrays to store update statuses
 mirror_updates=()
@@ -30,6 +30,14 @@ aur_updates=()
 failed_packages=()
 config_statuses=()
 
+# Final summary tracking arrays
+SUMMARY_HARD_FAILURES=()
+SUMMARY_WARNINGS=()
+SUMMARY_SOFT_ERRORS=()
+SUMMARY_SKIPPED=()
+declare -A _SEEN_RECOMMENDATIONS=()
+SUMMARY_RECOMMENDATIONS=()
+
 # Selected AUR helper (paru preferred if available)
 AUR_HELPER=""
 AUR_HELPER_CHECKED=""
@@ -37,9 +45,28 @@ AUR_HELPER_CHECKED=""
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
+TERMINAL_CHOICE=""
+BROWSER_CHOICE=""
 SETUP_DIR=Hyprland-Simple-Setup
 
 ############################################################## Helper Functions ##############################################################
+
+get_terminal_choice() {
+    if [ -z "$TERMINAL_CHOICE" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            # default to 1 (kitty) if not provided in env
+            TERMINAL_CHOICE=${TERMINAL_CHOICE_OVERRIDE:-1}
+            print_verbose "Non-interactive mode: TERMINAL_CHOICE_OVERRIDE='$TERMINAL_CHOICE_OVERRIDE', using TERMINAL_CHOICE='$TERMINAL_CHOICE'"
+            return
+        fi
+        echo "Select your preferred terminal:"
+        echo "1) kitty (Default)"
+        echo "2) alacritty"
+        read -rp "Enter selection number (1-2): " TERMINAL_CHOICE
+    else
+        print_verbose "TERMINAL_CHOICE already set to: '$TERMINAL_CHOICE'"
+    fi
+}
 
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
@@ -56,6 +83,23 @@ get_fish_language_choice() {
         read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
     else
         print_verbose "FISH_LANGUAGE_CHOICE already set to: '$FISH_LANGUAGE_CHOICE'"
+    fi
+}
+
+get_browser_choice() {
+    if [ -z "$BROWSER_CHOICE" ]; then
+        if [ "$NON_INTERACTIVE" = "true" ]; then
+            # default to 1 (zen-browser) if not provided in env
+            BROWSER_CHOICE=${BROWSER_CHOICE_OVERRIDE:-1}
+            print_verbose "Non-interactive mode: BROWSER_CHOICE_OVERRIDE='$BROWSER_CHOICE_OVERRIDE', using BROWSER_CHOICE='$BROWSER_CHOICE'"
+            return
+        fi
+        echo "Select your preferred browser:"
+        echo "1) zen-browser (Default)"
+        echo "2) vivaldi"
+        read -rp "Enter selection number (1-2): " BROWSER_CHOICE
+    else
+        print_verbose "BROWSER_CHOICE already set to: '$BROWSER_CHOICE'"
     fi
 }
 
@@ -78,6 +122,91 @@ log_dry_run_operation() {
     local function_name="$1"
     local operation="$2"
     DRY_RUN_OPERATIONS+=("[$function_name] $operation")
+}
+
+should_init_dotfiles_git_repo() {
+    # 1) Explicit CLI flag wins
+    if [ "${INIT_DOTFILES_GIT_REPO:-false}" = "true" ]; then
+        return 0
+    fi
+    # 2) Environment variable override (useful for non-interactive runs)
+    case "${DOTFILES_GIT_INIT:-}" in
+        1|true|yes|y|Y) return 0 ;;
+        0|false|no|n|N) return 1 ;;
+    esac
+    # 3) Interactive prompt (default yes); non-interactive defaults to no
+    if [ "${NON_INTERACTIVE:-false}" = "true" ]; then
+        return 1
+    fi
+    if prompt_yes_no "Initialize a local git repo in \$HOME/dotfiles (no remote) after setup?"; then
+        return 0
+    fi
+    return 1
+}
+
+init_dotfiles_git_repo() {
+    local dotfiles_dir="$HOME/dotfiles"
+    local repo_git_dir="$dotfiles_dir/.git"
+
+    if ! should_init_dotfiles_git_repo; then
+        print_verbose "Dotfiles git init skipped (not enabled)"
+        return 0
+    fi
+
+    if [ ! -d "$dotfiles_dir" ]; then
+        print_warning "Dotfiles directory not found at $dotfiles_dir; skipping git init."
+        return 0
+    fi
+
+    if [ -d "$repo_git_dir" ]; then
+        print_message "Dotfiles already have a git repo at $repo_git_dir; skipping git init."
+        return 0
+    fi
+
+    if ! command -v git >/dev/null 2>&1; then
+        print_warning "git not found; skipping dotfiles git repo initialization."
+        return 0
+    fi
+
+    if is_dry_run; then
+        log_dry_run_operation "init_dotfiles_git_repo" "Would init local git repo in $dotfiles_dir and create initial commit"
+        return 0
+    fi
+
+    print_message "Initializing local git repo in $dotfiles_dir"
+    if ! (cd "$dotfiles_dir" && git init -q); then
+        print_warning "Failed to init git repo in $dotfiles_dir"
+        return 1
+    fi
+
+    # Ensure local identity is set (avoid touching global git config)
+    local existing_name existing_email
+    existing_name=$(git -C "$dotfiles_dir" config --get user.name || true)
+    existing_email=$(git -C "$dotfiles_dir" config --get user.email || true)
+    if [ -z "$existing_name" ]; then
+        git -C "$dotfiles_dir" config user.name "$USER" || true
+    fi
+    if [ -z "$existing_email" ]; then
+        local host
+        host="$(hostname 2>/dev/null || echo "localhost")"
+        git -C "$dotfiles_dir" config user.email "${USER}@${host}" || true
+    fi
+
+    # Initial snapshot commit
+    if ! (cd "$dotfiles_dir" && git add -A); then
+        print_warning "Failed to stage dotfiles in $dotfiles_dir"
+        return 1
+    fi
+    if git -C "$dotfiles_dir" diff --cached --quiet; then
+        print_message "Dotfiles repo has nothing to commit (already clean)."
+        return 0
+    fi
+    if ! (cd "$dotfiles_dir" && git commit -q -m "Initial dotfiles snapshot"); then
+        print_warning "Failed to create initial commit in $dotfiles_dir"
+        return 1
+    fi
+
+    print_message "Local dotfiles git repo created at $repo_git_dir"
 }
 
 execute_command() {
@@ -110,6 +239,7 @@ execute_command() {
         print_verbose "Command executed: ${adjusted_cmd} (Exit code: $exit_code)"
         if [ $exit_code -ne 0 ]; then
             print_warning "Command for '$description' failed."
+            record_soft_error "$caller_function" "$description"
         fi
         # Throttle UI output similarly to dry-run
         sleep 0.05
@@ -272,25 +402,27 @@ is_pacman_group_installed() {
 # Detect first Hyprland monitor name from `hyprctl monitors`
 get_first_hypr_monitor() {
     command -v hyprctl >/dev/null 2>&1 || return 1
-    hyprctl monitors 2>/dev/null | awk '/^Monitor /{print $2; exit}'
+    # Be tolerant to any leading whitespace in hyprctl output
+    hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2; exit}'
 }
 
-# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor
+# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor.
+# Accepts an optional path to a change_wallpaper.conf; defaults to the runtime config under ~/.config.
 ensure_wallpaper_monitors() {
-    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
+    local wallpaper_conf="${1:-$HOME/.config/hypr/sources_specific/change_wallpaper.conf}"
     [ -f "$wallpaper_conf" ] || return 0
 
     # Read existing MONITORS line if any
     local current_line
     current_line=$(grep -E '^[[:space:]]*MONITORS=' "$wallpaper_conf" 2>/dev/null || true)
 
-    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR)
+    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR_N)
     local need_set=false
     if [ -z "$current_line" ]; then
         need_set=true
-    elif echo "$current_line" | grep -q 'MONITOR'; then
+    elif echo "$current_line" | grep -qE 'MONITORS=\(\)'; then
         need_set=true
-    elif echo "$current_line" | grep -q 'MONITORS=()'; then
+    elif echo "$current_line" | grep -qE 'MONITOR_[0-9]'; then
         need_set=true
     fi
 
@@ -303,11 +435,177 @@ ensure_wallpaper_monitors() {
         fi
         print_message "Auto-detected monitor: $first_mon"
         if echo "$current_line" | grep -q 'MONITORS='; then
-            execute_command "sed -i -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
+            execute_command "sed -i --follow-symlinks -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
         else
             execute_command "printf '%s\n' 'MONITORS=(\"$first_mon\")' >> '$wallpaper_conf'" "Append MONITORS to wallpaper config"
         fi
     fi
+}
+
+# Get ALL Hyprland monitor names (one per line).
+get_all_hypr_monitors() {
+    command -v hyprctl >/dev/null 2>&1 || return 1
+    hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2}'
+}
+
+# Auto-populate monitors.conf when it contains no active (uncommented) monitor= lines.
+# Generates a basic monitor=NAME,preferred,auto,1 entry for each detected monitor.
+ensure_monitors_conf() {
+    local monitors_conf="${1:-$HOME/.config/hypr/sources_specific/monitors.conf}"
+    [ -f "$monitors_conf" ] || return 0
+
+    # Check if there are already active monitor= lines
+    if grep -qE '^[[:space:]]*monitor=' "$monitors_conf" 2>/dev/null; then
+        return 0
+    fi
+
+    local monitor_names
+    monitor_names=$(get_all_hypr_monitors || true)
+    if [ -z "$monitor_names" ]; then
+        print_warning "Could not auto-detect monitors via hyprctl; leaving monitors.conf unchanged."
+        return 0
+    fi
+
+    print_message "Auto-populating monitors.conf with detected monitors..."
+    local all_names=()
+    local monitor_lines=()
+    local x_offset=0
+    while IFS= read -r mon_name; do
+        [ -z "$mon_name" ] && continue
+        all_names+=("$mon_name")
+        local width
+        width=$(hyprctl monitors 2>/dev/null | awk -v name="$mon_name" '
+            /^[[:space:]]*Monitor /{found=($2==name)}
+            found && /^[[:space:]]*[0-9]+x[0-9]+@/{split($1,a,"x"); split(a[2],b,"@"); print a[1]; exit}
+        ')
+        if ! [[ "${width:-}" =~ ^[0-9]+$ ]]; then
+            width=0
+        fi
+
+        local pos="${x_offset}x0"
+        monitor_lines+=("monitor=${mon_name},preferred,${pos},1")
+        print_message "  Added monitor=${mon_name},preferred,${pos},1"
+        x_offset=$((x_offset + width))
+    done <<< "$monitor_names"
+
+    # Append in detected order (avoid reversing via repeated "insert at top").
+    if [ "${#monitor_lines[@]}" -gt 0 ]; then
+        {
+            echo
+            printf '%s\n' "${monitor_lines[@]}"
+        } >> "$monitors_conf"
+    fi
+
+    # Add workspace assignments for detected monitors
+    if [ "${#all_names[@]}" -gt 0 ]; then
+        local primary="${all_names[0]}"
+        local secondary="${all_names[1]:-$primary}"
+        printf '\nworkspace=1,monitor:%s,default:true\n' "$primary" >> "$monitors_conf"
+        if [ "${#all_names[@]}" -gt 1 ]; then
+            printf 'workspace=2,monitor:%s\n' "$secondary" >> "$monitors_conf"
+        fi
+    fi
+}
+
+# Apply MONITOR_CONFIG directly (name:resolution:scale;...) without requiring
+# a live Hyprland session. This is primarily used by non-interactive/TUI runs.
+apply_monitor_config_from_env() {
+    local monitor_config="${MONITOR_CONFIG:-}"
+    [ -n "$monitor_config" ] || return 1
+
+    local hyprland_setup_dir=""
+    hyprland_setup_dir="$(find_hyprland_setup_dir || true)"
+
+    local monitor_targets=(
+        "$HOME/.config/hypr/sources_specific/monitors.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+    )
+    local wallpaper_targets=(
+        "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+    )
+    if [ -n "$hyprland_setup_dir" ]; then
+        monitor_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/monitors.conf")
+        wallpaper_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf")
+    fi
+
+    local entry
+    local parsed_any=false
+    local x_offset=0
+    local monitor_lines=()
+    local monitor_names=()
+    IFS=';' read -ra entries <<< "$monitor_config"
+    for entry in "${entries[@]}"; do
+        [ -z "$entry" ] && continue
+        local nm cfg sc
+        nm="${entry%%:*}"
+        cfg="${entry#*:}"
+        sc="${cfg##*:}"
+        cfg="${cfg%:*}"
+        if [ -z "$nm" ] || [ -z "$cfg" ] || [ -z "$sc" ]; then
+            continue
+        fi
+
+        local width="${cfg%%x*}"
+        if ! [[ "$width" =~ ^[0-9]+$ ]]; then
+            width=0
+        fi
+        local offset="${x_offset}x0"
+        monitor_lines+=("monitor=${nm},${cfg},${offset},${sc}")
+        monitor_names+=("$nm")
+        parsed_any=true
+        x_offset=$((x_offset + width))
+    done
+
+    if [ "$parsed_any" != true ]; then
+        print_warning "MONITOR_CONFIG is set but could not be parsed: $monitor_config"
+        return 1
+    fi
+
+    local workspace_lines=()
+    if [ "${#monitor_names[@]}" -gt 0 ]; then
+        workspace_lines+=("workspace=1,monitor:${monitor_names[0]},default:true")
+    fi
+    if [ "${#monitor_names[@]}" -gt 1 ]; then
+        workspace_lines+=("workspace=2,monitor:${monitor_names[1]}")
+    fi
+
+    local mt
+    for mt in "${monitor_targets[@]}"; do
+        mkdir -p "$(dirname "$mt")"
+        {
+            echo "# Check monitor names (e.g. DP-1, HDMI-A-1) with: \`hyprctl monitors\`"
+            for line in "${monitor_lines[@]}"; do
+                echo "$line"
+            done
+            if [ "${#workspace_lines[@]}" -gt 0 ]; then
+                echo
+                for line in "${workspace_lines[@]}"; do
+                    echo "$line"
+                done
+            fi
+        } > "$mt"
+        print_message "Applied MONITOR_CONFIG to $(basename "$mt")"
+    done
+
+    local monitors_str=""
+    local m
+    for m in "${monitor_names[@]}"; do
+        monitors_str+="\"$m\" "
+    done
+    monitors_str=$(echo "$monitors_str")
+    local wt
+    for wt in "${wallpaper_targets[@]}"; do
+        [ -f "$wt" ] || continue
+        if grep -q "^MONITORS=" "$wt"; then
+            sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wt"
+        else
+            echo "MONITORS=($monitors_str)" >> "$wt"
+        fi
+        print_message "Applied MONITORS to $(basename "$wt"): MONITORS=($monitors_str)"
+    done
+
+    return 0
 }
 
 ############################################################## Verbosity and Error Handling Functions ##############################################################
@@ -393,6 +691,177 @@ track_config_status() {
     local config_name="$1"
     local status="$2"
     config_statuses+=("$config_name: $status")
+}
+
+record_hard_failure() {
+    local step="$1" detail="$2"
+    SUMMARY_HARD_FAILURES+=("[$step] $detail")
+}
+
+record_warning() {
+    local step="$1" detail="$2"
+    SUMMARY_WARNINGS+=("[$step] $detail")
+}
+
+record_soft_error() {
+    local step="$1" detail="$2"
+    SUMMARY_SOFT_ERRORS+=("[$step] $detail")
+}
+
+record_skipped() {
+    local step="$1" detail="$2"
+    SUMMARY_SKIPPED+=("[$step] $detail")
+}
+
+add_recommendation_once() {
+    local msg="$1"
+    if [[ -z "${_SEEN_RECOMMENDATIONS[$msg]+_}" ]]; then
+        _SEEN_RECOMMENDATIONS[$msg]=1
+        SUMMARY_RECOMMENDATIONS+=("$msg")
+    fi
+}
+
+build_summary_recommendations() {
+    local entry
+
+    for entry in "${SUMMARY_HARD_FAILURES[@]}"; do
+        case "$entry" in
+            *"install_pacman_packages"*)
+                add_recommendation_once "Re-run failed pacman installs: sudo pacman -S --needed <package>"
+                ;;
+            *"install_aur_extras"*)
+                add_recommendation_once "Re-run failed AUR installs: ${AUR_HELPER:-paru} -S --needed <package>"
+                ;;
+            *"update_arch_mirrors"*)
+                add_recommendation_once "Update mirrors manually: sudo reflector --verbose --protocol https --sort rate --latest 20 --save /etc/pacman.d/mirrorlist"
+                ;;
+            *"configure_bluetooth"*)
+                add_recommendation_once "Check bluetooth: sudo systemctl status bluetooth && sudo systemctl enable --now bluetooth"
+                ;;
+            *"configure_fish"*)
+                add_recommendation_once "Set shell manually: sudo chsh -s /usr/bin/fish \$USER"
+                ;;
+            *"configure_network_manager"*)
+                add_recommendation_once "Enable NetworkManager: sudo systemctl enable --now NetworkManager"
+                ;;
+            *"configure_environment"*"Neovim"*)
+                add_recommendation_once "Install Neovim manually: sudo pacman -S neovim"
+                ;;
+            *"configure_timeshift"*)
+                add_recommendation_once "Set up Timeshift manually: sudo pacman -S timeshift && sudo systemctl enable --now cronie.service"
+                ;;
+        esac
+    done
+
+    for entry in "${SUMMARY_SOFT_ERRORS[@]}"; do
+        case "$entry" in
+            *"update_arch_mirrors"*)
+                add_recommendation_once "Retry mirror update: sudo reflector --verbose --protocol https --sort rate --latest 20 --save /etc/pacman.d/mirrorlist"
+                ;;
+            *"update_pacman"*)
+                add_recommendation_once "Retry system update: sudo pacman -Syyu"
+                ;;
+            *"update_yay"*)
+                add_recommendation_once "Retry AUR update: ${AUR_HELPER:-paru} -Sua"
+                ;;
+            *"enable_sddm"*)
+                add_recommendation_once "Enable SDDM manually: sudo systemctl enable sddm"
+                ;;
+            *"EDITOR"*)
+                add_recommendation_once "Set EDITOR manually: systemctl --user set-environment EDITOR=nvim"
+                ;;
+            *"configure_timeshift"*)
+                add_recommendation_once "Create Timeshift snapshot manually: sudo timeshift --create --tags D"
+                ;;
+        esac
+    done
+
+    for entry in "${SUMMARY_WARNINGS[@]}"; do
+        case "$entry" in
+            *"wallpaper"*|*"Wallpaper"*)
+                add_recommendation_once "Verify wallpaper directory exists and contains images for swww/hyprpaper"
+                ;;
+            *"backup"*|*"Backup"*)
+                add_recommendation_once "Create a manual backup of ~/.config before making further changes"
+                ;;
+            *"workspace 11"*)
+                add_recommendation_once "Remove workspace 11 entries from Hyprland/Waybar configs to avoid phantom workspaces"
+                ;;
+            *"PAM"*|*"gnome-keyring"*)
+                add_recommendation_once "Verify PAM config: check /etc/pam.d/system-local-login for pam_gnome_keyring.so entries"
+                ;;
+            *"xdg-user-dirs"*)
+                add_recommendation_once "Run xdg-user-dirs-update manually to create standard user directories"
+                ;;
+        esac
+    done
+
+    if [ ${#SUMMARY_HARD_FAILURES[@]} -gt 0 ]; then
+        add_recommendation_once "Review the full log for details: $LOG_FILE"
+    fi
+}
+
+print_final_recommendation_summary() {
+    local total=$(( ${#SUMMARY_HARD_FAILURES[@]} + ${#SUMMARY_WARNINGS[@]} + ${#SUMMARY_SOFT_ERRORS[@]} + ${#SUMMARY_SKIPPED[@]} ))
+
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║            Final Setup Report                           ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+
+    if [ "$total" -eq 0 ]; then
+        echo -e "${GREEN}Everything completed without issues.${NC}"
+        echo ""
+        return
+    fi
+
+    if [ ${#SUMMARY_HARD_FAILURES[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${RED}Hard Failures (${#SUMMARY_HARD_FAILURES[@]}):${NC}"
+        for entry in "${SUMMARY_HARD_FAILURES[@]}"; do
+            echo -e "  ${RED}$CROSS_MARK${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_SOFT_ERRORS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}Soft Errors (${#SUMMARY_SOFT_ERRORS[@]}):${NC}"
+        for entry in "${SUMMARY_SOFT_ERRORS[@]}"; do
+            echo -e "  ${YELLOW}!${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_WARNINGS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}Warnings (${#SUMMARY_WARNINGS[@]}):${NC}"
+        for entry in "${SUMMARY_WARNINGS[@]}"; do
+            echo -e "  ${YELLOW}~${NC} $entry"
+        done
+    fi
+
+    if [ ${#SUMMARY_SKIPPED[@]} -gt 0 ]; then
+        echo ""
+        echo -e "Skipped Steps (${#SUMMARY_SKIPPED[@]}):"
+        for entry in "${SUMMARY_SKIPPED[@]}"; do
+            echo "  $CIRCLE $entry"
+        done
+    fi
+
+    build_summary_recommendations
+
+    if [ ${#SUMMARY_RECOMMENDATIONS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${GREEN}Recommendations:${NC}"
+        local i=1
+        for rec in "${SUMMARY_RECOMMENDATIONS[@]}"; do
+            echo -e "  ${i}. $rec"
+            ((i++))
+        done
+    fi
+
+    echo ""
+    echo "Log file: $LOG_FILE"
+    echo ""
 }
 
 list_packages() {
@@ -863,6 +1332,26 @@ validate_wallpaper_dir() {
     return 0
 }
 
+# Prefer $HOME/Pictures; fallback to $HOME/Bilder; create Pictures if neither exists.
+resolve_user_pictures_dir() {
+    local pictures_dir="$HOME/Pictures"
+    local bilder_dir="$HOME/Bilder"
+
+    if [ -d "$pictures_dir" ]; then
+        echo "$pictures_dir"
+        return 0
+    fi
+
+    if [ -d "$bilder_dir" ]; then
+        echo "$bilder_dir"
+        return 0
+    fi
+
+    # If user doesn't have either (or uses custom XDG dirs), default to Pictures and create it.
+    mkdir -p "$pictures_dir"
+    echo "$pictures_dir"
+}
+
 # Function to check and prompt user input for required variables
 check_user_input() {
     # Find Hyprland-Simple-Setup directory first
@@ -1025,6 +1514,8 @@ update_configs() {
         if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
             print_message "Stow script executed successfully"
             track_config_status "Dotfiles Setup" "$CHECK_MARK"
+            # Optional: initialize a local git repo for ~/dotfiles after stow
+            init_dotfiles_git_repo || true
         else
             print_error "Stow script failed to execute properly"
             track_config_status "Dotfiles Setup" "$CROSS_MARK"
@@ -1035,21 +1526,44 @@ update_configs() {
         track_config_status "Dotfiles Setup" "$CROSS_MARK"
     fi
 
-    # Update the wallpaper configuration file
-    # Use the active runtime config under ~/.config; if symlinked to dotfiles, it will update there too
-    local wallpaper_conf="$HOME/.config/hypr/sources/change_wallpaper.conf"
-    execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory"
-    # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
-    if [ -f "$wallpaper_conf" ]; then
-        execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS"
-    else
-        # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
-        execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config"
-    fi
+    # Copy wallpapers into the user's pictures directory (Pictures or Bilder).
+    # This ensures change_wallpaper.sh can pick wallpapers from a stable location.
+    local source_wallpaper_dir="$WALLPAPER_DIR"
+    local pictures_base
+    pictures_base="$(resolve_user_pictures_dir)"
+    local target_wallpaper_dir="$pictures_base/Wallpapers"
+    execute_command "mkdir -p '$target_wallpaper_dir'" "Create wallpapers directory in pictures folder"
+    execute_command "cp -a '$source_wallpaper_dir/.' '$target_wallpaper_dir/'" "Copy wallpapers into $target_wallpaper_dir"
 
-    # Ensure MONITORS is set (auto-detect first monitor if user did not set)
-    ensure_wallpaper_monitors
-    
+    # Point WALLPAPER_DIR to the copied location from here on.
+    WALLPAPER_DIR="$target_wallpaper_dir"
+
+    # Update the wallpaper configuration file.
+    # Keep both the runtime config under ~/.config and the stow source under ~/dotfiles in sync.
+    local wallpaper_conf_runtime="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+    local wallpaper_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+    local wallpaper_conf
+    for wallpaper_conf in "$wallpaper_conf_runtime" "$wallpaper_conf_source"; do
+        execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory ($(basename "$wallpaper_conf"))"
+        # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
+        if [ -f "$wallpaper_conf" ]; then
+            execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i --follow-symlinks -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
+        else
+            # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
+            execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config ($(basename "$wallpaper_conf"))"
+        fi
+
+        # Ensure MONITORS is set (auto-detect first monitor if user did not set)
+        ensure_wallpaper_monitors "$wallpaper_conf"
+    done
+
+    # Auto-populate monitors.conf if it has no active monitor= lines
+    local monitors_conf_runtime="$HOME/.config/hypr/sources_specific/monitors.conf"
+    local monitors_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+    for mc in "$monitors_conf_runtime" "$monitors_conf_source"; do
+        [ -f "$mc" ] && ensure_monitors_conf "$mc"
+    done
+
     print_message "Configuration files updated with user input."
 }
 
@@ -1116,6 +1630,267 @@ set_fish_language_config() {
     print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
 }
 
+# Function to configure terminal choice in dotfiles
+configure_terminal() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_terminal" "Would update terminal configuration"
+        return 0
+    fi
+
+    # Trim whitespace and ensure we have a valid numeric value
+    TERMINAL_CHOICE=$(echo "$TERMINAL_CHOICE" | tr -d '[:space:]')
+    
+    print_verbose "TERMINAL_CHOICE value: '$TERMINAL_CHOICE'"
+
+    local terminal_name
+    case "$TERMINAL_CHOICE" in
+        1)
+            terminal_name="kitty"
+            ;;
+        2)
+            terminal_name="alacritty"
+            ;;
+        *)
+            print_warning "Invalid TERMINAL_CHOICE value: '$TERMINAL_CHOICE'. Using default (kitty)."
+            terminal_name="kitty"
+            ;;
+    esac
+    
+    print_verbose "Selected terminal: $terminal_name"
+
+    # Update app_variables.conf
+    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
+    
+    if [ -f "$app_vars_conf" ]; then
+        print_message "Updating terminal in app_variables.conf"
+        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_conf'" "Update terminal in app_variables.conf"
+    fi
+    
+    if [ -f "$app_vars_example" ]; then
+        print_message "Updating terminal in app_variables.conf example"
+        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_example'" "Update terminal in app_variables.conf example"
+    fi
+
+    # Update fish config
+    local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
+    local fish_conf_runtime="$HOME/.config/fish/conf.d/01-env.fish"
+    
+    if [ -f "$fish_conf" ]; then
+        print_message "Updating terminal in fish config"
+        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf'" "Update TERMINAL in fish config"
+    fi
+    
+    if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
+        print_message "Updating terminal in runtime fish config"
+        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf_runtime'" "Update TERMINAL in runtime fish config"
+    fi
+
+    # Update scripts that reference alacritty specifically
+    local notes_script="$HOME/dotfiles/.config/hypr/scripts/notes.sh"
+    local float_calendar_script="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
+    local clipboard_script="$HOME/dotfiles/.config/waybar/scripts/clipboard.sh"
+    
+    if [ -f "$notes_script" ]; then
+        print_message "Updating terminal in notes.sh"
+        # Replace alacritty command calls but preserve INSIDE_ALACRITTY variable name
+        execute_command "sed -i -E 's|alacritty -t|$terminal_name -t|g' '$notes_script'" "Update terminal command in notes.sh"
+        execute_command "sed -i -E 's|\\\"alacritty\\\"|\\\"$terminal_name\\\"|g' '$notes_script'" "Update terminal string in notes.sh"
+        execute_command "sed -i -E 's|\\[ \\\"\\$TERM\\\" != \\\"alacritty\\\" \\]|[ \\\"\\$TERMINAL\\\" != \\\"$terminal_name\\\" ]|g' '$notes_script'" "Update terminal detection in notes.sh"
+    fi
+    
+    if [ -f "$float_calendar_script" ]; then
+        print_message "Updating terminal in float_calendar.sh"
+        execute_command "sed -i -E 's|alacritty -e|$terminal_name -e|g' '$float_calendar_script'" "Update terminal in float_calendar.sh"
+    fi
+    
+    if [ -f "$clipboard_script" ]; then
+        print_message "Updating terminal in clipboard.sh"
+        execute_command "sed -i -E 's|alacritty --class|$terminal_name --class|g' '$clipboard_script'" "Update terminal in clipboard.sh"
+        execute_command "sed -i -E 's|alacritty-clipboard|$terminal_name-clipboard|g' '$clipboard_script'" "Update terminal class in clipboard.sh"
+    fi
+
+    print_message "Terminal configuration updated to: $terminal_name"
+}
+
+# Function to configure browser choice in dotfiles
+configure_browser() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_browser" "Would update browser configuration"
+        return 0
+    fi
+
+    # Trim whitespace and ensure we have a valid numeric value
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    
+    print_verbose "BROWSER_CHOICE value: '$BROWSER_CHOICE'"
+
+    local browser_name
+    local browser_class
+    local browser_command
+    case "$BROWSER_CHOICE" in
+        1)
+            browser_name="zen-browser"
+            browser_class="zen"
+            browser_command="zen-browser"
+            ;;
+        2)
+            browser_name="vivaldi"
+            browser_class="vivaldi-stable"
+            browser_command="hyprctl dispatch exec \"vivaldi-stable --ozone-platform=wayland --enable-features=UseOzonePlatform\""
+            ;;
+        *)
+            print_warning "Invalid BROWSER_CHOICE value: '$BROWSER_CHOICE'. Using default (zen-browser)."
+            browser_name="zen-browser"
+            browser_class="zen"
+            browser_command="zen-browser"
+            ;;
+    esac
+    
+    print_verbose "Selected browser: $browser_name"
+
+    # Update app_variables.conf
+    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
+    
+    for conf_file in "$app_vars_conf" "$app_vars_example"; do
+        [ -f "$conf_file" ] || continue
+        if [ "$conf_file" = "$app_vars_conf" ]; then
+            print_message "Updating browser in app_variables.conf"
+        else
+            print_message "Updating browser in app_variables.conf example"
+        fi
+
+        execute_command "sed -i -E 's|^\\\$browser = .*|\\\$browser = $browser_command|' '$conf_file'" "Update browser in app_variables.conf"
+    done
+
+    # Update windows_and_workspaces.conf
+    local windows_conf="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+    local windows_example="$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.conf"
+    
+    for conf_file in "$windows_conf" "$windows_example"; do
+        [ -f "$conf_file" ] || continue
+        if [ "$conf_file" = "$windows_conf" ]; then
+            print_message "Updating browser workspace rule in windows_and_workspaces.conf"
+        else
+            print_message "Updating browser workspace rule in windows_and_workspaces.conf example"
+        fi
+        
+        # Remove old browser workspace rules (both vivaldi and zen)
+        execute_command "sed -i '/windowrule = workspace 2.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove old vivaldi workspace rule"
+        execute_command "sed -i '/windowrule = workspace 2.*match:class.*zen/d' '$conf_file'" "Remove old zen workspace rule"
+        execute_command "sed -i '/^# windowrule = workspace.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove commented vivaldi workspace rule"
+        execute_command "sed -i '/^# windowrule = workspace.*match:class.*zen/d' '$conf_file'" "Remove commented zen workspace rule"
+        
+        # Add new browser workspace rule after Workspace 2 comment
+        local temp_file="${conf_file}.tmp"
+        if grep -q "# Workspace 2" "$conf_file"; then
+            execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 2/ {print; print rule; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser workspace rule"
+        else
+            # If no Workspace 2 comment, add before Workspace 4
+            if grep -q "# Workspace 4" "$conf_file"; then
+                execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 4/ {print \"# Workspace 2\"; print rule; print; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add Workspace 2 section with browser rule"
+            else
+                # Fallback: append to file
+                execute_command "printf '%s\n' 'windowrule = workspace 2 silent, match:class $browser_class' >> '$conf_file'" "Append browser workspace rule"
+            fi
+        fi
+    done
+
+    print_message "Browser configuration updated to: $browser_name"
+}
+
+configure_hypr_autostart_optional_extras() {
+    if is_dry_run; then
+        log_dry_run_operation "configure_hypr_autostart_optional_extras" "Would uncomment optional exec-once lines in Hyprland autostart.conf when tools are installed"
+        return 0
+    fi
+
+    uncomment_line_if_cmd_exists() {
+        local conf_file="$1"
+        local cmd="$2"
+        local line="$3"
+        command -v "$cmd" >/dev/null 2>&1 || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${cmd}"
+    }
+
+    uncomment_line_if_unit_exists() {
+        local conf_file="$1"
+        local unit="$2"
+        local line="$3"
+        systemctl --user list-unit-files --all 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit" || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${unit}"
+    }
+
+    uncomment_line_if_file_exists() {
+        local conf_file="$1"
+        local file="$2"
+        local line="$3"
+        [ -f "$file" ] || return 0
+        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: $(basename "$file")"
+    }
+
+    get_configured_terminal() {
+        local app_vars="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+        local t=""
+        if [ -f "$app_vars" ]; then
+            t=$(awk -F'=' '/^[[:space:]]*\\$terminal[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$app_vars" 2>/dev/null || true)
+        fi
+        if [ -n "$t" ] && command -v "$t" >/dev/null 2>&1; then
+            printf '%s' "$t"
+            return 0
+        fi
+        if command -v kitty >/dev/null 2>&1; then
+            printf '%s' "kitty"
+            return 0
+        fi
+        if command -v alacritty >/dev/null 2>&1; then
+            printf '%s' "alacritty"
+            return 0
+        fi
+        return 1
+    }
+
+    local configured_terminal=""
+    configured_terminal=$(get_configured_terminal || true)
+
+    local conf_files=(
+        "$HOME/dotfiles/.config/hypr/sources/autostart.conf"
+        "$HOME/dotfiles/.config/hypr/sources_example/autostart.conf"
+    )
+
+    local conf_file=""
+    for conf_file in "${conf_files[@]}"; do
+        [ -f "$conf_file" ] || continue
+
+        uncomment_line_if_cmd_exists "$conf_file" "swaync" "exec-once = swaync"
+        uncomment_line_if_cmd_exists "$conf_file" "nm-applet" "exec-once = nm-applet --indicator &"
+        uncomment_line_if_cmd_exists "$conf_file" "pypr" "exec-once = pypr"
+        uncomment_line_if_unit_exists "$conf_file" "app-org.kde.xwaylandvideobridge@autostart.service" "exec-once = systemctl --user start app-org.kde.xwaylandvideobridge@autostart.service &"
+
+        # Lines that include Hyprland variables ($hyprscripts/$mouse) must stay literal.
+        uncomment_line_if_file_exists "$conf_file" "$HOME/dotfiles/.config/hypr/scripts/fix-dolphin.sh" "exec-once = \$hyprscripts/fix-dolphin.sh &"
+        uncomment_line_if_cmd_exists "$conf_file" "input-remapper-control" "exec-once = input-remapper-control --command autoload --device \$mouse &"
+
+        uncomment_line_if_cmd_exists "$conf_file" "hyprsunset" "exec-once = hyprsunset"
+        uncomment_line_if_cmd_exists "$conf_file" "blueman-applet" "exec-once = blueman-applet &"
+        uncomment_line_if_cmd_exists "$conf_file" "blueman-tray" "exec-once = blueman-tray &"
+
+        # Workspace 3 terminal examples: enable only when the referenced terminal + config exists.
+        if [ "$configured_terminal" = "kitty" ]; then
+            uncomment_line_if_file_exists "$conf_file" "$HOME/.config/kitty/my_layout.conf" "exec-once = [workspace 3 silent] kitty --session ~/.config/kitty/my_layout.conf"
+
+            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+                uncomment_line_if_cmd_exists "$conf_file" "kitty" "exec-once = [workspace 3 silent] kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
+            fi
+        elif [ "$configured_terminal" = "alacritty" ]; then
+            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+                uncomment_line_if_cmd_exists "$conf_file" "alacritty" "exec-once = [workspace 3 silent] alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
+            fi
+        fi
+    done
+}
+
 ##############################################################
 # Pacman Update and Hyprland Packages Installation
 ##############################################################
@@ -1127,18 +1902,21 @@ hyprland_packages=(
     "hyprpaper"
     "hyprcursor"
     "hyprlock"
+    "hyprutils"
     "hypridle"
     "hyprpolkitagent"
     "hyprpicker"
     "wl-clipboard"
     "wl-clip-persist"
     "hyprgraphics" 
-    "hyprland-qtutils" 
+    "hyprland-guiutils" 
     "hyprland-qt-support" 
     "hyprwayland-scanner"
     "python-pyquery"
     "tk"
     "arch-wiki-docs"
+    # Terminal option managed by setup terminal selector
+    "alacritty"
 
     # Installed by "archinstall"-script: Desktop Type
     "dolphin"
@@ -1208,9 +1986,7 @@ hyprland_packages=(
     # Shell
     "fish"
     
-    # Browser
-    "vivaldi"
-    "vivaldi-ffmpeg-codecs"
+    # Browser (will be selected based on user choice)
     
     # System Integration
     "xdg-desktop-portal-gtk"
@@ -1246,7 +2022,7 @@ hyprland_packages=(
     "dysk"
     "duf"
     "bat"
-    "lsd"
+    "eza"
     "btop"
     "zoxide"
     "lshw"
@@ -1258,6 +2034,7 @@ hyprland_packages=(
     "zellij"
     "calcurse"
     "psensor"
+    "starship"
 
     # Calculator
     "qalculate-gtk"
@@ -1272,6 +2049,7 @@ update_arch_mirrors() {
             if ! distro_install "pacman-mirrors"; then
                 print_error "pacman-mirrors installation failed. Aborting mirror update."
                 mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+                record_hard_failure "update_arch_mirrors" "Failed to install pacman-mirrors"
                 return 1
             fi
         fi
@@ -1279,6 +2057,7 @@ update_arch_mirrors() {
             mirror_updates+=("Arch Mirrors: $CHECK_MARK")
         else
             mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+            record_soft_error "update_arch_mirrors" "Manjaro mirror update failed"
         fi
         return 0
     fi
@@ -1286,6 +2065,7 @@ update_arch_mirrors() {
         print_message "Reflector not installed. Installing reflector..."
         if ! distro_install "reflector"; then
             print_error "Reflector installation failed. Aborting mirror update."
+            record_hard_failure "update_arch_mirrors" "Failed to install reflector"
             return 1
         fi
     fi
@@ -1293,6 +2073,7 @@ update_arch_mirrors() {
         mirror_updates+=("Arch Mirrors: $CHECK_MARK")
     else
         mirror_updates+=("Arch Mirrors: $CROSS_MARK")
+        record_soft_error "update_arch_mirrors" "Reflector mirror update failed"
     fi
 }
 
@@ -1302,6 +2083,7 @@ update_pacman() {
         package_updates+=("Pacman Packages: $CHECK_MARK")
     else
         package_updates+=("Pacman Packages: $CROSS_MARK")
+        record_soft_error "update_pacman" "System package update (pacman -Syyu) failed"
     fi
 }
 
@@ -1312,6 +2094,7 @@ update_yay() {
         aur_updates+=("AUR Packages: $CHECK_MARK")
     else
         aur_updates+=("AUR Packages: $CROSS_MARK")
+        record_soft_error "update_yay" "AUR package update failed"
     fi
 }
 
@@ -1353,6 +2136,24 @@ install_pacman_packages() {
         print_message "Installing default Hyprland packages..."
     fi
 
+    # Add browser packages based on user choice
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    case "$BROWSER_CHOICE" in
+        1)
+            # zen-browser (AUR package)
+            print_message "Browser choice: zen-browser (will be installed via AUR)"
+            ;;
+        2)
+            # vivaldi
+            pkgs_to_install+=("vivaldi" "vivaldi-ffmpeg-codecs")
+            print_message "Browser choice: vivaldi (added to package list)"
+            ;;
+        *)
+            # Default to zen-browser
+            print_message "Browser choice: zen-browser (default, will be installed via AUR)"
+            ;;
+    esac
+
     # Append user-added pacman packages (if any)
     if [ -n "${USER_ADDED_PACMAN_PACKAGES}" ]; then
         read -r -a user_pac_arr <<< "${USER_ADDED_PACMAN_PACKAGES//,/ }"
@@ -1389,6 +2190,7 @@ install_pacman_packages() {
     for pkg in "${pkgs_to_install[@]}"; do
         if ! execute_command "sudo pacman -S --needed --noconfirm $pkg" "Installing $pkg"; then
             print_warning "Failed to install $pkg. Please install manually if issues persist."
+            record_hard_failure "install_pacman_packages" "Package '$pkg' failed to install via pacman"
         fi
     done
 }
@@ -1411,6 +2213,8 @@ aur_extras=(
     "rose-pine-hyprcursor"
     "waybar-module-pacman-updates-git"
     "wlogout"
+    "pacsea-bin"
+    "usrgrp-manager-bin"
     # "nerd-fonts-noto-sans-mono"
 )
 
@@ -1431,6 +2235,25 @@ install_aur_extras() {
         aur_to_install+=("${user_aur_arr[@]}")
     fi
 
+    # Add browser packages based on user choice
+    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
+    case "$BROWSER_CHOICE" in
+        1)
+            # zen-browser-bin (AUR package)
+            aur_to_install+=("zen-browser-bin")
+            print_message "Browser choice: zen-browser-bin (added to AUR package list)"
+            ;;
+        2)
+            # vivaldi is installed via pacman, skip here
+            print_message "Browser choice: vivaldi (installed via pacman)"
+            ;;
+        *)
+            # Default to zen-browser-bin
+            aur_to_install+=("zen-browser-bin")
+            print_message "Browser choice: zen-browser-bin (default, added to AUR package list)"
+            ;;
+    esac
+
     # Deduplicate AUR list while preserving order
     if [ ${#aur_to_install[@]} -gt 0 ]; then
         declare -A _seen2
@@ -1449,6 +2272,7 @@ install_aur_extras() {
     for pkg in "${aur_to_install[@]}"; do
         if ! execute_command "$AUR_HELPER -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
+            record_hard_failure "install_aur_extras" "AUR package '$pkg' failed to install via $AUR_HELPER"
         fi
     done
 }
@@ -1463,6 +2287,7 @@ configure_fish() {
         track_config_status "Default Shell (fish)" "$CHECK_MARK"
     else
         track_config_status "Default Shell (fish)" "$CROSS_MARK"
+        record_hard_failure "configure_fish" "Failed to set fish as default shell"
     fi
 
     print_message "Download fzf Repository for fzf file management integration in fish"
@@ -1488,7 +2313,7 @@ configure_environment() {
         print_message "Neovim is not installed. Installing..."
         if ! distro_install "neovim"; then
             print_error "Failed to install Neovim. Please install it manually."
-            echo "Configuration failed."
+            record_hard_failure "configure_environment" "Failed to install Neovim"
             return 1
         fi
     fi
@@ -1496,7 +2321,7 @@ configure_environment() {
     # Set EDITOR environment variable
     if ! execute_command "systemctl --user set-environment EDITOR=nvim" "Set EDITOR environment variable to nvim"; then
         print_error "Failed to set EDITOR environment variable."
-        echo "Configuration failed."
+        record_soft_error "configure_environment" "Failed to set EDITOR environment variable"
         return 1
     fi
 
@@ -1510,10 +2335,12 @@ configure_network_manager() {
             track_config_status "NetworkManager Setup" "$CHECK_MARK"
         else
             track_config_status "NetworkManager Setup" "$CROSS_MARK"
+            record_hard_failure "configure_network_manager" "Failed to enable NetworkManager"
         fi
     else
         print_warning "Network Manager tools not found. Skipping NetworkManager setup."
         track_config_status "NetworkManager Setup" "$CIRCLE (Not installed)"
+        record_skipped "configure_network_manager" "NetworkManager tools not installed"
     fi
 }
 
@@ -1522,12 +2349,14 @@ configure_wifi() {
     if ! ip link show wlan0 &>/dev/null; then
         print_warning "No wireless device (wlan0) found"
         track_config_status "WiFi Configuration" "$CIRCLE (No wireless device)"
+        record_skipped "configure_wifi" "No wireless device (wlan0) found"
         return 0
     fi
     if execute_command "sudo iw dev wlan0 set power_save off" "Disable WiFi power save"; then
         track_config_status "WiFi Configuration" "$CHECK_MARK"
     else
         track_config_status "WiFi Configuration" "$CROSS_MARK"
+        record_soft_error "configure_wifi" "Failed to disable WiFi power save"
     fi
 }
 
@@ -1538,6 +2367,7 @@ configure_bluetooth() {
             print_message "Installing missing package: $pkg"
             if ! distro_install "$pkg"; then
                 print_error "Failed to install $pkg. Aborting Bluetooth configuration."
+                record_hard_failure "configure_bluetooth" "Failed to install bluetooth package: $pkg"
                 return 1
             fi
         fi
@@ -1548,6 +2378,7 @@ configure_bluetooth() {
         track_config_status "Bluetooth Setup" "$CHECK_MARK"
     else
         track_config_status "Bluetooth Setup" "$CROSS_MARK"
+        record_hard_failure "configure_bluetooth" "Failed to enable bluetooth service"
     fi
 }
 
@@ -1557,6 +2388,7 @@ configure_gnome_keyring() {
     if [ "$XDG_CURRENT_DESKTOP" = "KDE" ] || [ "$XDG_CURRENT_DESKTOP" = "plasma" ] || pgrep -x "plasmashell" > /dev/null; then
         print_message "KDE environment detected. Skipping gnome-keyring configuration."
         track_config_status "Gnome-keyring Setup" "$CIRCLE (Not needed in KDE)"
+        record_skipped "configure_gnome_keyring" "KDE environment detected, gnome-keyring not needed"
         return 0
     fi
 
@@ -1638,6 +2470,7 @@ configure_gnome_keyring() {
         track_config_status "Gnome-keyring Setup" "$CHECK_MARK"
     else
         track_config_status "Gnome-keyring Setup" "$CIRCLE (Manual verification needed)"
+        record_warning "configure_gnome_keyring" "PAM configuration for gnome-keyring may need manual verification"
     fi
 }
 
@@ -1647,6 +2480,7 @@ configure_filepicker() {
     if ! check_hyprland; then
         print_message "Not running in Hyprland. Skipping filepicker configuration."
         track_config_status "Filepicker Setup" "$CIRCLE (Not in Hyprland)"
+        record_skipped "configure_filepicker" "Not running in Hyprland session"
         return 0
     fi
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
@@ -1735,6 +2569,7 @@ configure_timeshift() {
     if pacman -Qq cachyos-snapper-support &>/dev/null; then
         print_message "Detected 'cachyos-snapper-support'. Skipping Timeshift configuration."
         track_config_status "Timeshift Setup" "$CIRCLE (Using CachyOS Snapper)"
+        record_skipped "configure_timeshift" "CachyOS Snapper support detected, Timeshift not needed"
         return 0
     fi
 
@@ -1742,6 +2577,7 @@ configure_timeshift() {
     if ! command -v timeshift &>/dev/null; then
         if ! distro_install "timeshift"; then
             track_config_status "Timeshift Setup" "$CROSS_MARK"
+            record_hard_failure "configure_timeshift" "Failed to install Timeshift"
             return 1
         fi
     fi
@@ -1749,14 +2585,16 @@ configure_timeshift() {
     # Enable the cronie service (required for scheduling snapshots)
     if ! execute_command "sudo systemctl enable --now cronie.service" "Enable Cronie for Timeshift scheduling"; then
         track_config_status "Timeshift Setup" "$CROSS_MARK"
+        record_hard_failure "configure_timeshift" "Failed to enable cronie service for Timeshift scheduling"
         return 1
     fi
 
     # Create an initial snapshot without a .snapshot suffix
-    if execute_command "sudo timeshift --create --comments 'Automated snapshot created by Linux-Setup script' --tags D" "Create initial Timeshift snapshot"; then
+    if execute_command "sudo timeshift --create --comments 'Automated snapshot created by Hyprland-Simple-Setup script' --tags D" "Create initial Timeshift snapshot"; then
         track_config_status "Timeshift Setup" "$CHECK_MARK"
     else
         track_config_status "Timeshift Setup" "$CROSS_MARK"
+        record_soft_error "configure_timeshift" "Failed to create initial Timeshift snapshot"
     fi
 }
 
@@ -1767,6 +2605,7 @@ configure_grub_btrfsd() {
     if ! check_bootloader "grub"; then
         print_warning "Bootloader is not GRUB. Skipping grub-btrfsd configuration."
         track_config_status "grub-btrfsd Configuration" "$CIRCLE (Not GRUB bootloader)"
+        record_skipped "configure_grub_btrfsd" "Bootloader is not GRUB"
         return 0
     fi
 
@@ -1774,6 +2613,7 @@ configure_grub_btrfsd() {
     if ! mount | grep "on / type btrfs" > /dev/null; then
         print_warning "Root filesystem is not BTRFS. Skipping grub-btrfsd configuration."
         track_config_status "grub-btrfsd Configuration" "$CIRCLE (Not BTRFS filesystem)"
+        record_skipped "configure_grub_btrfsd" "Root filesystem is not BTRFS"
         return 0
     fi
 
@@ -1818,8 +2658,20 @@ configure_monitor() {
                 print_message "Non-interactive: proceeding with monitor setup"
                 ;;
             *)
-                print_message "Non-interactive: skipping monitor setup"
-                track_config_status "Monitor Setup" "$CIRCLE (Skipped by config)"
+                print_message "Non-interactive: MONITOR_SETUP_ENABLED is not set; falling back to auto-detection"
+                local mc
+                for mc in \
+                    "$HOME/.config/hypr/sources_specific/monitors.conf" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"; do
+                    [ -f "$mc" ] && ensure_monitors_conf "$mc"
+                done
+                local wc
+                for wc in \
+                    "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+                    [ -f "$wc" ] && ensure_wallpaper_monitors "$wc"
+                done
+                track_config_status "Monitor Setup" "$CIRCLE (Auto-detected)"
                 return 0
                 ;;
         esac
@@ -1831,13 +2683,22 @@ configure_monitor() {
         fi
     fi
 
+    # In non-interactive/TUI mode, prefer explicit MONITOR_CONFIG if provided.
+    # This works even when Hyprland is not currently running in this shell.
+    if [ "$NON_INTERACTIVE" = "true" ] && [ -n "${MONITOR_CONFIG:-}" ]; then
+        if apply_monitor_config_from_env; then
+            track_config_status "Monitor Setup" "$CHECK_MARK (Applied MONITOR_CONFIG)"
+            return 0
+        fi
+    fi
+
     if check_hyprland; then
         local monitor_output
         monitor_output=$(hyprctl monitors 2>&1)
         print_message "Hyprland monitor configuration:"
         echo "$monitor_output"
         local monitor_count
-        monitor_count=$(echo "$monitor_output" | grep -E -c "^Monitor")
+        monitor_count=$(echo "$monitor_output" | grep -E -c "^[[:space:]]*Monitor")
         print_message "Detected $monitor_count monitor(s) on Hyprland."
         if [ "$monitor_count" -eq 0 ]; then
             print_warning "No monitors detected via hyprctl monitors."
@@ -1848,16 +2709,28 @@ configure_monitor() {
         local monitor_names=()
         while IFS= read -r line; do
             monitor_names+=("$(echo "$line" | awk '{print $2}')")
-        done < <(echo "$monitor_output" | grep "^Monitor")
+        done < <(echo "$monitor_output" | grep -E "^[[:space:]]*Monitor")
 
         # Initialize variables for monitor configuration
         local primary_monitor=""
         local primary_width=""
         local configured_monitors=()
         # local monitors_conf_file="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/monitors.conf"
-        local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
+        # Hyprland sources this file directly (see dotfiles/.config/hypr/hyprland.conf)
+        local monitors_conf_file="${HOME}/.config/hypr/sources_specific/monitors.conf"
         # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
-        local wallpaper_conf="${HOME}/.config/hypr/sources/change_wallpaper.conf"
+        local wallpaper_conf="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
+
+        # Ensure monitors.conf exists so sed/awk operations succeed
+        if [ ! -f "$monitors_conf_file" ]; then
+            mkdir -p "$(dirname "$monitors_conf_file")"
+            cat >"$monitors_conf_file" <<'EOF'
+# Check monitor names (e.g. DP-1, HDMI-A-1) with: `hyprctl monitors`
+# Example single monitor configuration:
+# monitor=DP-1,2560x1440@144,0x0,1
+# workspace=1,monitor:DP-1,default:true
+EOF
+        fi
 
         # Function to get available modes for a monitor
         get_monitor_modes() {
@@ -1973,9 +2846,9 @@ configure_monitor() {
 
             # Update monitor configuration
             if grep -q "^monitor=${monitor_name}," "$monitors_conf_file"; then
-                sed -i "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
+                sed -i --follow-symlinks "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
             else
-                sed -i "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
+                sed -i --follow-symlinks "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
             fi
 
             configured_monitors+=("$monitor_name")
@@ -2004,26 +2877,41 @@ configure_monitor() {
             !/^workspace=/ { print }
         ' "$monitors_conf_file" > "${monitors_conf_file}.tmp" && mv "${monitors_conf_file}.tmp" "$monitors_conf_file"
 
-        # Update wallpaper configuration
-        if [ -f "$wallpaper_conf" ]; then
-            local monitors_str=""
-            for m in "${configured_monitors[@]}"; do
-                monitors_str+="\"$m\" "
-            done
-            monitors_str=$(echo "$monitors_str")
-            if grep -q "^MONITORS=" "$wallpaper_conf"; then
-                sed -i "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wallpaper_conf"
+        # Update wallpaper configuration (runtime + stow source if present)
+        local monitors_str=""
+        for m in "${configured_monitors[@]}"; do
+            monitors_str+="\"$m\" "
+        done
+        monitors_str=$(echo "$monitors_str")
+
+        local wallpaper_confs=(
+            "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+            "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+        )
+        local wc
+        for wc in "${wallpaper_confs[@]}"; do
+            if [ -f "$wc" ]; then
+                if grep -q "^MONITORS=" "$wc"; then
+                    sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wc"
+                else
+                    echo "MONITORS=($monitors_str)" >> "$wc"
+                fi
+                print_message "Updated MONITORS in $(basename "$wc"): MONITORS=($monitors_str)"
             else
-                echo "MONITORS=($monitors_str)" >> "$wallpaper_conf"
+                print_warning "Wallpaper configuration file not found: $wc"
             fi
-            print_message "Updated MONITORS in change_wallpaper.conf: MONITORS=($monitors_str)"
-        else
-            print_warning "Wallpaper configuration file not found: $wallpaper_conf"
-        fi
+        done
 
         # Remove any remaining placeholder text
-        sed -i '/MONITOR_[0-9]/d' "$monitors_conf_file"
-        sed -i '/MONITOR_[0-9]/d' "$wallpaper_conf"
+        sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$monitors_conf_file"
+        for wc in "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+            [ -f "$wc" ] && sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$wc"
+        done
+
+        # Keep stow/source copy in sync when it exists (same approach as wallpaper config)
+        if [ -f "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" ]; then
+            cp -f "$monitors_conf_file" "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+        fi
 
     elif command -v kscreen-doctor &>/dev/null; then
         local monitor_output
@@ -2049,6 +2937,7 @@ configure_sddm_theme() {
     if ! systemctl is-enabled sddm &>/dev/null; then
         print_message "SDDM is not enabled as display manager. Skipping theme configuration."
         track_config_status "SDDM Theme Setup" "$CIRCLE (Not enabled)"
+        record_skipped "configure_sddm_theme" "SDDM is not enabled as display manager"
         return 0
     fi
 
@@ -2123,9 +3012,11 @@ enable_sddm_last() {
             print_message "SDDM has been enabled."
         else
             print_warning "Failed to enable SDDM. You can try manually: sudo systemctl enable sddm"
+            record_soft_error "enable_sddm_last" "Failed to enable SDDM"
         fi
     else
         print_warning "systemctl not available; skipping SDDM enable."
+        record_skipped "enable_sddm_last" "systemctl not available"
     fi
 }
 
@@ -2134,11 +3025,11 @@ verify_workspace_config() {
     print_message "Verifying workspace configuration"
     local issues=0
     local files=(
-        "$HOME/.config/hypr/sources/monitors.conf"
+        "$HOME/.config/hypr/sources_specific/monitors.conf"
         "$HOME/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
         "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/.dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/.dotfiles/.config/hypr/sources_specific/monitors.conf"
         "$HOME/.dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
         "$HOME/.config/waybar/config"
         "$HOME/.config/waybar/config.jsonc"
@@ -2163,6 +3054,7 @@ verify_workspace_config() {
         print_message "No configuration found that pre-creates workspace 11."
     else
         print_warning "Please review the above files and remove workspace 11 entries."
+        record_warning "verify_workspace_config" "Found $issues file(s) with explicit workspace 11 mappings"
     fi
 
     if command -v hyprctl >/dev/null 2>&1; then
@@ -2188,6 +3080,8 @@ main() {
     fi
 
     get_fish_language_choice
+    get_terminal_choice
+    get_browser_choice
     check_disk_space
     check_distro
     check_desktop_environment
@@ -2197,6 +3091,7 @@ main() {
         print_message "xdg-user-dirs not found. Installing..."
         if ! distro_install "xdg-user-dirs"; then
             print_error "Failed to install xdg-user-dirs"
+            record_hard_failure "main" "Failed to install xdg-user-dirs"
             return 1
         fi
     fi
@@ -2205,6 +3100,7 @@ main() {
         print_message "User Environment created"
     else
         print_warning "User Environment could not be created!"
+        record_warning "main" "xdg-user-dirs-update failed"
     fi
     
     check_dependencies
@@ -2214,7 +3110,10 @@ main() {
     if ! validate_wallpaper_dir; then
         if [ "$NON_INTERACTIVE" = "true" ]; then
             case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
-                true|1|yes|y|Y) print_warning "Continuing despite wallpaper validation failure (auto)" ;;
+                true|1|yes|y|Y)
+                    print_warning "Continuing despite wallpaper validation failure (auto)"
+                    record_warning "main" "Wallpaper directory validation failed (continued anyway)"
+                    ;;
                 *) print_error "Setup aborted due to wallpaper validation failure (non-interactive)"; exit 1 ;;
             esac
         else
@@ -2223,6 +3122,7 @@ main() {
                 print_error "Setup aborted by user"
                 exit 1
             fi
+            record_warning "main" "Wallpaper directory validation failed (user chose to continue)"
         fi
     fi
     
@@ -2235,6 +3135,7 @@ main() {
             print_message "Backup created successfully at: $backup_dir"
         else
             print_error "Failed to create backup of .config directory"
+            record_warning "main" "Backup of .config directory failed"
             if [ "$NON_INTERACTIVE" = "true" ]; then
                 case "${AUTO_CONTINUE_ON_WARNINGS:-false}" in
                     true|1|yes|y|Y) print_warning "Continuing despite backup failure (auto)" ;;
@@ -2250,6 +3151,7 @@ main() {
         fi
     else
         print_warning ".config directory not found, skipping backup"
+        record_skipped "main" ".config directory not found, backup skipped"
     fi
 
     update_arch_mirrors
@@ -2261,6 +3163,9 @@ main() {
     install_aur_extras
     update_configs
     set_fish_language_config
+    configure_terminal
+    configure_browser
+    configure_hypr_autostart_optional_extras
     configure_fish
     configure_environment
     configure_network_manager
@@ -2279,6 +3184,7 @@ main() {
     print_dry_run_summary
     print_status_summary
     verify_workspace_config
+    print_final_recommendation_summary
 
     # As the very last step, enable and start SDDM (may end current session)
     enable_sddm_last
@@ -2305,6 +3211,9 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --configure-sddm)
             CONFIGURE_SDDM_ONLY=true
+            ;;
+        --init-dotfiles-git)
+            INIT_DOTFILES_GIT_REPO=true
             ;;
         *)
             print_warning "Unknown parameter passed: $1"
