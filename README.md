@@ -138,7 +138,16 @@ It sets up the following Components/Apps:
    makepkg -si
    ```
 
-1. **Option 1: Install via AUR**
+1. **Option 1: Install via curl (bootstrap)**
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/firstp1ck/Hyprland-Simple-Setup/main/install.sh | bash
+   ```
+   - Force running `setup.sh` directly (skip TUI):
+     ```bash
+     curl -fsSL https://raw.githubusercontent.com/firstp1ck/Hyprland-Simple-Setup/main/install.sh | bash -s -- --no-tui
+     ```
+
+2. **Option 2: Install via AUR**
    - **Using yay:**
      ```bash
      yay -S hyprland-simple-setup-git
@@ -152,7 +161,7 @@ It sets up the following Components/Apps:
      hyprland-simple-setup
      ```
 
-2. **Option 2: Installation via Git**
+3. **Option 3: Installation via Git**
    ```bash
    git clone https://github.com/firstp1ck/Hyprland-Simple-Setup.git ~/Hyprland-Simple-Setup
    cd ~/Hyprland-Simple-Setup
