@@ -1697,18 +1697,18 @@ install_aur_extras() {
     BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
     case "$BROWSER_CHOICE" in
         1)
-            # zen-browser (AUR package)
-            aur_to_install+=("zen-browser")
-            print_message "Browser choice: zen-browser (added to AUR package list)"
+            # zen-browser-bin (AUR package)
+            aur_to_install+=("zen-browser-bin")
+            print_message "Browser choice: zen-browser-bin (added to AUR package list)"
             ;;
         2)
             # vivaldi is installed via pacman, skip here
             print_message "Browser choice: vivaldi (installed via pacman)"
             ;;
         *)
-            # Default to zen-browser
-            aur_to_install+=("zen-browser")
-            print_message "Browser choice: zen-browser (default, added to AUR package list)"
+            # Default to zen-browser-bin
+            aur_to_install+=("zen-browser-bin")
+            print_message "Browser choice: zen-browser-bin (default, added to AUR package list)"
             ;;
     esac
 

@@ -93,8 +93,7 @@
     ],
     "browser": [
       "vivaldi",
-      "vivaldi-ffmpeg-codecs",
-      "zen-browser"
+      "vivaldi-ffmpeg-codecs"
     ],
     "system_integration": [
       "xdg-desktop-portal-gtk",
@@ -153,7 +152,7 @@
       "hyprsunset"
     ],
     "browser": [
-      "zen-browser"
+      "zen-browser-bin"
     ],
     "screenshots": [
       "hyprshot"
@@ -263,7 +262,7 @@
 
     "vivaldi": "Vivaldi web browser",
     "vivaldi-ffmpeg-codecs": "Proprietary media codecs",
-    "zen-browser": "Zen Browser (privacy-focused Chromium fork)",
+    "zen-browser-bin": "Zen Browser (binary, AUR)",
 
     "xdg-desktop-portal-gtk": "GTK portal backend",
     "xdg-desktop-portal-kde": "KDE portal backend",
