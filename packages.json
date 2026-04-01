@@ -23,6 +23,7 @@
       "xdg-desktop-portal-hyprland"
     ],
     "desktop_evnironment": [
+      "alacritty",
       "dolphin",
       "grim",
       "htop",
@@ -197,6 +198,7 @@
     "hyprland": "Hyprland compositor",
     "xdg-desktop-portal-hyprland": "Portal backend for Hyprland",
 
+    "alacritty": "GPU terminal emulator",
     "dolphin": "KDE file manager",
     "grim": "Wayland screenshot tool",
     "htop": "Interactive process viewer",

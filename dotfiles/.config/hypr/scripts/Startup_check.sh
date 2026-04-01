@@ -60,7 +60,6 @@ processes=(
     "Telegram"
     "wasistlos"
     "hyprsunset"
-    "alacritty"
     "gpu-screen-recorder"
     "conky"
     "fcitx5"
@@ -82,12 +81,6 @@ fi
 # Check for wallpaper change
 if ! check_wallpaper_change; then
     ((failed++))
-fi
-
-# Check for NAS sync
-if [ ! -f "/tmp/rsync_success" ]; then
-    notify-send -u critical "Autostart Warning" "NAS sync did not run!"
-    return 1
 fi
 
 # Check each process

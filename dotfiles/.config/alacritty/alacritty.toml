@@ -1,0 +1,330 @@
+# alacritty.toml — full commented template (TOML)
+# Reference: https://alacritty.org/config-alacritty.html
+
+[general]
+# Import other config fragments (absolute paths, ~/ paths, or paths relative to this file). [Default: none]
+# Files are loaded in order; later files override earlier ones. [Docs]
+# import = ["~/.config/alacritty/base16-dark.toml", "~/.config/alacritty/keybindings.toml"]
+import = []
+
+# Start the shell in this directory; "None" uses the parent process working directory. [Default: "None"]
+working_directory = "None"
+
+# Reload config live while Alacritty runs. Some changes still require restart. [Default: true]
+live_config_reload = true
+
+# Enable IPC socket for `alacritty msg` on Unix systems. [Default: true] (Unix only)
+ipc_socket = true
+
+[env]
+# Extra environment variables for spawned processes/shells. [Docs]
+# Example: set X11 scale factor explicitly.
+# WINIT_X11_SCALE_FACTOR = "1.0"
+
+[window]
+# Initial size in terminal columns/lines; both must be non-zero to take effect. 0 lets WM decide. [Default: {columns=0, lines=0}]
+dimensions = { columns = 0, lines = 0 }
+
+# Startup position in pixels; "None" lets WM place; has no effect on Wayland. [Default: "None"]
+position = "None"
+
+# Extra padding around terminal content in pixels (DPI-scaled). [Default: {x=0, y=0}]
+padding = { x = 0, y = 0 }
+
+# Evenly spread any extra padding around the content. [Default: false]
+dynamic_padding = false
+
+# Window decorations: Full | None | Transparent | Buttonless (macOS only for the latter two). [Default: "Full"]
+decorations = "Full"
+
+# Background opacity 0.0–1.0 (0.0 transparent, 1.0 opaque). [Default: 1.0]
+opacity = 1.0
+
+# Ask compositor to blur behind the window (macOS/KDE Wayland). [Default: false]
+blur = false
+
+# Startup mode: Windowed | Maximized | Fullscreen | SimpleFullscreen (macOS). [Default: "Windowed"]
+startup_mode = "Windowed"
+
+# Window title string. [Default: "Alacritty"]
+title = "Alacritty"
+
+# Allow applications to set the window title. [Default: true]
+dynamic_title = true
+
+# X11/Wayland window class; on Wayland, 'general' is used as app_id, 'instance' ignored. [Default: {instance="Alacritty", general="Alacritty"}]
+class = { instance = "Alacritty", general = "Alacritty" }
+
+# Force dark/light CSD/GTK theme variant, or "None" to follow system. [Default: "None"]
+decorations_theme_variant = "None"
+
+# Resize window in cell increments (macOS/X11). [Default: false]
+resize_increments = false
+
+# Treat Option as Alt: OnlyLeft | OnlyRight | Both | None (macOS only). [Default: "None"]
+option_as_alt = "None"
+
+# Window z-level: Normal | AlwaysOnTop. [Default: "Normal"]
+level = "Normal"
+
+[scrolling]
+# Scrollback lines (0 disables scrolling). Limited to 100000. [Default: 10000]
+history = 10000
+
+# Lines scrolled per scroll-step. [Default: 3]
+multiplier = 3
+
+[font]
+# Normal (regular) font family/style. [Default: Linux/BSD "monospace"/Regular; Windows "Consolas"; macOS "Menlo"]
+normal = { family = "JetBrainsMono Nerd Font Mono", style = "Bold" }
+
+# Bold font; family falls back to 'normal.family' when unspecified. [Default style: "Bold"]
+bold = { family = "JetBrainsMono Nerd Font Mono", style = "Bold" }
+
+# Italic font; family falls back to 'normal.family' when unspecified. [Default style: "Italic"]
+italic = { family = "JetBrainsMono Nerd Font Mono", style = "Italic" }
+
+# Bold+Italic font; family falls back to 'normal.family' when unspecified. [Default style: "Bold Italic"]
+bold_italic = { family = "JetBrainsMono Nerd Font Mono", style = "Bold Italic" }
+
+# Font size in points. [Default: 11.25]
+size = 14
+
+# Extra spacing around each glyph; y affects line spacing, x affects letter spacing. [Default: {x=0, y=0}]
+offset = { x = 0, y = 1 }
+
+# Shift glyph render position within cell; +x moves right, +y moves up. [Default: {x=0, y=0}]
+glyph_offset = { x = 0, y = 0 }
+
+# Use built-in box drawing, legacy computing, and powerline symbol font. [Default: true]
+builtin_box_drawing = true
+
+[colors]
+# Primary foreground/background; dim/bright foregrounds adjust special cases. [Defaults: fg "#d8d8d8", bg "#181818"]
+[colors.primary]
+foreground = "#e0def4"
+background = "#12121e"
+dim_foreground = "#828482"        # Auto-calculated if unset. [Docs]
+bright_foreground = "None"        # Used when draw_bold_text_with_bright_colors = true. [Docs]
+
+# Cursor colors; use hex or CellForeground/CellBackground. [Default: text=CellBackground, cursor=CellForeground]
+[colors.cursor]
+text = "#12121e"
+cursor = "#cccccc"
+
+# Cursor colors for vi mode. [Default: text=CellBackground, cursor=CellForeground]
+[colors.vi_mode_cursor]
+text = "CellBackground"
+cursor = "CellForeground"
+
+# Search highlight colors. [Defaults: matches fg "#181818"/bg "#ac4242"; focused_match fg "#181818"/bg "#f4bf75"]
+[colors.search]
+matches = { foreground = "#181818", background = "#ac4242" }
+focused_match = { foreground = "#181818", background = "#f4bf75" }
+
+# Hints (URL labels etc.): first char and remaining chars colors. [Defaults shown]
+[colors.hints]
+start = { foreground = "#181818", background = "#f4bf75" }
+end   = { foreground = "#181818", background = "#ac4242" }
+
+# Line indicator (search/vi mode history position); "None" uses opposing primary color. [Default: both "None"]
+[colors.line_indicator]
+foreground = "None"
+background = "None"
+
+# Footer bar colors (regex input/URI preview). [Defaults: fg "#181818", bg "#d8d8d8"]
+[colors.footer_bar]
+foreground = "#181818"
+background = "#d8d8d8"
+
+# Selection colors; can use CellForeground/CellBackground. [Default: text=CellBackground, background=CellForeground]
+[colors.selection]
+text = "#12121e"
+background = "#FFFACD"
+
+# 8 standard ANSI colors. [Defaults shown]
+[colors.normal]
+black   = "#3B4252"
+red     = "#FF789E"
+green   = "#A3BE8C"
+yellow  = "#f6c177"
+blue    = "#81A1C1"
+magenta = "#c4a7e7"
+cyan    = "#9ccfd8"
+white   = "#E5E9F0"
+
+# Bright ANSI colors. [Defaults shown]
+[colors.bright]
+black   = "#4C566A"
+red     = "#FF789E"
+green   = "#A3BE8C"
+yellow  = "#f6c177"
+blue    = "#81A1C1"
+magenta = "#c4a7e7"
+cyan    = "#8FBCBB"
+white   = "#ECEFF4"
+
+# Dim ANSI colors; auto-calculated from normal if unset. [Defaults shown]
+[colors.dim]
+black   = "#0f0f0f"
+red     = "#712b2b"
+green   = "#5f6f3a"
+yellow  = "#a17e4d"
+blue    = "#456877"
+magenta = "#704d68"
+cyan    = "#4d7770"
+white   = "#8e8e8e"
+
+# 256-color palette overrides: array of {index, color}; empty uses sensible defaults. [Default: []]
+# indexed_colors = []
+
+# Apply window.opacity to all cell backgrounds instead of only the default background. [Default: false]
+# transparent_background_colors = false
+
+# Draw bold text using the bright color variants. [Default: false]
+# draw_bold_text_with_bright_colors = false
+
+[bell]
+# Visual bell animation easing. [Default: "Linear"]
+animation = "Linear" # Ease|EaseOut|...|Linear
+
+# Animation duration in ms (0 disables the flash). [Default: 0]
+duration = 0
+
+# Visual bell color. [Default: "#ffffff"]
+color = "#ffffff"
+
+# Command to run when bell rings; "None" disables. [Default: "None"]
+# command = "None"
+# command = { program = "/usr/bin/notify-send", args = ["Bell"] }
+
+[selection]
+# Characters treated as word separators for semantic selections. [Default shown]
+semantic_escape_chars = ",│`|:\\\"' ()[]{}<>\\t"
+
+# Copy selected text to PRIMARY selection automatically. [Default: false]
+save_to_clipboard = true
+
+[cursor]
+# Cursor shape and blinking policy. [Defaults: shape "Block", blinking "Off"]
+style = { shape = "Block", blinking = "Off" } # shape: Block|Underline|Beam; blinking: Never|Off|On|Always
+
+# Vi mode cursor style or "None" to reuse normal cursor. [Default: "None"]
+vi_mode_style = "None"
+
+# Blink interval in ms. [Default: 750]
+blink_interval = 750
+
+# Stop blinking after N seconds (0 = never stop). [Default: 5]
+blink_timeout = 5
+
+# Render hollow box when window unfocused. [Default: true]
+unfocused_hollow = true
+
+# Cursor thickness relative to cell width (0.0–1.0). [Default: 0.15]
+thickness = 0.15
+
+[terminal]
+# Shell program (and args) to launch; defaults to $SHELL or login shell (Windows: powershell). [Defaults per-OS]
+# Example: start interactive login zsh
+# shell = "/bin/zsh"
+# shell = { program = "/bin/zsh", args = ["-l"] }
+shell = { program = "/usr/bin/fish" }
+
+# OSC 52 clipboard support: Disabled|OnlyCopy|OnlyPaste|CopyPaste. [Default: "OnlyCopy"]
+osc52 = "OnlyCopy"
+
+[mouse]
+# Hide mouse cursor while typing. [Default: false]
+hide_when_typing = false
+
+# Mouse button bindings; uses same fields as keyboard.bindings, plus ExpandSelection. [Docs]
+# Example: Ctrl+RightClick to Paste
+bindings = [
+  # { mouse = "Right", mods = "Control", action = "Paste" }
+]
+
+[hints]
+# Keys used for hint labels (default shown).
+alphabet = "jfkdls;ahgurieowpq"
+
+# You can omit this initializer; shown for clarity.
+# enabled = []
+
+# Default hint entry (Linux/BSD): open URLs with xdg-open, enable URL detection, and show underlines on hover.
+[[hints.enabled]]
+# Regex for URL-like matches (use single quotes to avoid TOML escape issues).
+regex = '(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\u0000-\u001F\u007F-\u009F<>"\s{-}\^⟨⟩`\\]+'
+
+# Include OSC 8 hyperlinks in hints (default: true).
+hyperlinks = true
+
+# Heuristically trim matches (e.g., trailing dots) for URIs (default: true).
+post_processing = true
+
+# Keep hint after selection (default: false).
+persist = false
+
+# Command to run for the selected hint (default on Linux/BSD).
+command = "xdg-open"
+# command = "open"                       # macOS default alternative (commented by default)
+# command = { program = "cmd", args = ["/c", "start", ""] }  # Windows default alternative (commented by default)
+
+# Optional explicit action instead of command (not set by default).
+# action = "Copy"            # or "Paste" | "Select" | "MoveViModeCursor"
+
+# Key binding to activate hint selection (default).
+[hints.enabled.binding]
+key = "O"
+mods = "Control|Shift"
+# mode = ""                  # Optional terminal mode requirement (not set by default)
+
+# Mouse modifiers and enable underline on hover (default: enabled = true).
+[hints.enabled.mouse]
+# mods = ""                  # Optional mouse modifier requirement (not set by default)
+enabled = true
+
+[keyboard]
+# Key bindings: provide key/mods/mode and one of action|chars|command. Multiple entries can trigger on one keypress in order defined. [Docs]
+# Use "ReceiveChar" to unset a default binding or "None" to inhibit any action. [Docs]
+bindings = [
+  # Spawn a new window
+  { key = "N", mods = "Control|Shift", action = "CreateNewWindow" },
+
+  # Paste from clipboard
+  # { key = "V", mods = "Control", action = "Paste" },
+
+  # Increase font size
+  { key = "Key1", mods = "Control", action = "IncreaseFontSize" },
+
+  # Decrease font size
+  { key = "Key2", mods = "Control", action = "DecreaseFontSize" },
+
+  # Scroll Alacritty history only when NOT in alt-screen (e.g., not in zellij/tmux)
+  { key = "PageUp",   mode = "~Alt", action = "ScrollPageUp" },
+  { key = "PageDown", mode = "~Alt", action = "ScrollPageDown" },
+  { key = "PageUp",   mods = "Shift", mode = "~Alt", action = "ScrollToTop" },
+  { key = "PageDown", mods = "Shift", mode = "~Alt", action = "ScrollToBottom" },
+]
+
+[debug]
+# Show per-frame render time overlay. [Default: false]
+render_timer = false
+
+# Keep log file after exit. [Default: false]
+persistent_logging = false
+
+# Log verbosity: Off|Error|Warn|Info|Debug|Trace. [Default: "Warn"]
+log_level = "Warn"
+
+# Force a renderer: glsl3|gles2|gles2pure|None (None chooses the best available). [Default: "None"]
+renderer = "None"
+
+# Log all window events. [Default: false]
+print_events = false
+
+# Highlight damage regions. [Default: false]
+highlight_damage = false
+
+# Prefer EGL display API (transparency may not work on Linux/BSD). [Default: false]
+prefer_egl = false

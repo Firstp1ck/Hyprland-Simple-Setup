@@ -1284,23 +1284,8 @@ configure_browser() {
         else
             print_message "Updating browser in app_variables.conf example"
         fi
-        
-        # Remove all existing browser lines (including commented ones that match the pattern)
-        execute_command "sed -i '/^\\\$browser =/d' '$conf_file'" "Remove old browser lines"
-        execute_command "sed -i '/^# \\\$browser =/d' '$conf_file'" "Remove commented browser lines"
-        
-        # Add new browser line after $menu line using a temporary approach
-        local temp_file="${conf_file}.tmp"
-        local browser_line="\$browser = $browser_command"
-        if grep -q "^\\\$menu = " "$conf_file"; then
-            # Use awk to insert after $menu line
-            execute_command "awk -v cmd=\"$browser_line\" '/^\\\$menu = / {print; print cmd; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser after menu line"
-        elif grep -q "^\\\$fileManager = " "$conf_file"; then
-            execute_command "awk -v cmd=\"$browser_line\" '/^\\\$fileManager = / {print; print cmd; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser after fileManager line"
-        else
-            # Fallback: append to file
-            execute_command "printf '%s\n' \"$browser_line\" >> '$conf_file'" "Append browser line"
-        fi
+
+        execute_command "sed -i -E 's|^\\\$browser = .*|\\\$browser = $browser_command|' '$conf_file'" "Update browser in app_variables.conf"
     done
 
     # Update windows_and_workspaces.conf
@@ -1362,6 +1347,8 @@ hyprland_packages=(
     "python-pyquery"
     "tk"
     "arch-wiki-docs"
+    # Terminal option managed by setup terminal selector
+    "alacritty"
 
     # Installed by "archinstall"-script: Desktop Type
     "dolphin"
