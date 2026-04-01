@@ -397,9 +397,10 @@ get_first_hypr_monitor() {
     hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2; exit}'
 }
 
-# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor
+# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor.
+# Accepts an optional path to a change_wallpaper.conf; defaults to the runtime config under ~/.config.
 ensure_wallpaper_monitors() {
-    local wallpaper_conf="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+    local wallpaper_conf="${1:-$HOME/.config/hypr/sources_specific/change_wallpaper.conf}"
     [ -f "$wallpaper_conf" ] || return 0
 
     # Read existing MONITORS line if any
@@ -1191,20 +1192,24 @@ update_configs() {
     # Point WALLPAPER_DIR to the copied location from here on.
     WALLPAPER_DIR="$target_wallpaper_dir"
 
-    # Update the wallpaper configuration file
-    # Use the active runtime config under ~/.config; change_wallpaper.sh sources sources_specific/change_wallpaper.conf
-    local wallpaper_conf="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
-    execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory"
-    # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
-    if [ -f "$wallpaper_conf" ]; then
-        execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS"
-    else
-        # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
-        execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config"
-    fi
+    # Update the wallpaper configuration file.
+    # Keep both the runtime config under ~/.config and the stow source under ~/dotfiles in sync.
+    local wallpaper_conf_runtime="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+    local wallpaper_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+    local wallpaper_conf
+    for wallpaper_conf in "$wallpaper_conf_runtime" "$wallpaper_conf_source"; do
+        execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory ($(basename "$wallpaper_conf"))"
+        # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
+        if [ -f "$wallpaper_conf" ]; then
+            execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
+        else
+            # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
+            execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config ($(basename "$wallpaper_conf"))"
+        fi
 
-    # Ensure MONITORS is set (auto-detect first monitor if user did not set)
-    ensure_wallpaper_monitors
+        # Ensure MONITORS is set (auto-detect first monitor if user did not set)
+        ensure_wallpaper_monitors "$wallpaper_conf"
+    done
     
     print_message "Configuration files updated with user input."
 }
@@ -2372,26 +2377,36 @@ configure_monitor() {
             !/^workspace=/ { print }
         ' "$monitors_conf_file" > "${monitors_conf_file}.tmp" && mv "${monitors_conf_file}.tmp" "$monitors_conf_file"
 
-        # Update wallpaper configuration
-        if [ -f "$wallpaper_conf" ]; then
-            local monitors_str=""
-            for m in "${configured_monitors[@]}"; do
-                monitors_str+="\"$m\" "
-            done
-            monitors_str=$(echo "$monitors_str")
-            if grep -q "^MONITORS=" "$wallpaper_conf"; then
-                sed -i "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wallpaper_conf"
+        # Update wallpaper configuration (runtime + stow source if present)
+        local monitors_str=""
+        for m in "${configured_monitors[@]}"; do
+            monitors_str+="\"$m\" "
+        done
+        monitors_str=$(echo "$monitors_str")
+
+        local wallpaper_confs=(
+            "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+            "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+        )
+        local wc
+        for wc in "${wallpaper_confs[@]}"; do
+            if [ -f "$wc" ]; then
+                if grep -q "^MONITORS=" "$wc"; then
+                    sed -i "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wc"
+                else
+                    echo "MONITORS=($monitors_str)" >> "$wc"
+                fi
+                print_message "Updated MONITORS in $(basename "$wc"): MONITORS=($monitors_str)"
             else
-                echo "MONITORS=($monitors_str)" >> "$wallpaper_conf"
+                print_warning "Wallpaper configuration file not found: $wc"
             fi
-            print_message "Updated MONITORS in change_wallpaper.conf: MONITORS=($monitors_str)"
-        else
-            print_warning "Wallpaper configuration file not found: $wallpaper_conf"
-        fi
+        done
 
         # Remove any remaining placeholder text
         sed -i '/MONITOR_[0-9]/d' "$monitors_conf_file"
-        sed -i '/MONITOR_[0-9]/d' "$wallpaper_conf"
+        for wc in "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+            [ -f "$wc" ] && sed -i '/MONITOR_[0-9]/d' "$wc"
+        done
 
     elif command -v kscreen-doctor &>/dev/null; then
         local monitor_output

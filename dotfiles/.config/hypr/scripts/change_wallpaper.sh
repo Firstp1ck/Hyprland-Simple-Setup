@@ -18,38 +18,84 @@ fi
 
 # Ensure hyprpaper is running and IPC is working
 # In hyprpaper 0.8.0, we need to test IPC connectivity, not just process existence
+ensure_hyprland_env() {
+  local uid runtime_dir hypr_dir sig wayland_sock
+
+  uid="$(id -u)"
+  runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
+  export XDG_RUNTIME_DIR="$runtime_dir"
+
+  if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    for hypr_dir in "$runtime_dir"/hypr/*; do
+      if [ -d "$hypr_dir" ]; then
+        sig="${hypr_dir##*/}"
+        if [ -S "$hypr_dir/.socket2.sock" ] || [ -S "$hypr_dir/.socket.sock" ]; then
+          export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    for wayland_sock in "$runtime_dir"/wayland-*; do
+      if [ -S "$wayland_sock" ]; then
+        export WAYLAND_DISPLAY="${wayland_sock##*/}"
+        break
+      fi
+    done
+  fi
+}
+
+hypr_dispatch_exec() {
+  # Start a process *inside* the active Hyprland session.
+  # This avoids launching wlroots clients without the right logind/seat context.
+  hyprctl dispatch exec "$1" >/dev/null 2>&1
+}
+
 ensure_hyprpaper_ready() {
   local max_attempts=30
   local attempt=0
   
-  # First, ensure process is running
-  if ! pgrep -f hyprpaper >/dev/null; then
-    hyprpaper &
+  ensure_hyprland_env
+
+  # If we can't talk to Hyprland at all, don't try to launch hyprpaper.
+  if ! hyprctl monitors >/dev/null 2>&1; then
+    echo "Error: hyprctl cannot connect (missing/incorrect Hyprland session environment)" >&2
+    return 1
+  fi
+
+  # Ensure hyprpaper is running (start it via Hyprland, not directly).
+  if ! pgrep -x hyprpaper >/dev/null 2>&1; then
+    hypr_dispatch_exec "hyprpaper"
     sleep 0.5
   fi
   
   # Test IPC connectivity by trying a wallpaper command (with invalid args to test connection)
   # If IPC isn't working, restart hyprpaper
   while [ $attempt -lt $max_attempts ]; do
-    if pgrep -f hyprpaper >/dev/null; then
+    if pgrep -x hyprpaper >/dev/null 2>&1; then
       # Test if IPC is working by checking if hyprctl can connect
       # Using an invalid command to test connectivity (will return "not enough args" if connected)
-      if hyprctl hyprpaper wallpaper 2>&1 | grep -q "not enough args"; then
+      local ipc_test_out
+      ipc_test_out="$(hyprctl hyprpaper wallpaper 2>&1 || true)"
+
+      if printf '%s' "$ipc_test_out" | grep -q "not enough args"; then
         # IPC is working (got "not enough args" error, which means connection succeeded)
         return 0
-      elif hyprctl hyprpaper wallpaper 2>&1 | grep -q "failed to connect"; then
-        # IPC not working, restart hyprpaper
-        pkill hyprpaper 2>/dev/null
+      elif printf '%s' "$ipc_test_out" | grep -q "failed to connect"; then
+        # IPC not working, restart hyprpaper (again: via Hyprland)
+        pkill -x hyprpaper 2>/dev/null
         sleep 0.3
-        hyprpaper &
+        hypr_dispatch_exec "hyprpaper"
         sleep 0.5
       else
         # Give it more time to initialize
         sleep 0.2
       fi
     else
-      # Process not running, start it
-      hyprpaper &
+      # Process not running, start it (via Hyprland)
+      hypr_dispatch_exec "hyprpaper"
       sleep 0.5
     fi
     attempt=$((attempt + 1))

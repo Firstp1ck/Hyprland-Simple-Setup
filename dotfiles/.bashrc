@@ -131,6 +131,16 @@ set completion-map-case on
 
 export PATH="$PATH:$HOME/go/bin"
 
+# User scripts/binaries (keep in sync with fish env)
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+case ":$PATH:" in
+    *":$HOME/.local/scripts:"*) ;;
+    *) export PATH="$HOME/.local/scripts:$PATH" ;;
+esac
+
 # Language settings
 export LANG="de_CH.UTF-8"
 export LANGUAGE=de_CH:en_US
