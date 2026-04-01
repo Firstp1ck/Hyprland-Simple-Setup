@@ -116,6 +116,91 @@ log_dry_run_operation() {
     DRY_RUN_OPERATIONS+=("[$function_name] $operation")
 }
 
+should_init_dotfiles_git_repo() {
+    # 1) Explicit CLI flag wins
+    if [ "${INIT_DOTFILES_GIT_REPO:-false}" = "true" ]; then
+        return 0
+    fi
+    # 2) Environment variable override (useful for non-interactive runs)
+    case "${DOTFILES_GIT_INIT:-}" in
+        1|true|yes|y|Y) return 0 ;;
+        0|false|no|n|N) return 1 ;;
+    esac
+    # 3) Interactive prompt (default yes); non-interactive defaults to no
+    if [ "${NON_INTERACTIVE:-false}" = "true" ]; then
+        return 1
+    fi
+    if prompt_yes_no "Initialize a local git repo in \$HOME/dotfiles (no remote) after setup?"; then
+        return 0
+    fi
+    return 1
+}
+
+init_dotfiles_git_repo() {
+    local dotfiles_dir="$HOME/dotfiles"
+    local repo_git_dir="$dotfiles_dir/.git"
+
+    if ! should_init_dotfiles_git_repo; then
+        print_verbose "Dotfiles git init skipped (not enabled)"
+        return 0
+    fi
+
+    if [ ! -d "$dotfiles_dir" ]; then
+        print_warning "Dotfiles directory not found at $dotfiles_dir; skipping git init."
+        return 0
+    fi
+
+    if [ -d "$repo_git_dir" ]; then
+        print_message "Dotfiles already have a git repo at $repo_git_dir; skipping git init."
+        return 0
+    fi
+
+    if ! command -v git >/dev/null 2>&1; then
+        print_warning "git not found; skipping dotfiles git repo initialization."
+        return 0
+    fi
+
+    if is_dry_run; then
+        log_dry_run_operation "init_dotfiles_git_repo" "Would init local git repo in $dotfiles_dir and create initial commit"
+        return 0
+    fi
+
+    print_message "Initializing local git repo in $dotfiles_dir"
+    if ! (cd "$dotfiles_dir" && git init -q); then
+        print_warning "Failed to init git repo in $dotfiles_dir"
+        return 1
+    fi
+
+    # Ensure local identity is set (avoid touching global git config)
+    local existing_name existing_email
+    existing_name=$(git -C "$dotfiles_dir" config --get user.name || true)
+    existing_email=$(git -C "$dotfiles_dir" config --get user.email || true)
+    if [ -z "$existing_name" ]; then
+        git -C "$dotfiles_dir" config user.name "$USER" || true
+    fi
+    if [ -z "$existing_email" ]; then
+        local host
+        host="$(hostname 2>/dev/null || echo "localhost")"
+        git -C "$dotfiles_dir" config user.email "${USER}@${host}" || true
+    fi
+
+    # Initial snapshot commit
+    if ! (cd "$dotfiles_dir" && git add -A); then
+        print_warning "Failed to stage dotfiles in $dotfiles_dir"
+        return 1
+    fi
+    if git -C "$dotfiles_dir" diff --cached --quiet; then
+        print_message "Dotfiles repo has nothing to commit (already clean)."
+        return 0
+    fi
+    if ! (cd "$dotfiles_dir" && git commit -q -m "Initial dotfiles snapshot"); then
+        print_warning "Failed to create initial commit in $dotfiles_dir"
+        return 1
+    fi
+
+    print_message "Local dotfiles git repo created at $repo_git_dir"
+}
+
 execute_command() {
     local cmd="$1"
     local description="$2"
@@ -1082,6 +1167,8 @@ update_configs() {
         if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
             print_message "Stow script executed successfully"
             track_config_status "Dotfiles Setup" "$CHECK_MARK"
+            # Optional: initialize a local git repo for ~/dotfiles after stow
+            init_dotfiles_git_repo || true
         else
             print_error "Stow script failed to execute properly"
             track_config_status "Dotfiles Setup" "$CROSS_MARK"
@@ -2590,6 +2677,9 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --configure-sddm)
             CONFIGURE_SDDM_ONLY=true
+            ;;
+        --init-dotfiles-git)
+            INIT_DOTFILES_GIT_REPO=true
             ;;
         *)
             print_warning "Unknown parameter passed: $1"
