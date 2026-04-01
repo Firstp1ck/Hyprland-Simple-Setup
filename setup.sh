@@ -2228,9 +2228,21 @@ configure_monitor() {
         local primary_width=""
         local configured_monitors=()
         # local monitors_conf_file="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/monitors.conf"
-        local monitors_conf_file="${HOME}/.config/hypr/sources/monitors.conf"
+        # Hyprland sources this file directly (see dotfiles/.config/hypr/hyprland.conf)
+        local monitors_conf_file="${HOME}/.config/hypr/sources_specific/monitors.conf"
         # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
         local wallpaper_conf="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
+
+        # Ensure monitors.conf exists so sed/awk operations succeed
+        if [ ! -f "$monitors_conf_file" ]; then
+            mkdir -p "$(dirname "$monitors_conf_file")"
+            cat >"$monitors_conf_file" <<'EOF'
+# Check monitor names (e.g. DP-1, HDMI-A-1) with: `hyprctl monitors`
+# Example single monitor configuration:
+# monitor=DP-1,2560x1440@144,0x0,1
+# workspace=1,monitor:DP-1,default:true
+EOF
+        fi
 
         # Function to get available modes for a monitor
         get_monitor_modes() {
@@ -2408,6 +2420,11 @@ configure_monitor() {
             [ -f "$wc" ] && sed -i '/MONITOR_[0-9]/d' "$wc"
         done
 
+        # Keep stow/source copy in sync when it exists (same approach as wallpaper config)
+        if [ -f "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" ]; then
+            cp -f "$monitors_conf_file" "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+        fi
+
     elif command -v kscreen-doctor &>/dev/null; then
         local monitor_output
         monitor_output=$(kscreen-doctor -o 2>&1)
@@ -2517,11 +2534,11 @@ verify_workspace_config() {
     print_message "Verifying workspace configuration"
     local issues=0
     local files=(
-        "$HOME/.config/hypr/sources/monitors.conf"
+        "$HOME/.config/hypr/sources_specific/monitors.conf"
         "$HOME/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
         "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/.dotfiles/.config/hypr/sources/monitors.conf"
+        "$HOME/.dotfiles/.config/hypr/sources_specific/monitors.conf"
         "$HOME/.dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
         "$HOME/.config/waybar/config"
         "$HOME/.config/waybar/config.jsonc"
