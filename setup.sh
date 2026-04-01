@@ -493,6 +493,113 @@ ensure_monitors_conf() {
     fi
 }
 
+# Apply MONITOR_CONFIG directly (name:resolution:scale;...) without requiring
+# a live Hyprland session. This is primarily used by non-interactive/TUI runs.
+apply_monitor_config_from_env() {
+    local monitor_config="${MONITOR_CONFIG:-}"
+    [ -n "$monitor_config" ] || return 1
+
+    local hyprland_setup_dir=""
+    hyprland_setup_dir="$(find_hyprland_setup_dir || true)"
+
+    local monitor_targets=(
+        "$HOME/.config/hypr/sources_specific/monitors.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+    )
+    local wallpaper_targets=(
+        "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
+        "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+    )
+    if [ -n "$hyprland_setup_dir" ]; then
+        monitor_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/monitors.conf")
+        wallpaper_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf")
+    fi
+
+    local entry
+    local parsed_any=false
+    local first=true
+    local primary_width=0
+    local monitor_lines=()
+    local monitor_names=()
+    IFS=';' read -ra entries <<< "$monitor_config"
+    for entry in "${entries[@]}"; do
+        [ -z "$entry" ] && continue
+        local nm cfg sc
+        nm="${entry%%:*}"
+        cfg="${entry#*:}"
+        sc="${cfg##*:}"
+        cfg="${cfg%:*}"
+        if [ -z "$nm" ] || [ -z "$cfg" ] || [ -z "$sc" ]; then
+            continue
+        fi
+
+        local offset
+        if [ "$first" = true ]; then
+            offset="0x0"
+            first=false
+            primary_width="${cfg%%x*}"
+            if ! [[ "$primary_width" =~ ^[0-9]+$ ]]; then
+                primary_width=0
+            fi
+        else
+            offset="${primary_width}x0"
+        fi
+        monitor_lines+=("monitor=${nm},${cfg},${offset},${sc}")
+        monitor_names+=("$nm")
+        parsed_any=true
+    done
+
+    if [ "$parsed_any" != true ]; then
+        print_warning "MONITOR_CONFIG is set but could not be parsed: $monitor_config"
+        return 1
+    fi
+
+    local workspace_lines=()
+    if [ "${#monitor_names[@]}" -gt 0 ]; then
+        workspace_lines+=("workspace=1,monitor:${monitor_names[0]},default:true")
+    fi
+    if [ "${#monitor_names[@]}" -gt 1 ]; then
+        workspace_lines+=("workspace=2,monitor:${monitor_names[1]}")
+    fi
+
+    local mt
+    for mt in "${monitor_targets[@]}"; do
+        mkdir -p "$(dirname "$mt")"
+        {
+            echo "# Check monitor names (e.g. DP-1, HDMI-A-1) with: \`hyprctl monitors\`"
+            for line in "${monitor_lines[@]}"; do
+                echo "$line"
+            done
+            if [ "${#workspace_lines[@]}" -gt 0 ]; then
+                echo
+                for line in "${workspace_lines[@]}"; do
+                    echo "$line"
+                done
+            fi
+        } > "$mt"
+        print_message "Applied MONITOR_CONFIG to $(basename "$mt")"
+    done
+
+    local monitors_str=""
+    local m
+    for m in "${monitor_names[@]}"; do
+        monitors_str+="\"$m\" "
+    done
+    monitors_str=$(echo "$monitors_str")
+    local wt
+    for wt in "${wallpaper_targets[@]}"; do
+        [ -f "$wt" ] || continue
+        if grep -q "^MONITORS=" "$wt"; then
+            sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wt"
+        else
+            echo "MONITORS=($monitors_str)" >> "$wt"
+        fi
+        print_message "Applied MONITORS to $(basename "$wt"): MONITORS=($monitors_str)"
+    done
+
+    return 0
+}
+
 ############################################################## Verbosity and Error Handling Functions ##############################################################
 
 print_verbose() {
@@ -2279,6 +2386,15 @@ configure_monitor() {
         if ! prompt_yes_no "Would you like to configure your monitor settings?"; then
             print_message "Monitor setup skipped by user."
             track_config_status "Monitor Setup" "$CIRCLE (Skipped by user)"
+            return 0
+        fi
+    fi
+
+    # In non-interactive/TUI mode, prefer explicit MONITOR_CONFIG if provided.
+    # This works even when Hyprland is not currently running in this shell.
+    if [ "$NON_INTERACTIVE" = "true" ] && [ -n "${MONITOR_CONFIG:-}" ]; then
+        if apply_monitor_config_from_env; then
+            track_config_status "Monitor Setup" "$CHECK_MARK (Applied MONITOR_CONFIG)"
             return 0
         fi
     fi
