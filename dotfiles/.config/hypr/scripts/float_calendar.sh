@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# Launch calcurse in alacritty
-hyprctl dispatch exec "alacritty -e calcurse"
-
-# Wait for the window to appear (adjust sleep if needed)
-sleep 0.2
-
-# Run the toggle floating script (it will float and resize the active window)
-~/.config/hypr/scripts/toggle_floating.sh
+exec "$HOME/.config/hypr/scripts/term_exec.sh" \
+  --app-id hss-calendar --title calcurse -- calcurse

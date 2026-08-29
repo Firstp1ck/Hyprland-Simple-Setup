@@ -2,11 +2,7 @@
 
 set -euo pipefail
 
-# Set your terminal:
-terminal="alacritty"
-
-# Config
-wofi_style="$HOME/.config/wofi/menu.css"
+roles_file=${HSS_ROLES_FILE:-$HOME/.config/hypr/roles.json}
 
 die() {
   local msg="$1"
@@ -112,17 +108,8 @@ while IFS= read -r abs; do
 done <<<"$repos"
 (( ${#choices[@]} > 0 )) || { die "No git repos found (after filtering)"; exit 1; }
 
-if ! command -v wofi >/dev/null 2>&1; then
-  die "Missing dependency: wofi"
-  exit 1
-fi
-
-# wofi returns non-zero on cancel; don't let `set -e` kill the script.
-chosen_dir="$(
-  printf '%s\n' "${choices[@]}" \
-    | wofi --dmenu --insensitive --lines 30 --prompt 'Projects:' --style "$wofi_style" \
-    || true
-)"
+[[ -r "$roles_file" ]] || { die "Missing role data: $roles_file"; exit 1; }
+chosen_dir="$(printf '%s\n' "${choices[@]}" | "$HOME/.config/hypr/scripts/menu_exec.sh" --dmenu || true)"
 [[ -n "$chosen_dir" ]] || exit 0
 
 chosen_abs="${__label_to_abs["$chosen_dir"]:-}"
@@ -141,12 +128,6 @@ if [[ ! -d "$dir" ]]; then
   exit 1
 fi
 
-# Open Neovim in the repo directory (terminal-specific flags)
-case "$terminal" in
-  alacritty)
-    exec "$terminal" --working-directory "$dir" -e nvim .
-    ;;
-  *)
-    exec "$terminal" -e "bash" "-lc" "cd \"$dir\" && nvim ."
-    ;;
-esac
+editor=$(jq -er '.roles.tui_editor.editor_bin' "$roles_file")
+cd "$dir"
+exec "$HOME/.config/hypr/scripts/term_exec.sh" --app-id hss-repos --title "$(basename "$dir")" -- "$editor" .

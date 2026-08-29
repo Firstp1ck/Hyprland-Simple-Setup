@@ -562,7 +562,7 @@ For each finding record: reviewer run and provider/model; file or symbol; violat
 | Plan verification | complete | oracle `51818a7d-c09b-42fd-a940-3ea983a4ab5c`; reviewers `9fdaeb6d-c6ee-4acb-8622-48302f0d8540`, `67da5478-8dce-49ed-aaed-6d4f2e6b576d`, `f594d66b-5a2c-4664-a2b1-24b89873a769`, `7698ce16-56ab-4381-b4b8-644484a9bacb` | Fixture verified on Hyprland 0.56.2; package availability checked; all plan blockers resolved; final focused gate GO at 98/100 confidence |
 | WS-1 | complete | worker `6333730b-be43-4c43-9964-52b638d184ac`; parent reran JSON/Rust gates | Changed only `packages.json`, `src/main.rs`, and `src/packages.rs`; 6 tests pass; fmt/check/clippy/diff checks pass; interactive TUI walkthrough deferred to integrated validation |
 | WS-2 | complete | worker `151b4488-8439-40ed-85a0-297b1e8857c7`; parent reran script and verifier gates | Hyprland 0.56.2 reports `config ok`; no warning/deprecation matches; Bash/ShellCheck/diff checks pass; live pseudo/split interaction remains for manual release validation |
-| WS-3 | not started |  |  |
+| WS-3 | complete | worker `6b250a07-2655-45d4-8a97-6fd2e894b434`; fix continuation `ac750834-41a4-4aef-8d7b-24acd7dc0af9`; parent reran all focused gates | 22 normal/dry-run cases pass; role validation and twice-run idempotence pass; Bash/ShellCheck/Rust/Hyprland/diff gates pass. Zen and Kitty classes verified locally; other class values remain release-time checks |
 | WS-4 | not started |  |  |
 | WS-5 | not started |  |  |
 | Integrated validation | not started |  |  |

@@ -7,6 +7,9 @@
 # shellcheck disable=SC1091
 # Not following: /etc/os-release: openBinaryFile: does not exist (No such file or directory)
 
+# shellcheck disable=SC2016
+# Literal dollar signs are written into Hyprland, Fish, and Waybar configuration files.
+
 ##############################################################
 # Hyprland Setup Script
 # Based on your Start_system_setup.sh, this script installs
@@ -45,35 +48,24 @@ AUR_HELPER_CHECKED=""
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
 FISH_LANGUAGE_CHOICE=""
-TERMINAL_CHOICE=""
-BROWSER_CHOICE=""
 SETUP_DIR=Hyprland-Simple-Setup
+PACKAGE_REGISTRY=""
+ROLE_DATA_FILE=""
+ROLE_SELECTIONS_LOADED=false
+PACKAGE_SELECTIONS_PREPARED=false
+SELECTED_PACKAGES_VERIFIED=false
+ROLE_NAMES=(browser terminal shell gui_editor tui_editor launcher)
+declare -a SELECTED_PACMAN_LIST=()
+declare -a SELECTED_AUR_LIST=()
+declare -a SELECTED_ALL_PACKAGES=()
 
 ############################################################## Helper Functions ##############################################################
 
-get_terminal_choice() {
-    if [ -z "$TERMINAL_CHOICE" ]; then
-        if [ "$NON_INTERACTIVE" = "true" ]; then
-            # default to 1 (kitty) if not provided in env
-            TERMINAL_CHOICE=${TERMINAL_CHOICE_OVERRIDE:-1}
-            print_verbose "Non-interactive mode: TERMINAL_CHOICE_OVERRIDE='$TERMINAL_CHOICE_OVERRIDE', using TERMINAL_CHOICE='$TERMINAL_CHOICE'"
-            return
-        fi
-        echo "Select your preferred terminal:"
-        echo "1) kitty (Default)"
-        echo "2) alacritty"
-        read -rp "Enter selection number (1-2): " TERMINAL_CHOICE
-    else
-        print_verbose "TERMINAL_CHOICE already set to: '$TERMINAL_CHOICE'"
-    fi
-}
-
 get_fish_language_choice() {
     if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
-        if [ "$NON_INTERACTIVE" = "true" ]; then
-            # default to 1 (de_CH) if not provided in env
+        if [ "${NON_INTERACTIVE:-false}" = "true" ]; then
             FISH_LANGUAGE_CHOICE=${FISH_LANGUAGE_CHOICE_OVERRIDE:-1}
-            print_verbose "Non-interactive mode: FISH_LANGUAGE_CHOICE_OVERRIDE='$FISH_LANGUAGE_CHOICE_OVERRIDE', using FISH_LANGUAGE_CHOICE='$FISH_LANGUAGE_CHOICE'"
+            print_verbose "Non-interactive mode: using FISH_LANGUAGE_CHOICE='$FISH_LANGUAGE_CHOICE'"
             return
         fi
         echo "Select your preferred language setting for Fish Shell:"
@@ -86,21 +78,152 @@ get_fish_language_choice() {
     fi
 }
 
-get_browser_choice() {
-    if [ -z "$BROWSER_CHOICE" ]; then
-        if [ "$NON_INTERACTIVE" = "true" ]; then
-            # default to 1 (zen-browser) if not provided in env
-            BROWSER_CHOICE=${BROWSER_CHOICE_OVERRIDE:-1}
-            print_verbose "Non-interactive mode: BROWSER_CHOICE_OVERRIDE='$BROWSER_CHOICE_OVERRIDE', using BROWSER_CHOICE='$BROWSER_CHOICE'"
-            return
-        fi
-        echo "Select your preferred browser:"
-        echo "1) zen-browser (Default)"
-        echo "2) vivaldi"
-        read -rp "Enter selection number (1-2): " BROWSER_CHOICE
-    else
-        print_verbose "BROWSER_CHOICE already set to: '$BROWSER_CHOICE'"
+role_env_name() {
+    case "$1" in
+        browser) printf '%s' ROLE_BROWSER ;;
+        terminal) printf '%s' ROLE_TERMINAL ;;
+        shell) printf '%s' ROLE_SHELL ;;
+        gui_editor) printf '%s' ROLE_GUI_EDITOR ;;
+        tui_editor) printf '%s' ROLE_TUI_EDITOR ;;
+        launcher) printf '%s' ROLE_LAUNCHER ;;
+        *) return 1 ;;
+    esac
+}
+
+validate_package_name() {
+    [[ "$1" =~ ^[a-z0-9@._+-]+$ ]]
+}
+
+resolve_package_registry() {
+    local setup_root
+    setup_root=$(find_hyprland_setup_dir) || {
+        print_error "Could not locate packages.json because the setup directory was not found"
+        return 1
+    }
+    PACKAGE_REGISTRY="$setup_root/packages.json"
+    if [ ! -f "$PACKAGE_REGISTRY" ] || ! jq -e '.roles and .required' "$PACKAGE_REGISTRY" >/dev/null; then
+        print_error "Invalid package registry: $PACKAGE_REGISTRY"
+        return 1
     fi
+}
+
+load_role_selections() {
+    [ "$ROLE_SELECTIONS_LOADED" = true ] && return 0
+    [ -n "$PACKAGE_REGISTRY" ] || resolve_package_registry || return 1
+
+    local role env_name value default label count choice
+    for role in "${ROLE_NAMES[@]}"; do
+        env_name=$(role_env_name "$role") || return 1
+        value=${!env_name:-}
+        default=$(jq -er --arg role "$role" '.roles[$role].default' "$PACKAGE_REGISTRY") || return 1
+        label=$(jq -er --arg role "$role" '.roles[$role].label' "$PACKAGE_REGISTRY") || return 1
+
+        if [ -z "$value" ]; then
+            if [ "${NON_INTERACTIVE:-false}" = true ]; then
+                value=$default
+                print_message "$env_name was not set; using registry default '$value'"
+            else
+                echo "Select $label:"
+                jq -r --arg role "$role" '.roles[$role].options | to_entries[] | "\(.key + 1)) \(.value.package)"' "$PACKAGE_REGISTRY"
+                count=$(jq -r --arg role "$role" '.roles[$role].options | length' "$PACKAGE_REGISTRY")
+                read -rp "Enter selection number (default: $default): " choice
+                if [ -z "$choice" ]; then
+                    value=$default
+                elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
+                    value=$(jq -er --arg role "$role" --argjson index "$((choice - 1))" '.roles[$role].options[$index].package' "$PACKAGE_REGISTRY") || return 1
+                else
+                    print_error "Invalid selection for $env_name"
+                    return 1
+                fi
+            fi
+        fi
+
+        if ! validate_package_name "$value" || ! jq -e --arg role "$role" --arg package "$value" '.roles[$role].options | any(.package == $package)' "$PACKAGE_REGISTRY" >/dev/null; then
+            print_error "$env_name has unknown package value '$value'"
+            return 1
+        fi
+        printf -v "$env_name" '%s' "$value"
+        export "${env_name?}"
+    done
+    ROLE_SELECTIONS_LOADED=true
+}
+
+role_option_json() {
+    local role=$1 env_name package
+    env_name=$(role_env_name "$role") || return 1
+    package=${!env_name:-}
+    jq -ce --arg role "$role" --arg package "$package" '.roles[$role].options[] | select(.package == $package)' "$PACKAGE_REGISTRY"
+}
+
+role_field() {
+    local role=$1 field=$2
+    role_option_json "$role" | jq -er --arg field "$field" '.[$field]'
+}
+
+append_unique() {
+    local array_name=$1 value=$2 existing
+    local -n target=$array_name
+    [ -n "$value" ] || return 0
+    for existing in "${target[@]}"; do
+        [ "$existing" = "$value" ] && return 0
+    done
+    target+=("$value")
+}
+
+append_package_words() {
+    local array_name=$1 words=$2 package
+    words=${words//,/ }
+    for package in $words; do
+        if ! validate_package_name "$package"; then
+            print_error "Invalid package name '$package' in selected package input"
+            return 1
+        fi
+        append_unique "$array_name" "$package"
+    done
+}
+
+prepare_package_selections() {
+    [ "$PACKAGE_SELECTIONS_PREPARED" = true ] && return 0
+    load_role_selections || return 1
+
+    local pacman_present=false aur_present=false package role option source
+    [[ -v SELECTED_PACMAN_PACKAGES ]] && pacman_present=true
+    [[ -v SELECTED_AUR_PACKAGES ]] && aur_present=true
+    if [ "$pacman_present" != "$aur_present" ]; then
+        print_error "SELECTED_PACMAN_PACKAGES and SELECTED_AUR_PACKAGES must either both be set or both be absent"
+        return 1
+    fi
+
+    if [ "$pacman_present" = true ]; then
+        append_package_words SELECTED_PACMAN_LIST "${SELECTED_PACMAN_PACKAGES:-}" || return 1
+        append_package_words SELECTED_AUR_LIST "${SELECTED_AUR_PACKAGES:-}" || return 1
+    else
+        while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(
+            jq -r '[.roles[].options[] | .package, (.extra_packages[]?)] as $exclusive | .hyprland_packages[][] as $package | select(($exclusive | index($package)) == null) | $package' "$PACKAGE_REGISTRY"
+        )
+        while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(
+            jq -r '[.roles[].options[] | .package, (.extra_packages[]?)] as $exclusive | .aur_packages[][] as $package | select(($exclusive | index($package)) == null) | $package' "$PACKAGE_REGISTRY"
+        )
+        print_message "No SELECTED_* package variables were supplied; using non-role registry packages and role defaults"
+    fi
+
+    for role in "${ROLE_NAMES[@]}"; do
+        option=$(role_option_json "$role") || return 1
+        source=$(jq -er '.source' <<<"$option") || return 1
+        package=$(jq -er '.package' <<<"$option") || return 1
+        if [ "$source" = pacman ]; then
+            append_unique SELECTED_PACMAN_LIST "$package"
+            while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+        else
+            append_unique SELECTED_AUR_LIST "$package"
+            while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+        fi
+    done
+
+    append_package_words SELECTED_PACMAN_LIST "${USER_ADDED_PACMAN_PACKAGES:-}" || return 1
+    append_package_words SELECTED_AUR_LIST "${USER_ADDED_AUR_PACKAGES:-}" || return 1
+    for package in "${SELECTED_PACMAN_LIST[@]}" "${SELECTED_AUR_LIST[@]}"; do append_unique SELECTED_ALL_PACKAGES "$package"; done
+    PACKAGE_SELECTIONS_PREPARED=true
 }
 
 is_windows() {
@@ -593,7 +716,6 @@ apply_monitor_config_from_env() {
     for m in "${monitor_names[@]}"; do
         monitors_str+="\"$m\" "
     done
-    monitors_str=$(echo "$monitors_str")
     local wt
     for wt in "${wallpaper_targets[@]}"; do
         [ -f "$wt" ] || continue
@@ -738,14 +860,14 @@ build_summary_recommendations() {
             *"configure_bluetooth"*)
                 add_recommendation_once "Check bluetooth: sudo systemctl status bluetooth && sudo systemctl enable --now bluetooth"
                 ;;
-            *"configure_fish"*)
-                add_recommendation_once "Set shell manually: sudo chsh -s /usr/bin/fish \$USER"
+            *"configure_shell"*)
+                add_recommendation_once "Verify the selected shell is installed and listed in /etc/shells, then run chsh for your user"
                 ;;
             *"configure_network_manager"*)
                 add_recommendation_once "Enable NetworkManager: sudo systemctl enable --now NetworkManager"
                 ;;
-            *"configure_environment"*"Neovim"*)
-                add_recommendation_once "Install Neovim manually: sudo pacman -S neovim"
+            *"configure_environment"*"editor"*)
+                add_recommendation_once "Install the selected TUI editor package and set EDITOR/VISUAL manually"
                 ;;
             *"configure_timeshift"*)
                 add_recommendation_once "Set up Timeshift manually: sudo pacman -S timeshift && sudo systemctl enable --now cronie.service"
@@ -932,116 +1054,41 @@ list_packages() {
     print_message "Package lists have been saved to:"
     print_message "  Main package list: $packages_file"
     print_message "  AUR package list: $aur_file"
-    print_message "Total packages found: $(grep -v '^#' "$packages_file" | wc -l)"
-    print_message "Total AUR packages found: $(grep -v '^#' "$aur_file" | wc -l)"
+    print_message "Total packages found: $(grep -c -v '^#' "$packages_file")"
+    print_message "Total AUR packages found: $(grep -c -v '^#' "$aur_file")"
     print_message "Thank you for using the Package Installation History Utility!"
 }
 
 verify_installed_packages() {
-    extended_announce_step "Verifying installed packages"
+    [ "$SELECTED_PACKAGES_VERIFIED" = true ] && return 0
+    extended_announce_step "Verifying selected packages"
+    prepare_package_selections || return 1
 
-    # In dry-run, skip verification entirely (execute_command would always succeed)
     if is_dry_run; then
-        log_dry_run_operation "verify_installed_packages" "Would verify installed packages via pacman/AUR helper"
-        print_message "Dry-run: skipping package verification"
+        log_dry_run_operation "verify_installed_packages" "Would run pacman -T for ${#SELECTED_ALL_PACKAGES[@]} selected and role packages"
+        print_message "Dry-run: skipping selected-package verification"
+        SELECTED_PACKAGES_VERIFIED=true
         return 0
     fi
 
-    # Find the newest package list files
-    local user_pkg_file
-    user_pkg_file=$(ls -t "$HOME"/user_installed_packages_* 2>/dev/null | head -n1)
-    local aur_pkg_file
-    aur_pkg_file=$(ls -t "$HOME"/aur_packages_* 2>/dev/null | head -n1)
-
-    if [ -z "$user_pkg_file" ] && [ -z "$aur_pkg_file" ]; then
-        print_message "No package list files found in $HOME. Generating new package lists..."
-        list_packages
-        # Re-find the files after generation
-        user_pkg_file=$(ls -t "$HOME"/user_installed_packages_* 2>/dev/null | head -n1)
-        aur_pkg_file=$(ls -t "$HOME"/aur_packages_* 2>/dev/null | head -n1)
-        if [ -z "$user_pkg_file" ] && [ -z "$aur_pkg_file" ]; then
-            print_error "Failed to generate package list files."
-            track_config_status "Package Verification" "$CROSS_MARK"
-            return 1
-        fi
-    fi
-
-    local missing_packages=()
-    local missing_pacman=()
-    local missing_aur=()
-    local total_checked=0
-
-    # Check standard packages
-    if [ -n "$user_pkg_file" ]; then
-        print_message "Checking packages from: $(basename "$user_pkg_file")"
-        while IFS= read -r package; do
-            # Skip empty lines and comments
-            [[ -z "$package" || "$package" =~ ^[[:space:]]*# ]] && continue
-
-            ((total_checked++))
-            if ! execute_command "pacman -Qi '$package' >/dev/null 2>&1" "Check installed: $package"; then
-                missing_packages+=("$package (Pacman)")
-                missing_pacman+=("$package")
-            fi
-        done < "$user_pkg_file"
-    fi
-
-    # Check AUR packages
-    if [ -n "$aur_pkg_file" ]; then
-        print_message "Checking packages from: $(basename "$aur_pkg_file")"
-        while IFS= read -r package; do
-            # Skip empty lines and comments
-            [[ -z "$package" || "$package" =~ ^[[:space:]]*# ]] && continue
-
-            ((total_checked++))
-            if ! execute_command "pacman -Qi '$package' >/dev/null 2>&1" "Check installed: $package (AUR)"; then
-                missing_packages+=("$package (AUR)")
-                missing_aur+=("$package")
-            fi
-        done < "$aur_pkg_file"
-    fi
-
-    # Attempt auto-install of missing packages (Arch-based only)
-    if [[ "$DISTRO" == "arch" || "$DISTRO" == "endeavouros" || "$DISTRO" == "cachyos" ]]; then
-        if [ ${#missing_pacman[@]} -gt 0 ] || [ ${#missing_aur[@]} -gt 0 ]; then
-            print_warning "Found missing packages. Attempting to install them automatically."
-            if [ ${#missing_pacman[@]} -gt 0 ]; then
-                execute_command "sudo pacman -S --needed --noconfirm ${missing_pacman[*]}" "Install missing repo packages"
-            fi
-            if [ ${#missing_aur[@]} -gt 0 ]; then
-                check_yay
-                execute_command "$AUR_HELPER -S --needed --noconfirm ${missing_aur[*]}" "Install missing AUR packages"
-            fi
-
-            # Re-verify post-install
-            local still_missing=()
-            for pkg in "${missing_pacman[@]}"; do
-                if ! pacman -Qi "$pkg" &>/dev/null; then
-                    still_missing+=("$pkg (Pacman)")
-                fi
-            done
-            for pkg in "${missing_aur[@]}"; do
-                if ! pacman -Qi "$pkg" &>/dev/null; then
-                    still_missing+=("$pkg (AUR)")
-                fi
-            done
-            missing_packages=("${still_missing[@]}")
-        fi
-    fi
-
-    # Report results
-    if [ ${#missing_packages[@]} -eq 0 ]; then
-        print_message "All packages from the lists are installed! ✅"
-        print_message "Total packages checked: $total_checked"
+    local output status=0 package
+    output=$(pacman -T "${SELECTED_ALL_PACKAGES[@]}" 2>&1) || status=$?
+    if [ -z "$output" ]; then
+        print_message "All ${#SELECTED_ALL_PACKAGES[@]} selected packages are satisfied"
         track_config_status "Package Verification" "$CHECK_MARK"
-    else
-        print_warning "Missing packages (${#missing_packages[@]} out of $total_checked total packages):"
-        printf '\n%s\n' "Missing Packages:"
-        printf '=====================================\n'
-        printf '%s\n' "${missing_packages[@]}" | column
-        printf '=====================================\n'
-        track_config_status "Package Verification" "$CROSS_MARK"
+        SELECTED_PACKAGES_VERIFIED=true
+        return 0
     fi
+
+    print_warning "Selected packages are not satisfied:"
+    while IFS= read -r package; do
+        [ -n "$package" ] || continue
+        printf '  - %s\n' "$package"
+        record_hard_failure "verify_installed_packages" "Selected package '$package' is not satisfied (pacman -T exit $status)"
+    done <<< "$output"
+    track_config_status "Package Verification" "$CROSS_MARK"
+    SELECTED_PACKAGES_VERIFIED=true
+    return 1
 }
 
 ############################################################## Check Functions ##############################################################
@@ -1630,176 +1677,209 @@ set_fish_language_config() {
     print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
 }
 
-# Function to configure terminal choice in dotfiles
-configure_terminal() {
+# Role-driven config writers. WS-4 replaces these same-file temporary writes with atomic helpers.
+role_write_file() {
+    local destination=$1 source=$2 reason=$3
     if is_dry_run; then
-        log_dry_run_operation "configure_terminal" "Would update terminal configuration"
+        log_dry_run_operation "configure_roles" "Would write $destination: $reason"
+        return 0
+    fi
+    mkdir -p "$(dirname "$destination")"
+    mv -f -- "$source" "$destination"
+}
+
+replace_config_line() {
+    local file=$1 pattern=$2 replacement=$3 reason=$4 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        return 0
+    fi
+    tmp="${file}.hss-role.$$"
+    awk -v pattern="$pattern" -v replacement="$replacement" '
+        $0 ~ pattern {
+            if (!replaced) print replacement
+            replaced = 1
+            next
+        }
+        { print }
+        END { if (!replaced) print replacement }
+    ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
+replace_literal_assignment() {
+    local file=$1 name=$2 replacement=$3 reason=$4 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        return 0
+    fi
+    tmp="${file}.hss-role.$$"
+    awk -v name="$name" -v replacement="$replacement" '
+        index($0, name) == 1 && substr($0, length(name) + 1) ~ /^[[:space:]]*=/ {
+            if (!replaced) print replacement
+            replaced = 1
+            next
+        }
+        { print }
+        END { if (!replaced) print replacement }
+    ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
+replace_literal_prefix() {
+    local file=$1 prefix=$2 replacement=$3 reason=$4 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        return 0
+    fi
+    tmp="${file}.hss-role.$$"
+    awk -v prefix="$prefix" -v replacement="$replacement" '
+        index($0, prefix) == 1 {
+            if (!replaced) print replacement
+            replaced = 1
+            next
+        }
+        { print }
+        END { if (!replaced) print replacement }
+    ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
+remove_config_matching() {
+    local file=$1 pattern=$2 reason=$3 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        return 0
+    fi
+    tmp="${file}.hss-role.$$"
+    awk -v pattern="$pattern" '$0 !~ pattern { print }' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
+generate_roles_json() {
+    load_role_selections || return 1
+    local generated source_file runtime_file source_tmp runtime_tmp
+    source_file="$HOME/dotfiles/.config/hypr/roles.json"
+    runtime_file="$HOME/.config/hypr/roles.json"
+    generated=$(jq -ce \
+        --arg browser "$ROLE_BROWSER" \
+        --arg terminal "$ROLE_TERMINAL" \
+        --arg shell "$ROLE_SHELL" \
+        --arg gui_editor "$ROLE_GUI_EDITOR" \
+        --arg tui_editor "$ROLE_TUI_EDITOR" \
+        --arg launcher "$ROLE_LAUNCHER" \
+        --arg home "$HOME" '
+        . as $registry |
+        {browser: $browser, terminal: $terminal, shell: $shell, gui_editor: $gui_editor, tui_editor: $tui_editor, launcher: $launcher} as $selected |
+        {schema_version: 1, roles: ($selected | to_entries | map(.key as $role | .value as $package | {key: $role, value: ($registry.roles[$role].options[] | select(.package == $package))}) | from_entries)} |
+        walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
+    ' "$PACKAGE_REGISTRY") || return 1
+
+    ROLE_DATA_FILE=$runtime_file
+    if is_dry_run; then
+        log_dry_run_operation "configure_roles" "Would create or modify $source_file: selected runtime role metadata"
+        log_dry_run_operation "configure_roles" "Would create or modify $runtime_file: selected runtime role metadata"
         return 0
     fi
 
-    # Trim whitespace and ensure we have a valid numeric value
-    TERMINAL_CHOICE=$(echo "$TERMINAL_CHOICE" | tr -d '[:space:]')
-    
-    print_verbose "TERMINAL_CHOICE value: '$TERMINAL_CHOICE'"
+    mkdir -p "$(dirname "$source_file")" "$(dirname "$runtime_file")"
+    source_tmp="${source_file}.hss-role.$$"
+    printf '%s\n' "$generated" | jq . > "$source_tmp"
+    role_write_file "$source_file" "$source_tmp" "selected runtime role metadata"
 
-    local terminal_name
-    case "$TERMINAL_CHOICE" in
-        1)
-            terminal_name="kitty"
-            ;;
-        2)
-            terminal_name="alacritty"
-            ;;
-        *)
-            print_warning "Invalid TERMINAL_CHOICE value: '$TERMINAL_CHOICE'. Using default (kitty)."
-            terminal_name="kitty"
-            ;;
-    esac
-    
-    print_verbose "Selected terminal: $terminal_name"
-
-    # Update app_variables.conf
-    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
-    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
-    
-    if [ -f "$app_vars_conf" ]; then
-        print_message "Updating terminal in app_variables.conf"
-        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_conf'" "Update terminal in app_variables.conf"
+    if [ "$(readlink -f "$source_file")" != "$(readlink -f "$runtime_file" 2>/dev/null || printf '%s' "$runtime_file")" ]; then
+        runtime_tmp="${runtime_file}.hss-role.$$"
+        printf '%s\n' "$generated" | jq . > "$runtime_tmp"
+        role_write_file "$runtime_file" "$runtime_tmp" "selected runtime role metadata"
     fi
-    
-    if [ -f "$app_vars_example" ]; then
-        print_message "Updating terminal in app_variables.conf example"
-        execute_command "sed -i -E 's|^\\\$terminal = .*|\\\$terminal = $terminal_name|' '$app_vars_example'" "Update terminal in app_variables.conf example"
-    fi
-
-    # Update fish config
-    local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
-    local fish_conf_runtime="$HOME/.config/fish/conf.d/01-env.fish"
-    
-    if [ -f "$fish_conf" ]; then
-        print_message "Updating terminal in fish config"
-        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf'" "Update TERMINAL in fish config"
-    fi
-    
-    if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
-        print_message "Updating terminal in runtime fish config"
-        execute_command "sed -i -E 's|^set -x TERMINAL .*|set -x TERMINAL $terminal_name|' '$fish_conf_runtime'" "Update TERMINAL in runtime fish config"
-    fi
-
-    # Update scripts that reference alacritty specifically
-    local notes_script="$HOME/dotfiles/.config/hypr/scripts/notes.sh"
-    local float_calendar_script="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
-    local clipboard_script="$HOME/dotfiles/.config/waybar/scripts/clipboard.sh"
-    
-    if [ -f "$notes_script" ]; then
-        print_message "Updating terminal in notes.sh"
-        # Replace alacritty command calls but preserve INSIDE_ALACRITTY variable name
-        execute_command "sed -i -E 's|alacritty -t|$terminal_name -t|g' '$notes_script'" "Update terminal command in notes.sh"
-        execute_command "sed -i -E 's|\\\"alacritty\\\"|\\\"$terminal_name\\\"|g' '$notes_script'" "Update terminal string in notes.sh"
-        execute_command "sed -i -E 's|\\[ \\\"\\$TERM\\\" != \\\"alacritty\\\" \\]|[ \\\"\\$TERMINAL\\\" != \\\"$terminal_name\\\" ]|g' '$notes_script'" "Update terminal detection in notes.sh"
-    fi
-    
-    if [ -f "$float_calendar_script" ]; then
-        print_message "Updating terminal in float_calendar.sh"
-        execute_command "sed -i -E 's|alacritty -e|$terminal_name -e|g' '$float_calendar_script'" "Update terminal in float_calendar.sh"
-    fi
-    
-    if [ -f "$clipboard_script" ]; then
-        print_message "Updating terminal in clipboard.sh"
-        execute_command "sed -i -E 's|alacritty --class|$terminal_name --class|g' '$clipboard_script'" "Update terminal in clipboard.sh"
-        execute_command "sed -i -E 's|alacritty-clipboard|$terminal_name-clipboard|g' '$clipboard_script'" "Update terminal class in clipboard.sh"
-    fi
-
-    print_message "Terminal configuration updated to: $terminal_name"
 }
 
-# Function to configure browser choice in dotfiles
-configure_browser() {
+runtime_role_command() {
+    local role=$1 field=${2:-args}
+    jq -er --arg role "$role" --arg field "$field" '[.roles[$role].executable] + (.roles[$role][$field] // []) | @sh' "$ROLE_DATA_FILE"
+}
+
+configure_roles() {
+    announce_step "Configuring selected application roles"
+    generate_roles_json || return 1
     if is_dry_run; then
-        log_dry_run_operation "configure_browser" "Would update browser configuration"
-        return 0
+        # The remaining paths are still reported even though roles.json is not written in WS-3 dry-run mode.
+        ROLE_DATA_FILE="$HOME/.config/hypr/roles.json"
     fi
 
-    # Trim whitespace and ensure we have a valid numeric value
-    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
-    
-    print_verbose "BROWSER_CHOICE value: '$BROWSER_CHOICE'"
+    local terminal_command browser_command editor_command launcher_command
+    local browser_exec browser_class terminal_exec editor_bin menu_dmenu launcher_process launcher_namespace
+    if is_dry_run; then
+        terminal_command=$(role_option_json terminal | jq -r '[.executable] + .args | @sh')
+        browser_command=$(role_option_json browser | jq -r '[.executable] + .args | @sh')
+        editor_command=$(role_option_json gui_editor | jq -r '[.executable] + .args | @sh')
+        launcher_command=$(role_option_json launcher | jq -r '[.executable] + .args | @sh')
+        browser_exec=$(role_field browser executable)
+        browser_class=$(role_field browser class)
+        terminal_exec=$(role_field terminal executable)
+        editor_bin=$(role_field tui_editor editor_bin)
+        menu_dmenu=$(role_option_json launcher | jq -r '[.dmenu_executable] + .dmenu_args | join(" ")')
+        launcher_process=$(role_field launcher process)
+        launcher_namespace=$(role_field launcher namespace)
+    else
+        terminal_command=$(runtime_role_command terminal)
+        browser_command=$(runtime_role_command browser)
+        editor_command=$(runtime_role_command gui_editor)
+        launcher_command=$(runtime_role_command launcher)
+        browser_exec=$(jq -er '.roles.browser.executable' "$ROLE_DATA_FILE")
+        browser_class=$(jq -er '.roles.browser.class' "$ROLE_DATA_FILE")
+        terminal_exec=$(jq -er '.roles.terminal.executable' "$ROLE_DATA_FILE")
+        editor_bin=$(jq -er '.roles.tui_editor.editor_bin' "$ROLE_DATA_FILE")
+        menu_dmenu=$(jq -er '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$ROLE_DATA_FILE")
+        launcher_process=$(jq -er '.roles.launcher.process' "$ROLE_DATA_FILE")
+        launcher_namespace=$(jq -er '.roles.launcher.namespace' "$ROLE_DATA_FILE")
+    fi
 
-    local browser_name
-    local browser_class
-    local browser_command
-    case "$BROWSER_CHOICE" in
-        1)
-            browser_name="zen-browser"
-            browser_class="zen"
-            browser_command="zen-browser"
-            ;;
-        2)
-            browser_name="vivaldi"
-            browser_class="vivaldi-stable"
-            browser_command="hyprctl dispatch exec \"vivaldi-stable --ozone-platform=wayland --enable-features=UseOzonePlatform\""
-            ;;
-        *)
-            print_warning "Invalid BROWSER_CHOICE value: '$BROWSER_CHOICE'. Using default (zen-browser)."
-            browser_name="zen-browser"
-            browser_class="zen"
-            browser_command="zen-browser"
-            ;;
-    esac
-    
-    print_verbose "Selected browser: $browser_name"
+    local root file
+    for root in "$HOME/dotfiles/.config/hypr/sources" "$HOME/dotfiles/.config/hypr/sources_example"; do
+        file="$root/app_variables.conf"
+        replace_literal_assignment "$file" '$terminal' "\$terminal = $terminal_command" "selected terminal"
+        replace_literal_assignment "$file" '$menu' "\$menu = $launcher_command" "selected launcher"
+        replace_literal_assignment "$file" '$browser' "\$browser = $browser_command" "selected browser"
+        replace_literal_assignment "$file" '$editor' "\$editor = $editor_command" "selected GUI editor"
 
-    # Update app_variables.conf
-    local app_vars_conf="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
-    local app_vars_example="$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
-    
-    for conf_file in "$app_vars_conf" "$app_vars_example"; do
-        [ -f "$conf_file" ] || continue
-        if [ "$conf_file" = "$app_vars_conf" ]; then
-            print_message "Updating browser in app_variables.conf"
-        else
-            print_message "Updating browser in app_variables.conf example"
-        fi
+        file="$root/environment_variables.conf"
+        replace_config_line "$file" '^env = BROWSER,' "env = BROWSER,$browser_exec" "selected browser environment"
 
-        execute_command "sed -i -E 's|^\\\$browser = .*|\\\$browser = $browser_command|' '$conf_file'" "Update browser in app_variables.conf"
+        file="$root/keybindings.conf"
+        replace_literal_prefix "$file" 'bindd = $mainMod, SPACE, Open Menu,' "bindd = \$mainMod, SPACE, Open Menu, exec, pkill $launcher_process || \$menu" "selected launcher process"
+
+        file="$root/windows_and_workspaces.conf"
+        remove_config_matching "$file" '^windowrule = workspace 2.*match:class' "replace browser role rule"
+        replace_config_line "$file" '^windowrule = workspace 2.*match:class' "windowrule = workspace 2 silent, match:class $browser_class" "selected browser workspace rule"
+        remove_config_matching "$file" '^layerrule = dim_around on, match:namespace' "replace launcher layer rule"
+        replace_config_line "$file" '^layerrule = dim_around on, match:namespace' "layerrule = dim_around on, match:namespace $launcher_namespace" "selected launcher namespace"
     done
 
-    # Update windows_and_workspaces.conf
-    local windows_conf="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
-    local windows_example="$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.conf"
-    
-    for conf_file in "$windows_conf" "$windows_example"; do
-        [ -f "$conf_file" ] || continue
-        if [ "$conf_file" = "$windows_conf" ]; then
-            print_message "Updating browser workspace rule in windows_and_workspaces.conf"
-        else
-            print_message "Updating browser workspace rule in windows_and_workspaces.conf example"
-        fi
-        
-        # Remove old browser workspace rules (both vivaldi and zen)
-        execute_command "sed -i '/windowrule = workspace 2.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove old vivaldi workspace rule"
-        execute_command "sed -i '/windowrule = workspace 2.*match:class.*zen/d' '$conf_file'" "Remove old zen workspace rule"
-        execute_command "sed -i '/^# windowrule = workspace.*match:class.*vivaldi-stable/d' '$conf_file'" "Remove commented vivaldi workspace rule"
-        execute_command "sed -i '/^# windowrule = workspace.*match:class.*zen/d' '$conf_file'" "Remove commented zen workspace rule"
-        
-        # Add new browser workspace rule after Workspace 2 comment
-        local temp_file="${conf_file}.tmp"
-        if grep -q "# Workspace 2" "$conf_file"; then
-            execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 2/ {print; print rule; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add browser workspace rule"
-        else
-            # If no Workspace 2 comment, add before Workspace 4
-            if grep -q "# Workspace 4" "$conf_file"; then
-                execute_command "awk -v rule='windowrule = workspace 2 silent, match:class $browser_class' '/# Workspace 4/ {print \"# Workspace 2\"; print rule; print; next} {print}' '$conf_file' > '$temp_file' && mv '$temp_file' '$conf_file'" "Add Workspace 2 section with browser rule"
-            else
-                # Fallback: append to file
-                execute_command "printf '%s\n' 'windowrule = workspace 2 silent, match:class $browser_class' >> '$conf_file'" "Append browser workspace rule"
-            fi
-        fi
+    local fish_files=(
+        "$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
+        "$HOME/.config/fish/conf.d/01-env.fish"
+    )
+    for file in "${fish_files[@]}"; do
+        [ -L "$file" ] && [ "$file" != "${fish_files[0]}" ] && continue
+        replace_config_line "$file" '^set -gx EDITOR ' "set -gx EDITOR $editor_bin" "selected TUI editor"
+        replace_config_line "$file" '^set -gx VISUAL ' "set -gx VISUAL $editor_bin" "selected TUI editor"
+        replace_config_line "$file" '^set -x TERMINAL |^set -gx TERMINAL ' "set -gx TERMINAL $terminal_exec" "selected terminal"
+        replace_config_line "$file" '^set -x BROWSER |^set -gx BROWSER ' "set -gx BROWSER $browser_exec" "selected browser"
+        replace_config_line "$file" '^set -gx MANPAGER ' "set -gx MANPAGER '$editor_bin'" "selected TUI editor pager"
+        replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$menu_dmenu\"" "selected launcher dmenu command"
     done
 
-    print_message "Browser configuration updated to: $browser_name"
+    local aliases="$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
+    remove_config_matching "$aliases" '^alias (vi|vim)=' "remove stale editor aliases"
+    if [ "$ROLE_TUI_EDITOR" = neovim ]; then
+        replace_config_line "$aliases" '^# hss-role:editor-aliases$' "alias vi='nvim'; alias vim='nvim' # hss-role:editor-aliases" "Neovim aliases"
+    else
+        remove_config_matching "$aliases" '# hss-role:editor-aliases' "remove Neovim-only aliases"
+    fi
+
+    print_message "Configured roles: browser=$ROLE_BROWSER terminal=$ROLE_TERMINAL shell=$ROLE_SHELL gui_editor=$ROLE_GUI_EDITOR tui_editor=$ROLE_TUI_EDITOR launcher=$ROLE_LAUNCHER"
 }
-
 configure_hypr_autostart_optional_extras() {
     if is_dry_run; then
         log_dry_run_operation "configure_hypr_autostart_optional_extras" "Would uncomment optional exec-once lines in Hyprland autostart.conf when tools are installed"
@@ -1830,29 +1910,8 @@ configure_hypr_autostart_optional_extras() {
         execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: $(basename "$file")"
     }
 
-    get_configured_terminal() {
-        local app_vars="$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
-        local t=""
-        if [ -f "$app_vars" ]; then
-            t=$(awk -F'=' '/^[[:space:]]*\\$terminal[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$app_vars" 2>/dev/null || true)
-        fi
-        if [ -n "$t" ] && command -v "$t" >/dev/null 2>&1; then
-            printf '%s' "$t"
-            return 0
-        fi
-        if command -v kitty >/dev/null 2>&1; then
-            printf '%s' "kitty"
-            return 0
-        fi
-        if command -v alacritty >/dev/null 2>&1; then
-            printf '%s' "alacritty"
-            return 0
-        fi
-        return 1
-    }
-
     local configured_terminal=""
-    configured_terminal=$(get_configured_terminal || true)
+    configured_terminal=$(role_field terminal executable 2>/dev/null || true)
 
     local conf_files=(
         "$HOME/dotfiles/.config/hypr/sources/autostart.conf"
@@ -1894,151 +1953,6 @@ configure_hypr_autostart_optional_extras() {
 ##############################################################
 # Pacman Update and Hyprland Packages Installation
 ##############################################################
-
-# Array of Hyprland-related pacman packages
-hyprland_packages=(
-    # Core Hyprland packages
-    "waybar"
-    "hyprpaper"
-    "hyprcursor"
-    "hyprlock"
-    "hyprutils"
-    "hypridle"
-    "hyprpolkitagent"
-    "hyprpicker"
-    "wl-clipboard"
-    "wl-clip-persist"
-    "hyprgraphics" 
-    "hyprland-guiutils" 
-    "hyprland-qt-support" 
-    "hyprwayland-scanner"
-    "python-pyquery"
-    "tk"
-    "arch-wiki-docs"
-    # Terminal option managed by setup terminal selector
-    "alacritty"
-
-    # Installed by "archinstall"-script: Desktop Type
-    "dolphin"
-    "grim"
-    "htop"
-    "hyprland"
-    "iwd"
-    "kitty"
-    "nano"
-    "openssh"
-    "polkit-kde-agent"
-    "qt5-wayland"
-    "qt6-wayland"
-    "slurp"
-    "smartmontools"
-    "vim"
-    "wget"
-    "wireless_tools"
-    "wofi"
-    "wpa_supplicant"
-    "xdg-desktop-portal-hyprland"
-    "xdg-utils"
-
-    # Installed by "archinstall"-script: Graphics Driver
-    "intel-media-driver"
-    "libva-intel-driver"
-    "libva-mesa-driver"
-    "mesa"
-    "vulkan-intel"
-    "vulkan-nouveau"
-    "vulkan-radeon"
-    "xf86-video-amdgpu"
-    "xf86-video-ati"
-    "xf86-video-nouveau"
-    "xorg-server"
-    "xorg-xinit"
-
-    # Installed by "archinstall"-script: Greeter (Login Manager)
-    "sddm"
-    
-    # Installed by "archinstall"-script: Audio
-    "pipewire"
-    "pipewire-pulse"
-    "wireplumber"
-
-    # Installed by "archinstall"-script: Kernel
-    "linux"
-    "linux-headers"
-    "linux-api-headers"
-    "linux-firmware"
-
-    # File Management
-    "xdg-user-dirs"
-    "git"
-    "onefetch"
-    "fd"
-    "fzf"
-    "stow"
-    "nvim"
-    "ark"
-    "7zip"
-    "timeshift"
-    "grub-btrfs"
-    "inotify-tools"
-    "satty"
-    
-    # Shell
-    "fish"
-    
-    # Browser (will be selected based on user choice)
-    
-    # System Integration
-    "xdg-desktop-portal-gtk"
-    "xdg-desktop-portal-kde"
-    "gnome-keyring"
-    "network-manager-applet"
-    "networkmanager"
-    "nm-connection-editor"
-    "bluez"
-    "bluez-utils"
-    "blueman"
-    "pipewire"
-    "pipewire-pulse"
-    "pavucontrol"
-    "pulseaudio-qt"
-    "swaync"
-    "ddcutil"
-    
-    # Theming and Appearance
-    "ttf-jetbrains-mono-nerd"
-    "ttf-nerd-fonts-symbols"
-    "ttf-nerd-fonts-symbols-common"
-    "otf-font-awesome"
-    "cava"
-    "breeze"
-    "breeze5"
-    "breeze-gtk"
-    "qt5ct"
-    "qt6ct"
-    "nwg-look"
-    
-    # CLI Tools
-    "dysk"
-    "duf"
-    "bat"
-    "eza"
-    "btop"
-    "zoxide"
-    "lshw"
-    "ntfs-3g"
-    "firewalld"
-    "konsole"
-    "fastfetch"
-    "tldr"
-    "zellij"
-    "calcurse"
-    "psensor"
-    "starship"
-
-    # Calculator
-    "qalculate-gtk"
-)
 
 update_arch_mirrors() {
     announce_step "Updating Arch mirrors"
@@ -2122,72 +2036,16 @@ remove_cache() {
 
 install_pacman_packages() {
     announce_step "Install pacman packages"
+    prepare_package_selections || return 1
     print_message "Updating pacman database..."
-    execute_command "sudo pacman -Sy" "Update pacman database" || exit 1
+    execute_command "sudo pacman -Sy" "Update pacman database" || return 1
 
-    # Determine packages to install from env override, default to hyprland_packages array
-    local -a pkgs_to_install=()
-    if [ -n "${SELECTED_PACMAN_PACKAGES}" ]; then
-        # Allow comma or whitespace separated lists
-        IFS=' ' read -r -a pkgs_to_install <<< "${SELECTED_PACMAN_PACKAGES//,/ }"
-        print_message "Installing selected packages from TUI (${#pkgs_to_install[@]} items)"
-    else
-        pkgs_to_install=("${hyprland_packages[@]}")
-        print_message "Installing default Hyprland packages..."
-    fi
-
-    # Add browser packages based on user choice
-    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
-    case "$BROWSER_CHOICE" in
-        1)
-            # zen-browser (AUR package)
-            print_message "Browser choice: zen-browser (will be installed via AUR)"
-            ;;
-        2)
-            # vivaldi
-            pkgs_to_install+=("vivaldi" "vivaldi-ffmpeg-codecs")
-            print_message "Browser choice: vivaldi (added to package list)"
-            ;;
-        *)
-            # Default to zen-browser
-            print_message "Browser choice: zen-browser (default, will be installed via AUR)"
-            ;;
-    esac
-
-    # Append user-added pacman packages (if any)
-    if [ -n "${USER_ADDED_PACMAN_PACKAGES}" ]; then
-        read -r -a user_pac_arr <<< "${USER_ADDED_PACMAN_PACKAGES//,/ }"
-        pkgs_to_install+=("${user_pac_arr[@]}")
-    fi
-
-    # Deduplicate pkgs_to_install while preserving order
-    if [ ${#pkgs_to_install[@]} -gt 0 ]; then
-        declare -A _seen
-        local -a _dedup
-        for p in "${pkgs_to_install[@]}"; do
-            if [ -n "$p" ] && [ -z "${_seen[$p]}" ]; then
-                _seen[$p]=1
-                _dedup+=("$p")
-            fi
-        done
-        pkgs_to_install=("${_dedup[@]}")
-        unset _seen
-    fi
-
-    # If CachyOS Snapper support is present, skip installing Timeshift entirely
-    if pacman -Qq cachyos-snapper-support &>/dev/null; then
-        print_message "Detected 'cachyos-snapper-support'. Skipping installation of Timeshift."
-        local -a _filtered
-        for p in "${pkgs_to_install[@]}"; do
-            if [ "$p" != "timeshift" ]; then
-                _filtered+=("$p")
-            fi
-        done
-        pkgs_to_install=("${_filtered[@]}")
-        unset _filtered
-    fi
-
-    for pkg in "${pkgs_to_install[@]}"; do
+    local pkg
+    for pkg in "${SELECTED_PACMAN_LIST[@]}"; do
+        if [ "$pkg" = timeshift ] && pacman -Qq cachyos-snapper-support &>/dev/null; then
+            print_message "Skipping Timeshift because cachyos-snapper-support is installed"
+            continue
+        fi
         if ! execute_command "sudo pacman -S --needed --noconfirm $pkg" "Installing $pkg"; then
             print_warning "Failed to install $pkg. Please install manually if issues persist."
             record_hard_failure "install_pacman_packages" "Package '$pkg' failed to install via pacman"
@@ -2199,77 +2057,21 @@ install_pacman_packages() {
 # AUR Extras Installation
 ##############################################################
 
-# Array of AUR packages
-aur_extras=(
-    "xwaylandvideobridge"
-    "hyprshot"
-    "visual-studio-code-bin"
-    "lsplug"
-    "waypaper-git"
-    "pyprland"
-    "wl-clipboard-history-git"
-    "hyprsunset"
-    "github-desktop-bin"
-    "rose-pine-hyprcursor"
-    "waybar-module-pacman-updates-git"
-    "wlogout"
-    "pacsea-bin"
-    "usrgrp-manager-bin"
-    # "nerd-fonts-noto-sans-mono"
-)
-
 install_aur_extras() {
     announce_step "Install AUR extras"
-    local -a aur_to_install=()
-    # Merge TUI-selected AUR packages and user-added AUR packages
-    if [ -n "${SELECTED_AUR_PACKAGES}" ]; then
-        IFS=' ' read -r -a aur_to_install <<< "${SELECTED_AUR_PACKAGES//,/ }"
-        print_message "Installing selected AUR packages from TUI (${#aur_to_install[@]} items)"
-    else
-        aur_to_install=("${aur_extras[@]}")
-        print_message "Installing default Hyprland AUR extras: ${aur_to_install[*]}"
-    fi
-    if [ -n "${USER_ADDED_AUR_PACKAGES}" ]; then
-        # append user-added aur entries
-        read -r -a user_aur_arr <<< "${USER_ADDED_AUR_PACKAGES//,/ }"
-        aur_to_install+=("${user_aur_arr[@]}")
-    fi
-
-    # Add browser packages based on user choice
-    BROWSER_CHOICE=$(echo "$BROWSER_CHOICE" | tr -d '[:space:]')
-    case "$BROWSER_CHOICE" in
-        1)
-            # zen-browser-bin (AUR package)
-            aur_to_install+=("zen-browser-bin")
-            print_message "Browser choice: zen-browser-bin (added to AUR package list)"
-            ;;
-        2)
-            # vivaldi is installed via pacman, skip here
-            print_message "Browser choice: vivaldi (installed via pacman)"
-            ;;
-        *)
-            # Default to zen-browser-bin
-            aur_to_install+=("zen-browser-bin")
-            print_message "Browser choice: zen-browser-bin (default, added to AUR package list)"
-            ;;
-    esac
-
-    # Deduplicate AUR list while preserving order
-    if [ ${#aur_to_install[@]} -gt 0 ]; then
-        declare -A _seen2
-        local -a _dedup2
-        for p in "${aur_to_install[@]}"; do
-            if [ -n "$p" ] && [ -z "${_seen2[$p]}" ]; then
-                _seen2[$p]=1
-                _dedup2+=("$p")
-            fi
-        done
-        aur_to_install=("${_dedup2[@]}")
-        unset _seen2
-    fi
+    prepare_package_selections || return 1
+    [ ${#SELECTED_AUR_LIST[@]} -gt 0 ] || {
+        print_message "No AUR packages selected"
+        return 0
+    }
 
     check_yay
-    for pkg in "${aur_to_install[@]}"; do
+    [ -n "$AUR_HELPER" ] || {
+        record_hard_failure "install_aur_extras" "No AUR helper is available"
+        return 1
+    }
+    local pkg
+    for pkg in "${SELECTED_AUR_LIST[@]}"; do
         if ! execute_command "$AUR_HELPER -S --needed --noconfirm $pkg" "Install $pkg"; then
             print_warning "Installation of $pkg failed. Please install manually."
             record_hard_failure "install_aur_extras" "AUR package '$pkg' failed to install via $AUR_HELPER"
@@ -2281,25 +2083,42 @@ install_aur_extras() {
 # Hyprland Configurations
 ##############################################################
 
-configure_fish() {
-    announce_step "Setting default shell to fish"
-    if execute_command "sudo chsh -s /usr/bin/fish" "Set fish as default shell"; then
-        track_config_status "Default Shell (fish)" "$CHECK_MARK"
+configure_shell() {
+    announce_step "Configuring selected shell"
+    load_role_selections || return 1
+    local shell_path invoking_user shells_file
+    shell_path=$(role_field shell shell_path) || return 1
+    invoking_user=${SUDO_USER:-$(id -un)}
+    shells_file=${HSS_ETC_SHELLS:-/etc/shells}
+
+    if ! [[ "$invoking_user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
+        print_error "Invalid invoking username '$invoking_user'"
+        return 1
+    fi
+    if ! grep -qxF "$shell_path" "$shells_file"; then
+        print_error "Selected shell path '$shell_path' is not listed in $shells_file"
+        record_hard_failure "configure_shell" "Shell path '$shell_path' is not approved"
+        return 1
+    fi
+    if execute_command "sudo chsh -s '$shell_path' -- '$invoking_user'" "Set default shell for $invoking_user"; then
+        track_config_status "Default Shell ($ROLE_SHELL)" "$CHECK_MARK"
     else
-        track_config_status "Default Shell (fish)" "$CROSS_MARK"
-        record_hard_failure "configure_fish" "Failed to set fish as default shell"
+        track_config_status "Default Shell ($ROLE_SHELL)" "$CROSS_MARK"
+        record_hard_failure "configure_shell" "Failed to set shell for $invoking_user"
+        return 1
     fi
 
-    print_message "Download fzf Repository for fzf file management integration in fish"
-    if [ -d "$HOME/.fzf" ]; then
-        print_message "fzf repository already exists at $HOME/.fzf, skipping clone."
-    else
-        execute_command "git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf" "Download fzf Github Repo"
+    [ "$ROLE_SHELL" = fish ] || return 0
+    if [ "${HSS_TEST_MODE:-0}" = 1 ]; then
+        print_message "Test mode: skipping fzf network integration"
+        return 0
     fi
-
-    # Run fzf install script non-interactively for fish only
+    print_message "Configuring fzf integration for Fish"
+    if [ ! -d "$HOME/.fzf" ]; then
+        execute_command "git clone --depth 1 https://github.com/junegunn/fzf.git '$HOME/.fzf'" "Download fzf repository"
+    fi
     if [ -f "$HOME/.fzf/install" ]; then
-        execute_command "\"$HOME/.fzf/install\" --all --no-bash --no-zsh --no-update-rc" "Execute fzf Installation (non-interactive for fish)"
+        execute_command "'$HOME/.fzf/install' --all --no-bash --no-zsh --no-update-rc" "Install fzf integration for Fish"
     else
         print_warning "fzf install script not found at $HOME/.fzf/install"
     fi
@@ -2307,25 +2126,23 @@ configure_fish() {
 
 configure_environment() {
     announce_step "Configuring Environment"
-
-    # Check if nvim is installed
-    if ! command -v nvim &>/dev/null; then
-        print_message "Neovim is not installed. Installing..."
-        if ! distro_install "neovim"; then
-            print_error "Failed to install Neovim. Please install it manually."
-            record_hard_failure "configure_environment" "Failed to install Neovim"
+    load_role_selections || return 1
+    local editor package
+    editor=$(role_field tui_editor editor_bin) || return 1
+    package=$ROLE_TUI_EDITOR
+    if ! command -v "$editor" >/dev/null 2>&1; then
+        print_message "$editor is not installed; installing $package"
+        if ! distro_install "$package"; then
+            print_error "Failed to install selected editor $package"
+            record_hard_failure "configure_environment" "Failed to install selected editor '$package'"
             return 1
         fi
     fi
-
-    # Set EDITOR environment variable
-    if ! execute_command "systemctl --user set-environment EDITOR=nvim" "Set EDITOR environment variable to nvim"; then
-        print_error "Failed to set EDITOR environment variable."
-        record_soft_error "configure_environment" "Failed to set EDITOR environment variable"
+    if ! execute_command "systemctl --user set-environment EDITOR='$editor' VISUAL='$editor'" "Set selected editor environment"; then
+        record_soft_error "configure_environment" "Failed to set EDITOR/VISUAL to $editor"
         return 1
     fi
-
-    echo "Configuration completed successfully."
+    print_message "Environment configured with EDITOR=$editor"
 }
 
 configure_network_manager() {
@@ -2882,7 +2699,6 @@ EOF
         for m in "${configured_monitors[@]}"; do
             monitors_str+="\"$m\" "
         done
-        monitors_str=$(echo "$monitors_str")
 
         local wallpaper_confs=(
             "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
@@ -3069,24 +2885,37 @@ verify_workspace_config() {
 # Main Execution Flow
 ##############################################################
 
+bootstrap_jq() {
+    if command -v jq >/dev/null 2>&1; then
+        return 0
+    fi
+    print_message "jq not found. Installing..."
+    if ! distro_install jq; then
+        print_error "Failed to install jq, which is required to load package roles"
+        record_hard_failure "main" "Failed to install jq"
+        return 1
+    fi
+}
+
 main() {
     print_message "Starting Hyprland Setup..."
 
-    # Skip sudo password setup in dry-run
     if is_dry_run; then
         print_message "Dry-run: skipping sudo password capture"
     else
         setup_sudo_password
     fi
 
-    get_fish_language_choice
-    get_terminal_choice
-    get_browser_choice
     check_disk_space
     check_distro
+    bootstrap_jq || return 1
+    load_role_selections || return 1
+    prepare_package_selections || return 1
+    if [ "$ROLE_SHELL" = fish ]; then
+        get_fish_language_choice
+    fi
     check_desktop_environment
 
-    # Check if xdg-user-dirs is installed
     if ! command -v xdg-user-dirs-update &>/dev/null; then
         print_message "xdg-user-dirs not found. Installing..."
         if ! distro_install "xdg-user-dirs"; then
@@ -3161,12 +2990,14 @@ main() {
     remove_cache
     install_pacman_packages
     install_aur_extras
+    verify_installed_packages
     update_configs
-    set_fish_language_config
-    configure_terminal
-    configure_browser
+    if [ "$ROLE_SHELL" = fish ]; then
+        set_fish_language_config
+    fi
+    configure_roles
     configure_hypr_autostart_optional_extras
-    configure_fish
+    configure_shell
     configure_environment
     configure_network_manager
 
@@ -3192,35 +3023,60 @@ main() {
     announce_step "Hyprland setup completed successfully!"
 }
 
-# Add command line argument handling
-DRY_RUN=false
+run_role_test_scenario() {
+    [ "${HSS_TEST_MODE:-0}" = 1 ] || {
+        print_error "--test-scenario is available only when HSS_TEST_MODE=1"
+        return 2
+    }
+    NON_INTERACTIVE=true
+    DISTRO=${DISTRO:-arch}
+    LOG_FILE=${LOG_FILE:-$HOME/hss-role-test.log}
+    bootstrap_jq || return 1
+    load_role_selections || return 1
+    prepare_package_selections || return 1
+    configure_roles || return 1
+    configure_shell || return 1
+    configure_environment || return 1
+    verify_installed_packages || return 1
+    if is_dry_run; then
+        print_dry_run_summary
+    fi
+}
+
+if [[ ${BASH_SOURCE[0]} != "$0" ]]; then
+    return 0
+fi
+
+DRY_RUN=${DRY_RUN:-false}
 VERBOSE=false
 CONFIGURE_MONITOR_ONLY=false
 CONFIGURE_SDDM_ONLY=false
+TEST_SCENARIO=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --dry-run)
-            DRY_RUN=true
+        --dry-run) DRY_RUN=true ;;
+        --verbose) VERBOSE=true ;;
+        --configure-monitor) CONFIGURE_MONITOR_ONLY=true ;;
+        --configure-sddm) CONFIGURE_SDDM_ONLY=true ;;
+        --init-dotfiles-git) INIT_DOTFILES_GIT_REPO=true ;;
+        --test-scenario)
+            [ "$#" -ge 2 ] || { print_error "--test-scenario requires a name"; exit 2; }
+            TEST_SCENARIO=$2
+            shift
             ;;
-        --verbose)
-            VERBOSE=true
-            ;;
-        --configure-monitor)
-            CONFIGURE_MONITOR_ONLY=true
-            ;;
-        --configure-sddm)
-            CONFIGURE_SDDM_ONLY=true
-            ;;
-        --init-dotfiles-git)
-            INIT_DOTFILES_GIT_REPO=true
-            ;;
-        *)
-            print_warning "Unknown parameter passed: $1"
-            ;;
+        *) print_warning "Unknown parameter passed: $1" ;;
     esac
     shift
 done
+
+if [ -n "$TEST_SCENARIO" ]; then
+    case "$TEST_SCENARIO" in
+        roles) run_role_test_scenario ;;
+        *) print_error "Unknown test scenario '$TEST_SCENARIO'"; exit 2 ;;
+    esac
+    exit $?
+fi
 
 if [ "$CONFIGURE_MONITOR_ONLY" = true ]; then
     configure_monitor

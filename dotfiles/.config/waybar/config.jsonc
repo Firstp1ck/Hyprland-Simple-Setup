@@ -57,10 +57,10 @@
         "on-click": "activate",
         "on-click-middle": "close",
         "ignore-list": [
-        "alacritty",
+        "hss-scratchpad",
+        "hss-clipboard",
         "xwaylandvideobridge",
-        "org.pulseaudio.pavucontrol",
-        "alacritty-dropterm"
+        "org.pulseaudio.pavucontrol"
         ],
         "app_ids-mapping": {
         "firefoxdeveloperedition": "firefox-developer-edition"
@@ -233,13 +233,13 @@
         "format": "{icon} Menu",
         "format-icons": [""],
         "tooltip": "Open Menu",
-        "on-click": "wofi --show drun --style ~/.config/wofi/menu.css",
+        "on-click": "$HOME/.config/hypr/scripts/menu_exec.sh --toggle",
         "menu": "on-click-right",
         "menu-file": "$HOME/.config/waybar/options_menu.xml",
         "menu-actions": {
             "keybinds": "~/.config/waybar/scripts/keybinds.py",
-            "drun": "wofi --show drun --style ~/.config/wofi/menu.css",
-            "open_keybinds": "alacritty -t Keybinds -e nvim $HOME/.config/hypr/sources/keybindings.conf",
+            "drun": "$HOME/.config/hypr/scripts/menu_exec.sh",
+            "open_keybinds": "$HOME/.config/hypr/scripts/term_exec.sh --app-id hss-keybinds --title Keybinds -- sh -c 'editor=$(jq -r .roles.tui_editor.editor_bin \"$HOME/.config/hypr/roles.json\"); exec \"$editor\" \"$HOME/.config/hypr/sources/keybindings.conf\"'",
             "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
         }
     },

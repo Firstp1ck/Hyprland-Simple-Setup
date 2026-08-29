@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_NAME="install.sh"
-
 print() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -30,7 +28,7 @@ Bootstrap options:
 Notes:
   - Any args after `--` are passed directly to setup.sh.
   - For unattended runs, you can set env vars used by setup.sh, e.g.:
-      NON_INTERACTIVE=true PROMPT_DEFAULT_YN=true BROWSER_CHOICE_OVERRIDE=1 FISH_LANGUAGE_CHOICE_OVERRIDE=1
+      NON_INTERACTIVE=true PROMPT_DEFAULT_YN=true ROLE_BROWSER=firefox ROLE_TERMINAL=kitty ROLE_SHELL=fish ROLE_GUI_EDITOR=zed ROLE_TUI_EDITOR=neovim ROLE_LAUNCHER=wofi FISH_LANGUAGE_CHOICE_OVERRIDE=1
 EOF
 }
 

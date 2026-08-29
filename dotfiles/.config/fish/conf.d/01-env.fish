@@ -6,9 +6,10 @@ set -gx LANGUAGE de_CH:en_US
 # Editor and Terminal Settings
 set -gx EDITOR nvim
 set -gx VISUAL nvim
-set -x TERMINAL alacritty
-set -x BROWSER zen
+set -gx TERMINAL kitty
+set -gx BROWSER zen-browser
 set -gx MANPAGER "nvim +Man!"
+set -gx MENU_DMENU "wofi --dmenu"
 
 # PATH settings
 # NOTE: This replaces PATH with a fixed list and does not preserve the inherited $PATH.

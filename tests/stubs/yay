@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'yay'
+  printf ' %q' "$@"
+  printf '\n'
+} >> "$STUB_LOG"
+exit 0

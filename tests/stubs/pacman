@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'pacman'
+  printf ' %q' "$@"
+  printf '\n'
+} >> "$STUB_LOG"
+
+case " ${*} " in
+  *" -Qq cachyos-snapper-support "*) exit 1 ;;
+esac
+
+if [[ "${1:-}" == "-T" ]]; then
+  shift
+  [[ -n "${STUB_INSTALLED:-}" ]] || exit 0
+  status=0
+  for package in "$@"; do
+    if ! grep -qxF "$package" "$STUB_INSTALLED"; then
+      printf '%s\n' "$package"
+      status=127
+    fi
+  done
+  exit "$status"
+fi
+exit 0

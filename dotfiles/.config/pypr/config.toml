@@ -8,8 +8,8 @@ plugins = [
 
 [scratchpads.term]
 animation = "fromTop"
-command = "alacritty --class=alacritty.term-top"
-class = "alacritty.term-top"
+command = "~/.config/hypr/scripts/term_exec.sh --app-id hss-scratchpad --title Scratchpad -- bash"
+class = "hss-scratchpad"
 size = "75% 60%"
 max_size = "1920px 100%"
 margin = 50
