@@ -20,6 +20,7 @@
       "tk",
       "arch-wiki-docs",
       "hyprland",
+      "hyprsunset",
       "xdg-desktop-portal-hyprland"
     ],
     "desktop_evnironment": [
@@ -29,6 +30,7 @@
       "htop",
       "iwd",
       "kitty",
+      "ghostty",
       "nano",
       "openssh",
       "polkit-kde-agent",
@@ -40,6 +42,9 @@
       "wget",
       "wireless_tools",
       "wofi",
+      "rofi",
+      "fuzzel",
+      "bemenu",
       "wpa_supplicant",
       "xdg-utils"
     ],
@@ -80,7 +85,8 @@
       "fd",
       "fzf",
       "stow",
-      "nvim",
+      "neovim",
+      "helix",
       "ark",
       "7zip",
       "timeshift",
@@ -89,11 +95,18 @@
       "satty"
     ],
     "shell": [
-      "fish"
+      "fish",
+      "bash",
+      "zsh"
     ],
     "browser": [
       "vivaldi",
-      "vivaldi-ffmpeg-codecs"
+      "vivaldi-ffmpeg-codecs",
+      "firefox",
+      "chromium"
+    ],
+    "screenshots": [
+      "hyprshot"
     ],
     "system_integration": [
       "xdg-desktop-portal-gtk",
@@ -144,21 +157,21 @@
       "libnotify",
       "jq"
     ],
-    "gui_tools": []
+    "gui_tools": [
+      "zed"
+    ]
   },
   "aur_packages": {
     "core_hyprland": [
-      "pyprland",
-      "hyprsunset"
+      "pyprland"
     ],
     "browser": [
-      "zen-browser-bin"
-    ],
-    "screenshots": [
-      "hyprshot"
+      "zen-browser-bin",
+      "brave-bin"
     ],
     "gui_tools": [
       "visual-studio-code-bin",
+      "cursor-bin",
       "github-desktop-bin",
       "wlogout"
     ],
@@ -170,7 +183,7 @@
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
       "waybar-module-pacman-updates-git",
-      "input-remapper-2"
+      "input-remapper"
     ],
     "cli_tools": [
       "lsplug",
@@ -252,7 +265,8 @@
     "fd": "Fast file search",
     "fzf": "Fuzzy finder",
     "stow": "Symlink manager",
-    "nvim": "Neovim editor",
+    "neovim": "Neovim editor",
+    "helix": "Helix modal text editor",
     "ark": "Archive manager",
     "7zip": "File archiver",
     "timeshift": "System snapshots",
@@ -261,9 +275,14 @@
     "satty": "Screenshot annotator",
 
     "fish": "Friendly interactive shell",
+    "bash": "Bourne Again shell",
+    "zsh": "Z shell",
 
     "vivaldi": "Vivaldi web browser",
     "vivaldi-ffmpeg-codecs": "Proprietary media codecs",
+    "firefox": "Firefox web browser",
+    "chromium": "Chromium web browser",
+    "brave-bin": "Brave browser (binary, AUR)",
     "zen-browser-bin": "Zen Browser (binary, AUR)",
 
     "xdg-desktop-portal-gtk": "GTK portal backend",
@@ -315,7 +334,13 @@
     "pyprland": "Hyprland plugin manager",
     "hyprsunset": "Night light for Hyprland",
     "hyprshot": "Hyprland screenshot tool",
+    "ghostty": "GPU-accelerated terminal emulator",
+    "rofi": "Application launcher with Wayland support",
+    "fuzzel": "Wayland application launcher",
+    "bemenu": "Dynamic Wayland menu",
+    "zed": "Zed code editor",
     "visual-studio-code-bin": "VS Code (binary)",
+    "cursor-bin": "Cursor code editor (binary, AUR)",
     "github-desktop-bin": "GitHub Desktop",
     "wlogout": "Wayland logout menu",
     "waypaper-git": "Wallpaper manager",
@@ -324,9 +349,265 @@
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
     "lsplug": "Monitor plug/unplug events",
-    "input-remapper-2": "Mouse and keyboard button remapper",
+    "input-remapper": "Mouse and keyboard button remapper",
     "pacsea-bin": "Package search and install",
     "usrgrp-manager-bin": "User and group manager"
+  },
+  "required": {
+    "pacman": [
+      "hyprland",
+      "xdg-desktop-portal-hyprland",
+      "xdg-desktop-portal-gtk",
+      "waybar",
+      "hyprpaper",
+      "hyprlock",
+      "hypridle",
+      "hyprpolkitagent",
+      "wl-clipboard",
+      "stow",
+      "jq",
+      "pipewire",
+      "pipewire-pulse",
+      "wireplumber",
+      "swaync",
+      "brightnessctl",
+      "playerctl",
+      "libnotify",
+      "python",
+      "python-requests",
+      "hyprshot"
+    ],
+    "aur": []
+  },
+  "roles": {
+    "browser": {
+      "label": "Browser",
+      "default": "zen-browser-bin",
+      "options": [
+        {
+          "package": "zen-browser-bin",
+          "source": "aur",
+          "executable": "zen-browser",
+          "args": [],
+          "class": "zen"
+        },
+        {
+          "package": "vivaldi",
+          "source": "pacman",
+          "executable": "vivaldi-stable",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "class": "vivaldi-stable",
+          "extra_packages": [
+            "vivaldi-ffmpeg-codecs"
+          ]
+        },
+        {
+          "package": "firefox",
+          "source": "pacman",
+          "executable": "firefox",
+          "args": [],
+          "class": "firefox"
+        },
+        {
+          "package": "chromium",
+          "source": "pacman",
+          "executable": "chromium",
+          "args": [],
+          "class": "chromium"
+        },
+        {
+          "package": "brave-bin",
+          "source": "aur",
+          "executable": "brave",
+          "args": [],
+          "class": "brave-browser"
+        }
+      ]
+    },
+    "terminal": {
+      "label": "Terminal",
+      "default": "kitty",
+      "options": [
+        {
+          "package": "kitty",
+          "source": "pacman",
+          "executable": "kitty",
+          "args": [],
+          "class": "kitty"
+        },
+        {
+          "package": "alacritty",
+          "source": "pacman",
+          "executable": "alacritty",
+          "args": [],
+          "class": "Alacritty"
+        },
+        {
+          "package": "ghostty",
+          "source": "pacman",
+          "executable": "ghostty",
+          "args": [],
+          "class": "com.mitchellh.ghostty"
+        }
+      ]
+    },
+    "shell": {
+      "label": "Shell",
+      "default": "fish",
+      "options": [
+        {
+          "package": "fish",
+          "source": "pacman",
+          "executable": "fish",
+          "args": [],
+          "shell_path": "/usr/bin/fish"
+        },
+        {
+          "package": "bash",
+          "source": "pacman",
+          "executable": "bash",
+          "args": [],
+          "shell_path": "/bin/bash"
+        },
+        {
+          "package": "zsh",
+          "source": "pacman",
+          "executable": "zsh",
+          "args": [],
+          "shell_path": "/usr/bin/zsh"
+        }
+      ]
+    },
+    "gui_editor": {
+      "label": "GUI editor",
+      "default": "visual-studio-code-bin",
+      "options": [
+        {
+          "package": "visual-studio-code-bin",
+          "source": "aur",
+          "executable": "code",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "editor_bin": "code"
+        },
+        {
+          "package": "cursor-bin",
+          "source": "aur",
+          "executable": "cursor",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "editor_bin": "cursor"
+        },
+        {
+          "package": "zed",
+          "source": "pacman",
+          "executable": "zed",
+          "args": [],
+          "editor_bin": "zed"
+        }
+      ]
+    },
+    "tui_editor": {
+      "label": "TUI editor",
+      "default": "neovim",
+      "options": [
+        {
+          "package": "neovim",
+          "source": "pacman",
+          "executable": "nvim",
+          "args": [],
+          "editor_bin": "nvim"
+        },
+        {
+          "package": "helix",
+          "source": "pacman",
+          "executable": "hx",
+          "args": [],
+          "editor_bin": "hx"
+        },
+        {
+          "package": "vim",
+          "source": "pacman",
+          "executable": "vim",
+          "args": [],
+          "editor_bin": "vim"
+        },
+        {
+          "package": "nano",
+          "source": "pacman",
+          "executable": "nano",
+          "args": [],
+          "editor_bin": "nano"
+        }
+      ]
+    },
+    "launcher": {
+      "label": "Launcher",
+      "default": "wofi",
+      "options": [
+        {
+          "package": "wofi",
+          "source": "pacman",
+          "executable": "wofi",
+          "args": [
+            "--show",
+            "drun",
+            "--style",
+            "{HOME}/.config/wofi/menu.css"
+          ],
+          "dmenu_executable": "wofi",
+          "dmenu_args": [
+            "--dmenu"
+          ],
+          "process": "wofi",
+          "namespace": "wofi"
+        },
+        {
+          "package": "rofi",
+          "source": "pacman",
+          "executable": "rofi",
+          "args": [
+            "-show",
+            "drun"
+          ],
+          "dmenu_executable": "rofi",
+          "dmenu_args": [
+            "-dmenu"
+          ],
+          "process": "rofi",
+          "namespace": "rofi"
+        },
+        {
+          "package": "fuzzel",
+          "source": "pacman",
+          "executable": "fuzzel",
+          "args": [],
+          "dmenu_executable": "fuzzel",
+          "dmenu_args": [
+            "--dmenu"
+          ],
+          "process": "fuzzel",
+          "namespace": "fuzzel"
+        },
+        {
+          "package": "bemenu",
+          "source": "pacman",
+          "executable": "bemenu-run",
+          "args": [],
+          "dmenu_executable": "bemenu",
+          "dmenu_args": [],
+          "process": "bemenu",
+          "namespace": "bemenu"
+        }
+      ]
+    }
   }
 }
 

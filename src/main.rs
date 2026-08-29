@@ -1,5 +1,7 @@
+mod packages;
+
 use std::io::{self};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -20,8 +22,12 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
 };
-use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+use packages::{
+    PackageSource, PackagesRoot, ROLE_ORDER, RoleSelection, enforce_required,
+    set_all_with_required, toggle_with_required,
+};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
@@ -81,7 +87,6 @@ enum UiMode {
 struct PreflightConfig {
     prompt_default_yes: bool,
     fish_language_choice: u8, // 1,2,3
-    terminal_choice: u8,      // 1=kitty, 2=alacritty
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -94,7 +99,12 @@ struct PreflightConfig {
 enum PreflightField {
     EnvPromptDefaultYn,
     EnvFishLanguageChoiceOverride,
-    EnvTerminalChoice,
+    RoleBrowser,
+    RoleTerminal,
+    RoleShell,
+    RoleGuiEditor,
+    RoleTuiEditor,
+    RoleLauncher,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
@@ -159,8 +169,8 @@ struct AppState {
     // Packages data and selections
     pacman_cats: Vec<(String, Vec<String>)>,
     aur_cats: Vec<(String, Vec<String>)>,
-    pacman_sel_map: HashMap<String, bool>,
-    aur_sel_map: HashMap<String, bool>,
+    pacman_sel_map: BTreeMap<String, bool>,
+    aur_sel_map: BTreeMap<String, bool>,
     ms_cursor: usize,
     // Right-pane focus and cursor for live category filter in package selector
     ms_focus_right: bool,
@@ -176,6 +186,12 @@ struct AppState {
     // User-added packages and their resolved source
     user_added: Vec<String>,
     user_added_src: HashMap<String, String>, // name -> "pacman" | "aur"
+    // Package registry and derived selection state
+    package_registry: Option<PackagesRoot>,
+    package_load_error: Option<String>,
+    role_selection: Option<RoleSelection>,
+    required_pacman: BTreeSet<String>,
+    required_aur: BTreeSet<String>,
     // Package descriptions loaded from packages.json
     pkg_descs: HashMap<String, String>,
     // Generic lines for warning popups (e.g., Add Packages validation)
@@ -187,19 +203,6 @@ struct AppState {
     monitor_setup_available: bool,
     // If true, Add Packages editor acts as append-only (opened via Enter)
     add_packages_append_mode: bool,
-}
-
-fn sync_terminal_package_selection(app: &mut AppState) {
-    // `packages.json` includes both terminals. Preflight "terminal choice" determines which one is
-    // enabled by default, while still allowing manual overrides in the package selector.
-    let want_kitty = app.preflight.terminal_choice == 1;
-    let want_alacritty = app.preflight.terminal_choice == 2;
-
-    if app.pacman_sel_map.contains_key("kitty") || app.pacman_sel_map.contains_key("alacritty") {
-        app.pacman_sel_map.insert("kitty".to_string(), want_kitty);
-        app.pacman_sel_map
-            .insert("alacritty".to_string(), want_alacritty);
-    }
 }
 
 impl AppState {
@@ -243,7 +246,6 @@ impl AppState {
             preflight: PreflightConfig {
                 prompt_default_yes: true,
                 fish_language_choice: 1,
-                terminal_choice: 1, // Default to kitty
                 wallpaper_dir: default_wallpaper,
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
@@ -268,8 +270,8 @@ impl AppState {
             current_section: None,
             pacman_cats: Vec::new(),
             aur_cats: Vec::new(),
-            pacman_sel_map: HashMap::new(),
-            aur_sel_map: HashMap::new(),
+            pacman_sel_map: BTreeMap::new(),
+            aur_sel_map: BTreeMap::new(),
             ms_cursor: 0,
             ms_focus_right: false,
             ms_cursor_filter: 0,
@@ -279,6 +281,11 @@ impl AppState {
             aur_filter_working: HashSet::new(),
             user_added: Vec::new(),
             user_added_src: HashMap::new(),
+            package_registry: None,
+            package_load_error: None,
+            role_selection: None,
+            required_pacman: BTreeSet::new(),
+            required_aur: BTreeSet::new(),
             pkg_descs: HashMap::new(),
             warning_lines: Vec::new(),
             info_title: "Info".to_string(),
@@ -286,23 +293,37 @@ impl AppState {
             monitor_setup_available: true,
             add_packages_append_mode: false,
         };
-        // Load packages.json if present
-        if let Some((pac_cats, aur_cats, descs)) = load_packages_json_categorized() {
-            s.pacman_cats = pac_cats;
-            s.aur_cats = aur_cats;
-            s.pkg_descs = descs;
-            // default select all
-            for (_, pkgs) in &s.pacman_cats {
-                for p in pkgs {
-                    s.pacman_sel_map.insert(p.clone(), true);
+        match load_package_registry(s.setup_script.as_deref()) {
+            Ok(registry) => {
+                s.pacman_cats = registry.categorized(PackageSource::Pacman);
+                s.aur_cats = registry.categorized(PackageSource::Aur);
+                s.pkg_descs = registry.package_descriptions.clone().into_iter().collect();
+                s.required_pacman = registry
+                    .required_set(PackageSource::Pacman)
+                    .into_iter()
+                    .collect();
+                s.required_aur = registry
+                    .required_set(PackageSource::Aur)
+                    .into_iter()
+                    .collect();
+                for (_, packages) in &s.pacman_cats {
+                    for package in packages {
+                        s.pacman_sel_map.insert(package.clone(), true);
+                    }
                 }
-            }
-            for (_, pkgs) in &s.aur_cats {
-                for p in pkgs {
-                    s.aur_sel_map.insert(p.clone(), true);
+                for (_, packages) in &s.aur_cats {
+                    for package in packages {
+                        s.aur_sel_map.insert(package.clone(), true);
+                    }
                 }
+                s.role_selection = Some(RoleSelection::defaults(&registry));
+                s.package_registry = Some(registry);
+                sync_role_package_selection(&mut s);
+                force_required_selected(&mut s);
             }
-            sync_terminal_package_selection(&mut s);
+            Err(error) => {
+                s.package_load_error = Some(format!("{error:#}"));
+            }
         }
         // Check monitor setup availability early (before Hyprland is installed/running).
         let mut startup_warnings: Vec<String> = Vec::new();
@@ -716,12 +737,29 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
         sel(PreflightField::EnvFishLanguageChoiceOverride),
     ));
-    rows.push(mk(
-        "1/2",
-        "Terminal",
-        format!("{} (1=kitty,2=alacritty)", pf.terminal_choice),
-        sel(PreflightField::EnvTerminalChoice),
-    ));
+    let role_fields = [
+        (PreflightField::RoleBrowser, "browser"),
+        (PreflightField::RoleTerminal, "terminal"),
+        (PreflightField::RoleShell, "shell"),
+        (PreflightField::RoleGuiEditor, "gui_editor"),
+        (PreflightField::RoleTuiEditor, "tui_editor"),
+        (PreflightField::RoleLauncher, "launcher"),
+    ];
+    for (field, role_name) in role_fields {
+        let label = app
+            .package_registry
+            .as_ref()
+            .and_then(|registry| registry.roles.get(role_name))
+            .map(|role| role.label.as_str())
+            .unwrap_or(role_name);
+        let value = app
+            .role_selection
+            .as_ref()
+            .and_then(|selection| selection.selected_package(role_name))
+            .map(str::to_string)
+            .unwrap_or_else(|| "[!] <none>".to_string());
+        rows.push(mk("←/→", label, value, sel(field)));
+    }
     rows.push(mk(
         "Edit",
         "Wallpaper directory",
@@ -809,7 +847,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     rows.push(mk(
         "Enter",
         "Start unattended install",
-        "".to_string(),
+        package_start_blocker(app)
+            .map(|reason| format!("disabled: {reason}"))
+            .unwrap_or_default(),
         sel(PreflightField::Start),
     ));
 
@@ -1171,7 +1211,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(rows[1]);
 
-        let help = Paragraph::new(Text::from(vec![Line::from("Space toggle   a all   n none   Tab switch pane   changes apply live   Enter save   Esc cancel   j/k/↑/↓ move")]))
+        let help = Paragraph::new(Text::from(vec![Line::from("[!] required/locked   Space toggle   a all   n none   Tab switch pane   changes apply live   Enter save   Esc cancel   j/k/↑/↓ move")]))
             .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(help, rows[0]);
 
@@ -1201,7 +1241,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.pacman_sel_map.get(p).unwrap_or(&false);
-                    let mark = if chosen { "[x]" } else { "[ ]" };
+                    let mark = if app.required_pacman.contains(p) {
+                        "[!]"
+                    } else if chosen {
+                        "[x]"
+                    } else {
+                        "[ ]"
+                    };
                     let desc = app
                         .pkg_descs
                         .get(p)
@@ -1233,7 +1279,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.aur_sel_map.get(p).unwrap_or(&false);
-                    let mark = if chosen { "[x]" } else { "[ ]" };
+                    let mark = if app.required_aur.contains(p) {
+                        "[!]"
+                    } else if chosen {
+                        "[x]"
+                    } else {
+                        "[ ]"
+                    };
                     let desc = app
                         .pkg_descs
                         .get(p)
@@ -1655,7 +1707,9 @@ fn move_selection(_app: &mut AppState, _delta: isize) {}
 // run_selected_action no longer needed; start directly from Preflight
 
 fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
-    // No concurrent run guard needed in the simplified flow
+    if let Some(reason) = package_start_blocker(app) {
+        bail!("setup cannot start: {reason}");
+    }
 
     let script = match &app.setup_script {
         Some(p) => p.clone(),
@@ -1754,11 +1808,17 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         "PROMPT_DEFAULT_YN",
         if pf.prompt_default_yes { "y" } else { "n" },
     );
-    cmd.env(
-        "FISH_LANGUAGE_CHOICE_OVERRIDE",
-        pf.fish_language_choice.to_string(),
-    );
-    cmd.env("TERMINAL_CHOICE_OVERRIDE", pf.terminal_choice.to_string());
+    let selected_shell_is_fish = app
+        .role_selection
+        .as_ref()
+        .and_then(|selection| selection.selected_package("shell"))
+        == Some("fish");
+    if selected_shell_is_fish {
+        cmd.env(
+            "FISH_LANGUAGE_CHOICE_OVERRIDE",
+            pf.fish_language_choice.to_string(),
+        );
+    }
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -1779,11 +1839,14 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             "false"
         },
     );
-    if !selected_pacman.is_empty() {
-        cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone());
-    }
-    if !selected_aur.is_empty() {
-        cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone());
+    cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone());
+    cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone());
+    if let (Some(registry), Some(selection)) =
+        (app.package_registry.as_ref(), app.role_selection.as_ref())
+    {
+        for (name, value) in selection.export_env(registry)? {
+            cmd.env(name, value);
+        }
     }
     // Also pass user-added splits explicitly for setup.sh merging
     let mut user_pac = Vec::new();
@@ -1916,49 +1979,167 @@ fn resolve_setup_script_path() -> Option<PathBuf> {
     candidates.into_iter().find(|c| c.exists())
 }
 
-#[derive(Deserialize)]
-struct PackagesRoot {
-    hyprland_packages: HashMap<String, Vec<String>>,
-    aur_packages: HashMap<String, Vec<String>>,
-    package_descriptions: Option<HashMap<String, String>>,
+fn load_package_registry(setup_script: Option<&Path>) -> Result<PackagesRoot> {
+    let setup_script = setup_script
+        .context("setup.sh was not resolved, so packages.json cannot be located relative to it")?;
+    let resolved = fs::canonicalize(setup_script)
+        .with_context(|| format!("resolve setup script {}", setup_script.display()))?;
+    let root = resolved
+        .parent()
+        .context("resolved setup.sh path has no parent directory")?;
+    PackagesRoot::load(&root.join("packages.json"))
 }
 
-type PackagesCategorized = (
-    Vec<(String, Vec<String>)>,
-    Vec<(String, Vec<String>)>,
-    HashMap<String, String>,
-);
+fn preflight_role_name(field: PreflightField) -> Option<&'static str> {
+    match field {
+        PreflightField::RoleBrowser => Some("browser"),
+        PreflightField::RoleTerminal => Some("terminal"),
+        PreflightField::RoleShell => Some("shell"),
+        PreflightField::RoleGuiEditor => Some("gui_editor"),
+        PreflightField::RoleTuiEditor => Some("tui_editor"),
+        PreflightField::RoleLauncher => Some("launcher"),
+        _ => None,
+    }
+}
 
-fn load_packages_json_categorized() -> Option<PackagesCategorized> {
-    let candidates = [
-        PathBuf::from("./packages.json"),
-        PathBuf::from("../packages.json"),
-        PathBuf::from("../../packages.json"),
-        PathBuf::from("../../../packages.json"),
-    ];
-    let path = candidates.into_iter().find(|p| p.exists())?;
-    let data = fs::read_to_string(path).ok()?;
-    let parsed: PackagesRoot = serde_json::from_str(&data).ok()?;
-    let mut pac_cats: Vec<(String, Vec<String>)> = parsed
-        .hyprland_packages
+fn sync_role_package_selection(app: &mut AppState) {
+    let Some(registry) = app.package_registry.as_ref() else {
+        return;
+    };
+    let Some(selection) = app.role_selection.as_ref() else {
+        return;
+    };
+    let updates: Vec<(PackageSource, String, bool)> = ROLE_ORDER
         .into_iter()
-        .map(|(k, mut v)| {
-            v.sort();
-            (k, v)
+        .flat_map(|role_name| {
+            let selected = selection.selected_package(role_name);
+            registry.roles[role_name].options.iter().map(move |option| {
+                (
+                    option.source,
+                    option.package.clone(),
+                    selected == Some(option.package.as_str()),
+                )
+            })
         })
         .collect();
-    pac_cats.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut aur_cats: Vec<(String, Vec<String>)> = parsed
-        .aur_packages
-        .into_iter()
-        .map(|(k, mut v)| {
-            v.sort();
-            (k, v)
-        })
-        .collect();
-    aur_cats.sort_by(|a, b| a.0.cmp(&b.0));
-    let descs = parsed.package_descriptions.unwrap_or_default();
-    Some((pac_cats, aur_cats, descs))
+    for (source, package, selected) in updates {
+        match source {
+            PackageSource::Pacman => {
+                app.pacman_sel_map.insert(package, selected);
+            }
+            PackageSource::Aur => {
+                app.aur_sel_map.insert(package, selected);
+            }
+        }
+    }
+}
+
+fn force_required_selected(app: &mut AppState) {
+    enforce_required(&app.required_pacman, &mut app.pacman_sel_map);
+    enforce_required(&app.required_aur, &mut app.aur_sel_map);
+}
+
+fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: &str) {
+    let required = match source {
+        PackageSource::Pacman => app.required_pacman.contains(package),
+        PackageSource::Aur => app.required_aur.contains(package),
+    };
+    if required {
+        return;
+    }
+
+    let is_role_option = app
+        .package_registry
+        .as_ref()
+        .and_then(|registry| registry.role_for_package(package))
+        .is_some();
+    if is_role_option {
+        if let (Some(registry), Some(selection)) =
+            (app.package_registry.as_ref(), app.role_selection.as_mut())
+        {
+            let _ = selection.toggle_package(registry, package);
+        }
+        sync_role_package_selection(app);
+    } else {
+        match source {
+            PackageSource::Pacman => {
+                toggle_with_required(&app.required_pacman, &mut app.pacman_sel_map, package)
+            }
+            PackageSource::Aur => {
+                toggle_with_required(&app.required_aur, &mut app.aur_sel_map, package)
+            }
+        }
+    }
+    force_required_selected(app);
+}
+
+fn set_all_package_selections(app: &mut AppState, source: PackageSource, selected: bool) {
+    match source {
+        PackageSource::Pacman => {
+            set_all_with_required(&app.required_pacman, &mut app.pacman_sel_map, selected)
+        }
+        PackageSource::Aur => {
+            set_all_with_required(&app.required_aur, &mut app.aur_sel_map, selected)
+        }
+    }
+    if !selected
+        && let (Some(registry), Some(role_selection)) =
+            (app.package_registry.as_ref(), app.role_selection.as_mut())
+    {
+        role_selection.clear_source(registry, source);
+    }
+    sync_role_package_selection(app);
+    force_required_selected(app);
+}
+
+fn visible_package_rows(app: &AppState, source: PackageSource) -> Vec<Option<String>> {
+    let (categories, filter) = match source {
+        PackageSource::Pacman => (&app.pacman_cats, &app.pacman_filter_working),
+        PackageSource::Aur => (&app.aur_cats, &app.aur_filter_working),
+    };
+    let mut rows = Vec::new();
+    for (category, packages) in categories {
+        if !filter.is_empty() && !filter.contains(category) {
+            continue;
+        }
+        rows.push(None);
+        rows.extend(packages.iter().cloned().map(Some));
+    }
+    rows
+}
+
+fn package_start_blocker(app: &AppState) -> Option<String> {
+    if let Some(error) = &app.package_load_error {
+        return Some(format!("Package registry error: {error}"));
+    }
+    match (&app.package_registry, &app.role_selection) {
+        (Some(registry), Some(selection)) => selection
+            .missing_roles(registry)
+            .first()
+            .map(|label| format!("Select exactly one {label}")),
+        _ => Some("Package registry is unavailable".to_string()),
+    }
+}
+
+fn classify_package(name: &str) -> Option<PackageSource> {
+    let available = |program: &str| {
+        Command::new(program)
+            .arg("-Si")
+            .arg("--")
+            .arg(name)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    if available("pacman") {
+        Some(PackageSource::Pacman)
+    } else if available("yay") {
+        Some(PackageSource::Aur)
+    } else {
+        None
+    }
 }
 
 fn install_panic_hook() {
@@ -2143,26 +2324,18 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
         } else if app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur {
             // Multiselect handling (categorized) — headers are not selectable
             let is_pacman = app.edit_kind == EditKind::SelectPacman;
-            let len: usize = if is_pacman {
-                app.pacman_cats.iter().map(|(_, pkgs)| 1 + pkgs.len()).sum()
+            let source = if is_pacman {
+                PackageSource::Pacman
             } else {
-                app.aur_cats.iter().map(|(_, pkgs)| 1 + pkgs.len()).sum()
+                PackageSource::Aur
             };
-            // Compute header indices to skip
-            let mut header_idx: Vec<usize> = Vec::new();
-            if is_pacman {
-                let mut idx = 0usize;
-                for (_, pkgs) in &app.pacman_cats {
-                    header_idx.push(idx);
-                    idx += 1 + pkgs.len();
-                }
-            } else {
-                let mut idx = 0usize;
-                for (_, pkgs) in &app.aur_cats {
-                    header_idx.push(idx);
-                    idx += 1 + pkgs.len();
-                }
-            }
+            let visible_rows = visible_package_rows(app, source);
+            let len = visible_rows.len();
+            let header_idx: Vec<usize> = visible_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, package)| package.is_none().then_some(index))
+                .collect();
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => {
                     app.editing = false;
@@ -2256,43 +2429,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                                 app.aur_filter_working.insert(cat.clone());
                             }
                         }
-                    } else {
-                        // Toggle selected package if not a header
-                        let mut idx = 0usize;
-                        if is_pacman {
-                            'outerp: for (_, pkgs) in &app.pacman_cats {
-                                if app.ms_cursor == idx {
-                                    idx += 1;
-                                    continue;
-                                } // header row
-                                idx += 1;
-                                for p in pkgs {
-                                    if app.ms_cursor == idx {
-                                        let e =
-                                            app.pacman_sel_map.entry(p.clone()).or_insert(false);
-                                        *e = !*e;
-                                        break 'outerp;
-                                    }
-                                    idx += 1;
-                                }
-                            }
-                        } else {
-                            'outera: for (_, pkgs) in &app.aur_cats {
-                                if app.ms_cursor == idx {
-                                    idx += 1;
-                                    continue;
-                                } // header row
-                                idx += 1;
-                                for p in pkgs {
-                                    if app.ms_cursor == idx {
-                                        let e = app.aur_sel_map.entry(p.clone()).or_insert(false);
-                                        *e = !*e;
-                                        break 'outera;
-                                    }
-                                    idx += 1;
-                                }
-                            }
-                        }
+                    } else if let Some(Some(package)) = visible_rows.get(app.ms_cursor) {
+                        toggle_package_selection(app, source, package);
                     }
                 }
                 KeyCode::Char('a') => {
@@ -2309,14 +2447,16 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         } else {
                             app.aur_filter_working = cats.into_iter().collect();
                         }
-                    } else if is_pacman {
-                        for v in app.pacman_sel_map.values_mut() {
-                            *v = true;
-                        }
                     } else {
-                        for v in app.aur_sel_map.values_mut() {
-                            *v = true;
-                        }
+                        set_all_package_selections(
+                            app,
+                            if is_pacman {
+                                PackageSource::Pacman
+                            } else {
+                                PackageSource::Aur
+                            },
+                            true,
+                        );
                     }
                 }
                 KeyCode::Char('n') => {
@@ -2327,14 +2467,16 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         } else {
                             app.aur_filter_working.clear();
                         }
-                    } else if is_pacman {
-                        for v in app.pacman_sel_map.values_mut() {
-                            *v = false;
-                        }
                     } else {
-                        for v in app.aur_sel_map.values_mut() {
-                            *v = false;
-                        }
+                        set_all_package_selections(
+                            app,
+                            if is_pacman {
+                                PackageSource::Pacman
+                            } else {
+                                PackageSource::Aur
+                            },
+                            false,
+                        );
                     }
                 }
                 _ => {}
@@ -2376,25 +2518,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                             warnings.push(format!("Already selected: {}", name));
                             continue;
                         }
-                        let is_repo = Command::new("bash")
-                            .arg("-lc")
-                            .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                            .status()
-                            .ok()
-                            .map(|s| s.success())
-                            .unwrap_or(false);
-                        let is_aur = if is_repo {
-                            false
-                        } else {
-                            Command::new("bash")
-                                .arg("-lc")
-                                .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                                .status()
-                                .ok()
-                                .map(|s| s.success())
-                                .unwrap_or(false)
-                        };
-                        if !is_repo && !is_aur {
+                        if classify_package(name).is_none() {
                             warnings.push(format!("Not found in pacman or AUR: {}", name));
                         }
                     }
@@ -2452,6 +2576,10 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             // Enter: start only if Start is focused; otherwise, begin editing if field is editable
             match app.preflight_focus {
                 PreflightField::Start => {
+                    if let Some(reason) = package_start_blocker(app) {
+                        show_info(app, "Setup cannot start", vec![reason]);
+                        return Ok(false);
+                    }
                     if app.preflight.password.is_empty() {
                         // Show small info popup instead of only logging
                         show_info(
@@ -2504,8 +2632,13 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvTerminalChoice,
-        PreflightField::EnvTerminalChoice => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::RoleBrowser,
+        PreflightField::RoleBrowser => PreflightField::RoleTerminal,
+        PreflightField::RoleTerminal => PreflightField::RoleShell,
+        PreflightField::RoleShell => PreflightField::RoleGuiEditor,
+        PreflightField::RoleGuiEditor => PreflightField::RoleTuiEditor,
+        PreflightField::RoleTuiEditor => PreflightField::RoleLauncher,
+        PreflightField::RoleLauncher => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
@@ -2523,8 +2656,13 @@ fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::EnvTerminalChoice => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvTerminalChoice,
+        PreflightField::RoleBrowser => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::RoleTerminal => PreflightField::RoleBrowser,
+        PreflightField::RoleShell => PreflightField::RoleTerminal,
+        PreflightField::RoleGuiEditor => PreflightField::RoleShell,
+        PreflightField::RoleTuiEditor => PreflightField::RoleGuiEditor,
+        PreflightField::RoleLauncher => PreflightField::RoleTuiEditor,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::RoleLauncher,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
@@ -2549,16 +2687,15 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
             }
             app.preflight.fish_language_choice = v as u8;
         }
-        PreflightField::EnvTerminalChoice => {
-            let mut v = app.preflight.terminal_choice as i32 + delta;
-            if v < 1 {
-                v = 2;
+        field if preflight_role_name(field).is_some() => {
+            let role_name = preflight_role_name(field).expect("role field checked");
+            if let (Some(registry), Some(selection)) =
+                (app.package_registry.as_ref(), app.role_selection.as_mut())
+            {
+                let _ = selection.cycle(registry, role_name, delta);
+                sync_role_package_selection(app);
+                force_required_selected(app);
             }
-            if v > 2 {
-                v = 1;
-            }
-            app.preflight.terminal_choice = v as u8;
-            sync_terminal_package_selection(app);
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
@@ -2697,34 +2834,15 @@ fn apply_edit_buffer(app: &mut AppState) {
                         ));
                         continue;
                     }
-                    let mut src = String::from("unknown");
-                    if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "pacman".to_string();
-                    } else if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "aur".to_string();
-                    }
-                    if src == "unknown" {
+                    let Some(source) = classify_package(&name) else {
                         app.push_log_line(format!(
                             "Skipping unknown package '{}': not found in pacman or AUR",
                             name
                         ));
                         continue;
-                    }
-                    app.user_added_src.insert(name.clone(), src);
+                    };
+                    app.user_added_src
+                        .insert(name.clone(), source.as_str().to_string());
                     app.user_added.push(name);
                 }
             } else {
@@ -2752,34 +2870,14 @@ fn apply_edit_buffer(app: &mut AppState) {
                         ));
                         continue;
                     }
-                    let mut src = String::from("unknown");
-                    if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "pacman".to_string();
-                    } else if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "aur".to_string();
-                    }
-                    if src == "unknown" {
+                    let Some(source) = classify_package(&name) else {
                         app.push_log_line(format!(
                             "Skipping unknown package '{}': not found in pacman or AUR",
                             name
                         ));
                         continue;
-                    }
-                    new_user_added_src.insert(name.clone(), src);
+                    };
+                    new_user_added_src.insert(name.clone(), source.as_str().to_string());
                     new_user_added.push(name);
                 }
                 app.user_added = new_user_added;
@@ -2930,6 +3028,9 @@ fn startup_prereq_warnings(app: &AppState) -> Vec<String> {
 
     if app.setup_script.is_none() {
         missing.push("setup.sh (not found)".to_string());
+    }
+    if let Some(error) = &app.package_load_error {
+        missing.push(format!("packages.json ({error})"));
     }
 
     if missing.is_empty() {
