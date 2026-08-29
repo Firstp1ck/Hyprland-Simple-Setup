@@ -24,7 +24,11 @@ NC='\033[0m'
 CHECK_MARK=$'\e[1;32m\u2714\e[0m'
 CROSS_MARK=$'\e[1;31m\u2718\e[0m'
 CIRCLE=$'\u25CB'
-LOG_FILE="${HOME}/Hyprland-Simple-Setup.log"
+LOG_FILE=""
+
+SETUP_SCRIPT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/lib/setup-reliability.sh
+source "$SETUP_SCRIPT_ROOT/scripts/lib/setup-reliability.sh"
 
 # Arrays to store update statuses
 mirror_updates=()
@@ -144,6 +148,7 @@ load_role_selections() {
         fi
         printf -v "$env_name" '%s' "$value"
         export "${env_name?}"
+        hss_meta_set "$env_name" "$value" || return 1
     done
     ROLE_SELECTIONS_LOADED=true
 }
@@ -245,6 +250,48 @@ log_dry_run_operation() {
     local function_name="$1"
     local operation="$2"
     DRY_RUN_OPERATIONS+=("[$function_name] $operation")
+}
+
+write_text_atomic() {
+    local destination=$1 reason=$2 content=$3 tmp
+    if is_dry_run; then
+        write_file_atomic "$destination" /dev/null "$reason"
+        return
+    fi
+    mkdir -p -- "$(dirname -- "$destination")"
+    make_tmp tmp content.XXXXXX || return 1
+    printf '%s' "$content" > "$tmp"
+    write_file_atomic "$destination" "$tmp" "$reason"
+}
+
+append_text_atomic() {
+    local destination=$1 reason=$2 content=$3 tmp
+    if is_dry_run; then
+        write_file_atomic "$destination" /dev/null "$reason"
+        return
+    fi
+    make_tmp tmp append.XXXXXX || return 1
+    [[ -f $destination ]] && cat -- "$destination" > "$tmp"
+    printf '%s' "$content" >> "$tmp"
+    write_file_atomic "$destination" "$tmp" "$reason"
+}
+
+sed_file_atomic() {
+    local destination=$1 reason=$2
+    shift 2
+    edit_file_atomic "$destination" "$reason" sed "$@"
+}
+
+copy_file_atomic() {
+    write_file_atomic "$1" "$2" "$3"
+}
+
+setup_etc_root() {
+    if [[ ${HSS_TEST_MODE:-0} == 1 && -n ${HSS_TEST_ETC_ROOT:-} ]]; then
+        printf '%s\n' "$HSS_TEST_ETC_ROOT"
+    else
+        printf '%s\n' /etc
+    fi
 }
 
 should_init_dotfiles_git_repo() {
@@ -471,7 +518,7 @@ print_dry_run_summary() {
     fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${YELLOW}[DRY-RUN]${NC} No actual changes were made to your system."
+    echo -e "${YELLOW}[DRY-RUN]${NC} No changes were made outside the run state directory: $HSS_RUN_DIR"
 }
 
 distro_install() {
@@ -557,11 +604,7 @@ ensure_wallpaper_monitors() {
             return 0
         fi
         print_message "Auto-detected monitor: $first_mon"
-        if echo "$current_line" | grep -q 'MONITORS='; then
-            execute_command "sed -i --follow-symlinks -E 's|^MONITORS=.*$|MONITORS=(\"$first_mon\")|' '$wallpaper_conf'" "Set MONITORS to first detected monitor"
-        else
-            execute_command "printf '%s\n' 'MONITORS=(\"$first_mon\")' >> '$wallpaper_conf'" "Append MONITORS to wallpaper config"
-        fi
+        replace_config_line "$wallpaper_conf" '^MONITORS=' "MONITORS=(\"$first_mon\")" "Set MONITORS to first detected monitor"
     fi
 }
 
@@ -611,23 +654,23 @@ ensure_monitors_conf() {
         x_offset=$((x_offset + width))
     done <<< "$monitor_names"
 
-    # Append in detected order (avoid reversing via repeated "insert at top").
+    local generated=""
     if [ "${#monitor_lines[@]}" -gt 0 ]; then
-        {
-            echo
-            printf '%s\n' "${monitor_lines[@]}"
-        } >> "$monitors_conf"
+        generated+=$'\n'
+        generated+="$(printf '%s\n' "${monitor_lines[@]}")"
+        generated+=$'\n'
     fi
-
-    # Add workspace assignments for detected monitors
     if [ "${#all_names[@]}" -gt 0 ]; then
         local primary="${all_names[0]}"
         local secondary="${all_names[1]:-$primary}"
-        printf '\nworkspace=1,monitor:%s,default:true\n' "$primary" >> "$monitors_conf"
+        generated+="$(printf '\nworkspace=1,monitor:%s,default:true\n' "$primary")"
+        generated+=$'\n'
         if [ "${#all_names[@]}" -gt 1 ]; then
-            printf 'workspace=2,monitor:%s\n' "$secondary" >> "$monitors_conf"
+            generated+="$(printf 'workspace=2,monitor:%s\n' "$secondary")"
+            generated+=$'\n'
         fi
     fi
+    [[ -z $generated ]] || append_text_atomic "$monitors_conf" "auto-detected monitor configuration" "$generated"
 }
 
 # Apply MONITOR_CONFIG directly (name:resolution:scale;...) without requiring
@@ -693,21 +736,15 @@ apply_monitor_config_from_env() {
         workspace_lines+=("workspace=2,monitor:${monitor_names[1]}")
     fi
 
-    local mt
+    local mt content line
+    content="# Check monitor names (e.g. DP-1, HDMI-A-1) with: \`hyprctl monitors\`"$'\n'
+    for line in "${monitor_lines[@]}"; do content+="$line"$'\n'; done
+    if [ "${#workspace_lines[@]}" -gt 0 ]; then
+        content+=$'\n'
+        for line in "${workspace_lines[@]}"; do content+="$line"$'\n'; done
+    fi
     for mt in "${monitor_targets[@]}"; do
-        mkdir -p "$(dirname "$mt")"
-        {
-            echo "# Check monitor names (e.g. DP-1, HDMI-A-1) with: \`hyprctl monitors\`"
-            for line in "${monitor_lines[@]}"; do
-                echo "$line"
-            done
-            if [ "${#workspace_lines[@]}" -gt 0 ]; then
-                echo
-                for line in "${workspace_lines[@]}"; do
-                    echo "$line"
-                done
-            fi
-        } > "$mt"
+        write_text_atomic "$mt" "apply MONITOR_CONFIG" "$content"
         print_message "Applied MONITOR_CONFIG to $(basename "$mt")"
     done
 
@@ -719,11 +756,7 @@ apply_monitor_config_from_env() {
     local wt
     for wt in "${wallpaper_targets[@]}"; do
         [ -f "$wt" ] || continue
-        if grep -q "^MONITORS=" "$wt"; then
-            sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wt"
-        else
-            echo "MONITORS=($monitors_str)" >> "$wt"
-        fi
+        replace_config_line "$wt" '^MONITORS=' "MONITORS=($monitors_str)" "apply monitor wallpaper targets"
         print_message "Applied MONITORS to $(basename "$wt"): MONITORS=($monitors_str)"
     done
 
@@ -750,7 +783,9 @@ log_message() {
     local message=$2
     local timestamp
     timestamp=$(date +"%Y-%m-%d %T")
-    echo "[$timestamp] [$log_level] $message" >> "$LOG_FILE"
+    if [[ -n $LOG_FILE ]]; then
+        printf '[%s] [%s] %s\n' "$timestamp" "$log_level" "$message" >> "$LOG_FILE"
+    fi
 }
 # Function to print colored messages
 print_message() {
@@ -984,79 +1019,6 @@ print_final_recommendation_summary() {
     echo ""
     echo "Log file: $LOG_FILE"
     echo ""
-}
-
-list_packages() {
-    announce_step "Generating Package Lists"
-    local date_suffix packages_file aur_file is_endeavouros is_debian_based
-    date_suffix=$(date +%Y-%m-%d)
-    packages_file="$HOME/user_installed_packages_${date_suffix}.txt"
-    aur_file="$HOME/aur_packages_${date_suffix}.txt"
-    is_endeavouros=false
-    is_debian_based=false
-
-    if command -v eos-packagelist &> /dev/null && grep -q "EndeavourOS" /etc/os-release; then
-        is_endeavouros=true
-        print_message "EndeavourOS detected - will exclude default EndeavourOS packages."
-    elif grep -q "CachyOS" /etc/os-release; then
-        is_endeavouros=true
-        print_message "CachyOS detected - will exclude default CachyOS packages."
-    elif command -v apt &> /dev/null && (grep -q "Debian\\|Ubuntu\\|Mint" /etc/os-release || [ -f /etc/debian_version ]); then
-        is_debian_based=true
-        print_message "Debian-based system detected - will list manually installed packages."
-    else
-        print_message "Arch Linux detected - will list all explicitly installed packages."
-    fi
-
-    print_message "This utility will generate:"
-    print_message "  1. A list of manually installed packages"
-    if [ "$is_endeavouros" = true ]; then
-        print_message "     (excluding EndeavourOS default packages)"
-    elif [ "$is_debian_based" = true ]; then
-        print_message "     (using apt-mark showmanual)"
-    fi
-    print_message "  2. A separate list of AUR packages"
-    if [ "$is_debian_based" = true ]; then
-        print_message "     (not applicable on Debian-based systems)"
-    fi
-
-    print_message "Generating package lists..."
-    if [ "$is_endeavouros" = true ]; then
-        echo -e "# User installed packages (excluding EndeavourOS defaults)" > "$packages_file"
-    elif [ "$is_debian_based" = true ]; then
-        echo -e "# Manually installed packages on Debian-based system" > "$packages_file"
-    else
-        echo -e "# User installed packages on Arch Linux" > "$packages_file"
-    fi
-    echo -e "# Generated on: $(date)\n" >> "$packages_file"
-
-    if [ "$is_debian_based" = false ]; then
-        echo -e "# AUR packages installed on the system" > "$aur_file"
-        echo -e "# Generated on: $(date)\n" >> "$aur_file"
-    fi
-
-    print_message "Processing main package list..."
-    if [ "$is_endeavouros" = true ]; then
-        execute_command "comm -23 <(pacman -Qqet | sort) <(eos-packagelist KDE-Desktop 'EndeavourOS applications' 'Recommended applications selection' 'Spell Checker and language package' 'Firewall' 'LTS kernel in addition' 'Printing support' 'HP printer/scanner support' | sort) >> '$packages_file'" "List user packages (EndeavourOS)"
-    elif [ "$is_debian_based" = true ]; then
-        execute_command "apt-mark showmanual >> '$packages_file'" "List manually installed packages (Debian)"
-    else
-        execute_command "pacman -Qqet >> '$packages_file'" "List explicitly installed packages (Arch)"
-    fi
-    print_message "Main package list done."
-
-    if [ "$is_debian_based" = false ]; then
-        print_message "Processing AUR package list..."
-        execute_command "pacman -Qqm >> '$aur_file'" "List AUR packages"
-        print_message "AUR package list done."
-    fi
-
-    print_message "Package lists have been saved to:"
-    print_message "  Main package list: $packages_file"
-    print_message "  AUR package list: $aur_file"
-    print_message "Total packages found: $(grep -c -v '^#' "$packages_file")"
-    print_message "Total AUR packages found: $(grep -c -v '^#' "$aur_file")"
-    print_message "Thank you for using the Package Installation History Utility!"
 }
 
 verify_installed_packages() {
@@ -1394,8 +1356,12 @@ resolve_user_pictures_dir() {
         return 0
     fi
 
-    # If user doesn't have either (or uses custom XDG dirs), default to Pictures and create it.
-    mkdir -p "$pictures_dir"
+    # If user doesn't have either (or uses custom XDG dirs), default to Pictures.
+    if is_dry_run; then
+        log_dry_run_operation "update_configs" "Would create directory $pictures_dir: user pictures directory"
+    else
+        mkdir -p "$pictures_dir"
+    fi
     echo "$pictures_dir"
 }
 
@@ -1501,10 +1467,6 @@ find_hyprland_setup_dir() {
 # Function to update configuration files with user input
 update_configs() {
     announce_step "Update configs"
-    if is_dry_run; then
-        log_dry_run_operation "update_configs" "Would update Hyprland sources and wallpaper config with WALLPAPER_DIR=$WALLPAPER_DIR"
-        return 0
-    fi
 
     # Find Hyprland-Simple-Setup directory
     local hyprland_setup_dir
@@ -1550,7 +1512,7 @@ update_configs() {
     local app_vars_conf="$hypr_config_dir/sources/app_variables.conf"
     if [ -f "$app_vars_conf" ]; then
         print_message "Updating wallpaper path in app_variables.conf..."
-        execute_command "sed -i 's|\\\$wallpaper=~/$SETUP_DIR/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g' '$app_vars_conf'" "Update wallpaper path in app_variables.conf"
+        sed_file_atomic "$app_vars_conf" "Update wallpaper path in app_variables.conf" "s|\\\$wallpaper=~/$SETUP_DIR/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g"
     else
         print_warning "app_variables.conf not found at $app_vars_conf"
     fi
@@ -1558,10 +1520,11 @@ update_configs() {
     # Run stow script after copying sources_example
     if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
         print_message "Setting up dotfiles with Start_stow_solve.sh..."
-        if bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
+        if is_dry_run; then
+            log_dry_run_operation "update_configs" "Would run Stow setup from $HOME/dotfiles/.local/scripts/Start_stow_solve.sh"
+        elif bash "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh"; then
             print_message "Stow script executed successfully"
             track_config_status "Dotfiles Setup" "$CHECK_MARK"
-            # Optional: initialize a local git repo for ~/dotfiles after stow
             init_dotfiles_git_repo || true
         else
             print_error "Stow script failed to execute properly"
@@ -1592,12 +1555,12 @@ update_configs() {
     local wallpaper_conf
     for wallpaper_conf in "$wallpaper_conf_runtime" "$wallpaper_conf_source"; do
         execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory ($(basename "$wallpaper_conf"))"
-        # If config exists, only update WALLPAPER_DIR in place to preserve MONITORS and other settings
         if [ -f "$wallpaper_conf" ]; then
-            execute_command "if grep -q '^WALLPAPER_DIR=' '$wallpaper_conf'; then sed -i --follow-symlinks -E 's|^WALLPAPER_DIR=.*$|WALLPAPER_DIR=\"$WALLPAPER_DIR\"|' '$wallpaper_conf'; else printf '%s\n' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' >> '$wallpaper_conf'; fi" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
+            replace_config_line "$wallpaper_conf" '^WALLPAPER_DIR=' "WALLPAPER_DIR=\"$WALLPAPER_DIR\"" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
         else
-            # Create new file with header and WALLPAPER_DIR; leave MONITORS for monitor configurator or auto-detect in script
-            execute_command "printf '%s\n' '# Wallpaper Configuration' 'WALLPAPER_DIR=\"$WALLPAPER_DIR\"' > '$wallpaper_conf'" "Create initial wallpaper config ($(basename "$wallpaper_conf"))"
+            write_text_atomic "$wallpaper_conf" "Create initial wallpaper config ($(basename "$wallpaper_conf"))" "# Wallpaper Configuration
+WALLPAPER_DIR=\"$WALLPAPER_DIR\"
+"
         fi
 
         # Ensure MONITORS is set (auto-detect first monitor if user did not set)
@@ -1616,10 +1579,6 @@ update_configs() {
 
 # Function to update fish language config in fish config file
 set_fish_language_config() {
-    if is_dry_run; then
-        log_dry_run_operation "set_fish_language_config" "Would update fish language config"
-        return 0
-    fi
     local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
     local lang language
 
@@ -1656,46 +1615,40 @@ set_fish_language_config() {
     # Update the source file in dotfiles (this will propagate to symlink if stow has run)
     if [ ! -f "$fish_conf" ]; then
         print_message "Creating fish config file at $fish_conf"
-        execute_command "mkdir -p '$(dirname "$fish_conf")'" "Create fish config directory"
-        execute_command "touch '$fish_conf'" "Touch fish config file"
-        # Add initial language settings if file is new
-        execute_command "echo '# Language Settings' >> '$fish_conf' && echo 'set -gx LANG \"$lang\"' >> '$fish_conf' && echo 'set -gx LANGUAGE \"$language\"' >> '$fish_conf' && echo '' >> '$fish_conf'" "Add initial language settings"
+        write_text_atomic "$fish_conf" "Add initial language settings" "# Language Settings
+set -gx LANG \"$lang\"
+set -gx LANGUAGE \"$language\"
+
+"
     else
         print_message "Updating existing fish config file at $fish_conf"
-        # Replace existing language settings (handle both with and without quotes)
-        execute_command "sed -i -E 's|^set -gx LANG .*|set -gx LANG \"$lang\"|' '$fish_conf'" "Update LANG"
-        execute_command "sed -i -E 's|^set -gx LANGUAGE .*|set -gx LANGUAGE \"$language\"|' '$fish_conf'" "Update LANGUAGE"
+        replace_config_line "$fish_conf" '^set -gx LANG ' "set -gx LANG \"$lang\"" "Update LANG"
+        replace_config_line "$fish_conf" '^set -gx LANGUAGE ' "set -gx LANGUAGE \"$language\"" "Update LANGUAGE"
     fi
     
     # Also update the runtime location if it exists and is not a symlink (or if symlink is broken)
     if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
         print_message "Also updating runtime fish config file at $fish_conf_runtime"
-        execute_command "sed -i -E 's|^set -gx LANG .*|set -gx LANG \"$lang\"|' '$fish_conf_runtime'" "Update LANG in runtime config"
-        execute_command "sed -i -E 's|^set -gx LANGUAGE .*|set -gx LANGUAGE \"$language\"|' '$fish_conf_runtime'" "Update LANGUAGE in runtime config"
+        replace_config_line "$fish_conf_runtime" '^set -gx LANG ' "set -gx LANG \"$lang\"" "Update LANG in runtime config"
+        replace_config_line "$fish_conf_runtime" '^set -gx LANGUAGE ' "set -gx LANGUAGE \"$language\"" "Update LANGUAGE in runtime config"
     fi
 
     print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
 }
 
-# Role-driven config writers. WS-4 replaces these same-file temporary writes with atomic helpers.
+# Role-driven writers share the reliability transaction and preserve Stow symlinks.
 role_write_file() {
-    local destination=$1 source=$2 reason=$3
-    if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would write $destination: $reason"
-        return 0
-    fi
-    mkdir -p "$(dirname "$destination")"
-    mv -f -- "$source" "$destination"
+    write_file_atomic "$1" "$2" "$3"
 }
 
 replace_config_line() {
     local file=$1 pattern=$2 replacement=$3 reason=$4 tmp
     [ -f "$file" ] || return 0
     if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        write_file_atomic "$file" /dev/null "$reason"
         return 0
     fi
-    tmp="${file}.hss-role.$$"
+    make_tmp tmp role-edit.XXXXXX || return 1
     awk -v pattern="$pattern" -v replacement="$replacement" '
         $0 ~ pattern {
             if (!replaced) print replacement
@@ -1711,10 +1664,10 @@ replace_literal_assignment() {
     local file=$1 name=$2 replacement=$3 reason=$4 tmp
     [ -f "$file" ] || return 0
     if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        write_file_atomic "$file" /dev/null "$reason"
         return 0
     fi
-    tmp="${file}.hss-role.$$"
+    make_tmp tmp role-edit.XXXXXX || return 1
     awk -v name="$name" -v replacement="$replacement" '
         index($0, name) == 1 && substr($0, length(name) + 1) ~ /^[[:space:]]*=/ {
             if (!replaced) print replacement
@@ -1730,10 +1683,10 @@ replace_literal_prefix() {
     local file=$1 prefix=$2 replacement=$3 reason=$4 tmp
     [ -f "$file" ] || return 0
     if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        write_file_atomic "$file" /dev/null "$reason"
         return 0
     fi
-    tmp="${file}.hss-role.$$"
+    make_tmp tmp role-edit.XXXXXX || return 1
     awk -v prefix="$prefix" -v replacement="$replacement" '
         index($0, prefix) == 1 {
             if (!replaced) print replacement
@@ -1749,10 +1702,10 @@ remove_config_matching() {
     local file=$1 pattern=$2 reason=$3 tmp
     [ -f "$file" ] || return 0
     if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would modify $file: $reason"
+        write_file_atomic "$file" /dev/null "$reason"
         return 0
     fi
-    tmp="${file}.hss-role.$$"
+    make_tmp tmp role-edit.XXXXXX || return 1
     awk -v pattern="$pattern" '$0 !~ pattern { print }' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
 }
 
@@ -1777,18 +1730,18 @@ generate_roles_json() {
 
     ROLE_DATA_FILE=$runtime_file
     if is_dry_run; then
-        log_dry_run_operation "configure_roles" "Would create or modify $source_file: selected runtime role metadata"
-        log_dry_run_operation "configure_roles" "Would create or modify $runtime_file: selected runtime role metadata"
+        write_file_atomic "$source_file" /dev/null "selected runtime role metadata"
+        write_file_atomic "$runtime_file" /dev/null "selected runtime role metadata"
         return 0
     fi
 
     mkdir -p "$(dirname "$source_file")" "$(dirname "$runtime_file")"
-    source_tmp="${source_file}.hss-role.$$"
+    make_tmp source_tmp roles-json.XXXXXX || return 1
     printf '%s\n' "$generated" | jq . > "$source_tmp"
     role_write_file "$source_file" "$source_tmp" "selected runtime role metadata"
 
     if [ "$(readlink -f "$source_file")" != "$(readlink -f "$runtime_file" 2>/dev/null || printf '%s' "$runtime_file")" ]; then
-        runtime_tmp="${runtime_file}.hss-role.$$"
+        make_tmp runtime_tmp roles-json.XXXXXX || return 1
         printf '%s\n' "$generated" | jq . > "$runtime_tmp"
         role_write_file "$runtime_file" "$runtime_tmp" "selected runtime role metadata"
     fi
@@ -1881,17 +1834,12 @@ configure_roles() {
     print_message "Configured roles: browser=$ROLE_BROWSER terminal=$ROLE_TERMINAL shell=$ROLE_SHELL gui_editor=$ROLE_GUI_EDITOR tui_editor=$ROLE_TUI_EDITOR launcher=$ROLE_LAUNCHER"
 }
 configure_hypr_autostart_optional_extras() {
-    if is_dry_run; then
-        log_dry_run_operation "configure_hypr_autostart_optional_extras" "Would uncomment optional exec-once lines in Hyprland autostart.conf when tools are installed"
-        return 0
-    fi
-
     uncomment_line_if_cmd_exists() {
         local conf_file="$1"
         local cmd="$2"
         local line="$3"
         command -v "$cmd" >/dev/null 2>&1 || return 0
-        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${cmd}"
+        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: ${cmd}"
     }
 
     uncomment_line_if_unit_exists() {
@@ -1899,7 +1847,7 @@ configure_hypr_autostart_optional_extras() {
         local unit="$2"
         local line="$3"
         systemctl --user list-unit-files --all 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit" || return 0
-        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: ${unit}"
+        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: ${unit}"
     }
 
     uncomment_line_if_file_exists() {
@@ -1907,7 +1855,7 @@ configure_hypr_autostart_optional_extras() {
         local file="$2"
         local line="$3"
         [ -f "$file" ] || return 0
-        execute_command "sed -i 's|^# ${line}\$|${line}|' '$conf_file'" "Enable autostart: $(basename "$file")"
+        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: $(basename "$file")"
     }
 
     local configured_terminal=""
@@ -2246,10 +2194,10 @@ configure_gnome_keyring() {
     if [ "$has_auth" != "true" ] || [ "$has_session" != "true" ]; then
         print_message "Adding PAM configurations for gnome-keyring to $target_file..."
         if [ "$has_auth" != "true" ]; then
-            execute_command "sudo bash -c \"printf '%s\\n' 'auth optional pam_gnome_keyring.so' >> '$target_file'\"" "Add pam_gnome_keyring.so auth to $target_file"
+            append_text_atomic "$target_file" "Add pam_gnome_keyring.so auth" $'auth optional pam_gnome_keyring.so\n'
         fi
         if [ "$has_session" != "true" ]; then
-            execute_command "sudo bash -c \"printf '%s\\n' 'session optional pam_gnome_keyring.so auto_start' >> '$target_file'\"" "Add pam_gnome_keyring.so session to $target_file"
+            append_text_atomic "$target_file" "Add pam_gnome_keyring.so session" $'session optional pam_gnome_keyring.so auto_start\n'
         fi
     else
         print_message "PAM configuration for gnome-keyring already exists (checked: ${candidates[*]})."
@@ -2302,18 +2250,20 @@ configure_filepicker() {
     fi
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
     local conf_file="${conf_dir}/hyprland-portals.conf"
-    local desired_content="[preferred]\ndefault = hyprland;gtk\norg.freedesktop.impl.portal.FileChooser = kde"
-    execute_command "mkdir -p '$conf_dir'" "Create xdg-desktop-portal config dir"
+    local desired_content="[preferred]
+default = hyprland;gtk
+org.freedesktop.impl.portal.FileChooser = kde
+"
     if [ -f "$conf_file" ]; then
         if grep -q "default = hyprland;gtk" "$conf_file" && grep -q "org.freedesktop.impl.portal.FileChooser = kde" "$conf_file"; then
             print_message "Filepicker configuration already set."
         else
             print_message "Updating filepicker configuration..."
-            execute_command "echo -e '$desired_content' > '$conf_file'" "Update filepicker configuration"
+            write_text_atomic "$conf_file" "Update filepicker configuration" "$desired_content"
         fi
     else
         print_message "Creating filepicker configuration..."
-        execute_command "echo -e '$desired_content' > '$conf_file'" "Create filepicker configuration"
+        write_text_atomic "$conf_file" "Create filepicker configuration" "$desired_content"
     fi
 
     if [ ! -L "/etc/xdg/menus/applications.menu" ]; then
@@ -2327,12 +2277,14 @@ configure_filepicker() {
 
 configure_pacman_color() {
     announce_step "Configuring Pacman Color"
+    local pacman_conf
+    pacman_conf="$(setup_etc_root)/pacman.conf"
     if is_dry_run; then
-        log_dry_run_operation "configure_pacman_color" "Would update /etc/pacman.conf for Color and ILoveCandy"
+        write_file_atomic "$pacman_conf" /dev/null "enable pacman Color and ILoveCandy"
         return 0
     fi
-    local pacman_conf="/etc/pacman.conf"
-    local tmp_conf="/tmp/pacman.conf.$$"
+    local tmp_conf
+    make_tmp tmp_conf pacman.XXXXXX || return 1
     local color_found=false
     local candy_found=false
     local color_line_num=0
@@ -2358,25 +2310,26 @@ configure_pacman_color() {
 
     # If Color was not found, add it after [options]
     if ! $color_found; then
-        awk '/^\[options\]/{print;print "Color";next}1' "$tmp_conf" > "${tmp_conf}.new" && mv "${tmp_conf}.new" "$tmp_conf"
+        local rewritten
+        make_tmp rewritten pacman-rewrite.XXXXXX || return 1
+        awk '/^\[options\]/{print;print "Color";next}1' "$tmp_conf" > "$rewritten" && cp "$rewritten" "$tmp_conf"
         color_found=true
         color_line_num=$(awk '/^Color$/{print NR; exit}' "$tmp_conf")
     fi
 
     # If ILoveCandy is not found, add it just below Color
     if ! $candy_found && $color_found; then
-        awk -v cline="$color_line_num" '{print; if(NR==cline) print "ILoveCandy"}' "$tmp_conf" > "${tmp_conf}.new" && mv "${tmp_conf}.new" "$tmp_conf"
+        make_tmp rewritten pacman-rewrite.XXXXXX || return 1
+        awk -v cline="$color_line_num" '{print; if(NR==cline) print "ILoveCandy"}' "$tmp_conf" > "$rewritten" && cp "$rewritten" "$tmp_conf"
     fi
 
     # Only replace the original if changes were made
     if ! cmp -s "$pacman_conf" "$tmp_conf"; then
-        sudo cp "$pacman_conf" "${pacman_conf}.bak.$(date +%Y%m%d%H%M%S)"
-        sudo cp "$tmp_conf" "$pacman_conf"
+        write_file_atomic "$pacman_conf" "$tmp_conf" "enable pacman Color and ILoveCandy"
         print_message "Updated $pacman_conf: ensured 'Color' is uncommented and 'ILoveCandy' is present."
     else
         print_message "$pacman_conf already has 'Color' and 'ILoveCandy' set correctly."
     fi
-    rm -f "$tmp_conf"
 }
 
 configure_timeshift() {
@@ -2440,21 +2393,21 @@ configure_grub_btrfsd() {
         return 1
     fi
 
-    # Create (or overwrite) a drop-in override file that removes any '.snapshot' and appends '-t' to ExecStart
-    if is_dry_run; then
-        log_dry_run_operation "configure_grub_btrfsd" "Would write /etc/systemd/system/grub-btrfsd.service.d/override.conf"
-    else
-        if sudo bash -c "cat > /etc/systemd/system/grub-btrfsd.service.d/override.conf << 'EOF'
-[Service]
+    local etc_root
+    etc_root=$(setup_etc_root)
+    local service_file="$etc_root/systemd/system/grub-btrfsd.service"
+    local override_file="$etc_root/systemd/system/grub-btrfsd.service.d/override.conf"
+    local exec_start
+    exec_start=$(grep '^ExecStart=' "$service_file" 2>/dev/null | sed 's/\.snapshot//g; s/$/ -t/' | head -n1)
+    if write_text_atomic "$override_file" "configure grub-btrfsd override" "[Service]
 ExecStart=
-ExecStart=\$(grep '^ExecStart=' /etc/systemd/system/grub-btrfsd.service | sed 's/\.snapshot//g; s/\$/ -t/')
-EOF"; then
-            print_message "grub-btrfsd override file created."
-        else
-            print_error "Failed to create grub-btrfsd override file."
-            track_config_status "grub-btrfsd Configuration" "$CROSS_MARK"
-            return 1
-        fi
+$exec_start
+"; then
+        print_message "grub-btrfsd override file created."
+    else
+        print_error "Failed to create grub-btrfsd override file."
+        track_config_status "grub-btrfsd Configuration" "$CROSS_MARK"
+        return 1
     fi
 
     # Reload systemd daemon and enable the service
@@ -2538,15 +2491,12 @@ configure_monitor() {
         # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
         local wallpaper_conf="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
 
-        # Ensure monitors.conf exists so sed/awk operations succeed
         if [ ! -f "$monitors_conf_file" ]; then
-            mkdir -p "$(dirname "$monitors_conf_file")"
-            cat >"$monitors_conf_file" <<'EOF'
-# Check monitor names (e.g. DP-1, HDMI-A-1) with: `hyprctl monitors`
+            write_text_atomic "$monitors_conf_file" "Create monitor configuration" '# Check monitor names (e.g. DP-1, HDMI-A-1) with: `hyprctl monitors`
 # Example single monitor configuration:
 # monitor=DP-1,2560x1440@144,0x0,1
 # workspace=1,monitor:DP-1,default:true
-EOF
+'
         fi
 
         # Function to get available modes for a monitor
@@ -2661,12 +2611,7 @@ EOF
                 fi
             fi
 
-            # Update monitor configuration
-            if grep -q "^monitor=${monitor_name}," "$monitors_conf_file"; then
-                sed -i --follow-symlinks "s|^monitor=${monitor_name},.*|monitor=${monitor_name},${chosen_resolution},${offset},${scale}|g" "$monitors_conf_file"
-            else
-                sed -i --follow-symlinks "1i monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "$monitors_conf_file"
-            fi
+            replace_config_line "$monitors_conf_file" "^monitor=${monitor_name}," "monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "Configure monitor $monitor_name"
 
             configured_monitors+=("$monitor_name")
         }
@@ -2684,6 +2629,8 @@ EOF
         local secondary="${configured_monitors[1]:-$primary}"
         
         # Update workspace assignments in monitors.conf
+        local workspace_tmp
+        make_tmp workspace_tmp monitor-workspaces.XXXXXX || return 1
         awk -F, -v p="$primary" -v s="$secondary" 'BEGIN { OFS="," }
             /^workspace=/ {
                 split($1, arr, "");
@@ -2692,7 +2639,7 @@ EOF
                 print
             }
             !/^workspace=/ { print }
-        ' "$monitors_conf_file" > "${monitors_conf_file}.tmp" && mv "${monitors_conf_file}.tmp" "$monitors_conf_file"
+        ' "$monitors_conf_file" > "$workspace_tmp" && write_file_atomic "$monitors_conf_file" "$workspace_tmp" "Update monitor workspace assignments"
 
         # Update wallpaper configuration (runtime + stow source if present)
         local monitors_str=""
@@ -2707,26 +2654,20 @@ EOF
         local wc
         for wc in "${wallpaper_confs[@]}"; do
             if [ -f "$wc" ]; then
-                if grep -q "^MONITORS=" "$wc"; then
-                    sed -i --follow-symlinks "s|^MONITORS=.*|MONITORS=($monitors_str)|" "$wc"
-                else
-                    echo "MONITORS=($monitors_str)" >> "$wc"
-                fi
+                replace_config_line "$wc" '^MONITORS=' "MONITORS=($monitors_str)" "Update wallpaper monitor list"
                 print_message "Updated MONITORS in $(basename "$wc"): MONITORS=($monitors_str)"
             else
                 print_warning "Wallpaper configuration file not found: $wc"
             fi
         done
 
-        # Remove any remaining placeholder text
-        sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$monitors_conf_file"
+        sed_file_atomic "$monitors_conf_file" "Remove monitor placeholders" '/MONITOR_[0-9]/d'
         for wc in "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
-            [ -f "$wc" ] && sed -i --follow-symlinks '/MONITOR_[0-9]/d' "$wc"
+            [ -f "$wc" ] && sed_file_atomic "$wc" "Remove wallpaper monitor placeholders" '/MONITOR_[0-9]/d'
         done
 
-        # Keep stow/source copy in sync when it exists (same approach as wallpaper config)
         if [ -f "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" ]; then
-            cp -f "$monitors_conf_file" "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+            copy_file_atomic "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" "$monitors_conf_file" "Synchronize monitor source configuration"
         fi
 
     elif command -v kscreen-doctor &>/dev/null; then
@@ -2805,7 +2746,7 @@ configure_sddm_theme() {
     fi
 
     # Create or update sddm.conf with the theme configuration
-    if ! execute_command "echo -e '[Theme]\nCurrent=eucalyptus-drop' | sudo tee '$sddm_conf'"; then
+    if ! write_text_atomic "$sddm_conf" "Configure SDDM theme" $'[Theme]\nCurrent=eucalyptus-drop\n'; then
         print_error "Failed to create/update SDDM configuration."
         track_config_status "SDDM Theme Setup" "$CROSS_MARK"
         return 1
@@ -2934,6 +2875,9 @@ main() {
     
     check_dependencies
     check_environment
+    if ! is_dry_run; then
+        hss_start_sudo_keepalive
+    fi
     check_user_input
     
     if ! validate_wallpaper_dir; then
@@ -3030,7 +2974,7 @@ run_role_test_scenario() {
     }
     NON_INTERACTIVE=true
     DISTRO=${DISTRO:-arch}
-    LOG_FILE=${LOG_FILE:-$HOME/hss-role-test.log}
+    hss_begin_run "--test-scenario roles" || return $?
     bootstrap_jq || return 1
     load_role_selections || return 1
     prepare_package_selections || return 1
@@ -3043,6 +2987,50 @@ run_role_test_scenario() {
     fi
 }
 
+run_reliability_test_scenario() {
+    [ "${HSS_TEST_MODE:-0}" = 1 ] || return 2
+    NON_INTERACTIVE=${NON_INTERACTIVE:-true}
+    local action=${HSS_RELIABILITY_ACTION:-}
+    case "$action" in
+        lock-hold)
+            hss_begin_run "reliability lock-hold" || return $?
+            printf 'holder pid=%s run=%s\n' "$$" "$HSS_RUN_ID"
+            sleep "${HSS_HOLD_SECONDS:-5}"
+            ;;
+        temp-wait)
+            hss_begin_run "reliability temp-wait" || return $?
+            local temp_path
+            make_tmp temp_path signal.XXXXXX || return 1
+            printf '%s\n' "$temp_path"
+            sleep "${HSS_HOLD_SECONDS:-30}"
+            ;;
+        keepalive)
+            hss_begin_run "reliability keepalive" || return $?
+            hss_start_sudo_keepalive
+            printf '%s\n' "$HSS_KEEPALIVE_PID"
+            sleep "${HSS_HOLD_SECONDS:-1}"
+            ;;
+        atomic)
+            hss_begin_run "reliability atomic" || return $?
+            write_file_atomic "${HSS_DEST:?HSS_DEST is required}" "${HSS_SOURCE:?HSS_SOURCE is required}" "guarded atomic exercise"
+            ;;
+        dry-record)
+            hss_begin_run "reliability dry-record" || return $?
+            DRY_RUN=true
+            write_file_atomic "${HSS_DEST:?HSS_DEST is required}" /dev/null "guarded dry-run exercise"
+            print_dry_run_summary
+            ;;
+        rollback)
+            hss_begin_run "reliability rollback" || return $?
+            hss_rollback "${HSS_ROLLBACK_RUN_ID:?HSS_ROLLBACK_RUN_ID is required}"
+            ;;
+        *)
+            print_error "Unknown reliability action '$action'"
+            return 2
+            ;;
+    esac
+}
+
 if [[ ${BASH_SOURCE[0]} != "$0" ]]; then
     return 0
 fi
@@ -3052,6 +3040,10 @@ VERBOSE=false
 CONFIGURE_MONITOR_ONLY=false
 CONFIGURE_SDDM_ONLY=false
 TEST_SCENARIO=""
+ROLLBACK_RUN_ID=""
+LIST_RUNS=false
+printf -v ORIGINAL_ARGS '%q ' "$@"
+ORIGINAL_ARGS=${ORIGINAL_ARGS% }
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -3060,6 +3052,12 @@ while [[ "$#" -gt 0 ]]; do
         --configure-monitor) CONFIGURE_MONITOR_ONLY=true ;;
         --configure-sddm) CONFIGURE_SDDM_ONLY=true ;;
         --init-dotfiles-git) INIT_DOTFILES_GIT_REPO=true ;;
+        --list-runs) LIST_RUNS=true ;;
+        --rollback)
+            [ "$#" -ge 2 ] || { print_error "--rollback requires a run ID"; exit 2; }
+            ROLLBACK_RUN_ID=$2
+            shift
+            ;;
         --test-scenario)
             [ "$#" -ge 2 ] || { print_error "--test-scenario requires a name"; exit 2; }
             TEST_SCENARIO=$2
@@ -3070,13 +3068,27 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+if [ "$LIST_RUNS" = true ]; then
+    hss_list_runs
+    exit $?
+fi
+
+if [ -n "$ROLLBACK_RUN_ID" ]; then
+    hss_begin_run "$ORIGINAL_ARGS" || exit $?
+    hss_rollback "$ROLLBACK_RUN_ID"
+    exit $?
+fi
+
 if [ -n "$TEST_SCENARIO" ]; then
     case "$TEST_SCENARIO" in
         roles) run_role_test_scenario ;;
+        reliability) run_reliability_test_scenario ;;
         *) print_error "Unknown test scenario '$TEST_SCENARIO'"; exit 2 ;;
     esac
     exit $?
 fi
+
+hss_begin_run "$ORIGINAL_ARGS" || exit $?
 
 if [ "$CONFIGURE_MONITOR_ONLY" = true ]; then
     configure_monitor

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+printf 'notify-send %s\n' "$*" >> "${STUB_LOG:?}"

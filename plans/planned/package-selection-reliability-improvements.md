@@ -1,6 +1,6 @@
 # Package-selection and setup-reliability improvements
 
-Status: implementation in progress (verified and unblocked on 2026-08-29)
+Status: paused after WS-4 by user request (implementation incomplete)
 Classification: complex
 Source baseline revision: `main` at `7105e24` (the verified plan-only worktree modification is allowed before WS-1)
 Verified against: Hyprland 0.56.2 (`extra/hyprland 0.56.2-1`), pacman sync database and AUR RPC as of 2026-08-29
@@ -563,9 +563,9 @@ For each finding record: reviewer run and provider/model; file or symbol; violat
 | WS-1 | complete | worker `6333730b-be43-4c43-9964-52b638d184ac`; parent reran JSON/Rust gates | Changed only `packages.json`, `src/main.rs`, and `src/packages.rs`; 6 tests pass; fmt/check/clippy/diff checks pass; interactive TUI walkthrough deferred to integrated validation |
 | WS-2 | complete | worker `151b4488-8439-40ed-85a0-297b1e8857c7`; parent reran script and verifier gates | Hyprland 0.56.2 reports `config ok`; no warning/deprecation matches; Bash/ShellCheck/diff checks pass; live pseudo/split interaction remains for manual release validation |
 | WS-3 | complete | worker `6b250a07-2655-45d4-8a97-6fd2e894b434`; fix continuation `ac750834-41a4-4aef-8d7b-24acd7dc0af9`; parent reran all focused gates | 22 normal/dry-run cases pass; role validation and twice-run idempotence pass; Bash/ShellCheck/Rust/Hyprland/diff gates pass. Zen and Kitty classes verified locally; other class values remain release-time checks |
-| WS-4 | not started |  |  |
-| WS-5 | not started |  |  |
-| Integrated validation | not started |  |  |
+| WS-4 | complete | worker `025e7dcf-4db2-4dd3-9763-47ad8e6f6b64`; parent reran all WS-1 through WS-4 gates | Locking, run state/logging, atomic writes, manifests, rollback security, dry-run isolation, latest-log lookup, role matrix, Rust gates, ShellCheck, and Hyprland 0.56.2 verification pass. Live sudo, host `/etc`, unrestricted install, and interactive rollback remain manual gates |
+| WS-5 | not started | paused by user request | Repository test runner, CI, README, changelog, and report skeleton remain |
+| Integrated validation | partial | parent validation after WS-4 | All currently implemented Rust, role, reliability, shell, JSON, and Hyprland checks pass; final WS-5/CI/full acceptance has not run |
 | Independent reviews | not started |  |  |
 | HTML report | not started |  |  |
 
@@ -589,3 +589,4 @@ For each finding record: reviewer run and provider/model; file or symbol; violat
 | 2026-08-29 | Keep one manifest row per resolved path and delete unchanged created files on rollback | Repeated writes retain the original backup and rollback has defined created-file semantics |
 | 2026-08-29 | Limit rollback to setup-managed files | Package, service, Stow, and directory-copy reversal is outside this release and must not be implied |
 | 2026-08-29 | Add a guarded test scenario seam | Shell tests exercise production role and reliability functions without running unrestricted system setup |
+| 2026-08-29 | Pause after verified WS-4 and commit the safe state | Explicit user request to update the plan, commit, and stop; WS-5, final reviews, HTML report, and archival remain incomplete |
