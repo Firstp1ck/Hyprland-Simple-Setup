@@ -40,10 +40,6 @@ if [ -f "$STATE_FILE" ]; then
     # Currently hidden, switch to visible
     rm "$STATE_FILE"
     kill_waybar
-    # Refresh LM Studio menu before showing waybar (run synchronously to ensure config is updated)
-    if [ -f "$HOME/.config/waybar/scripts/lmstudio_refresh_menu.sh" ]; then
-        "$HOME/.config/waybar/scripts/lmstudio_refresh_menu.sh" > /dev/null 2>&1
-    fi
     start_waybar "$VISIBLE_CONFIG"
 else
     # Currently visible, switch to hidden

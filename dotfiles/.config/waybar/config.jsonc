@@ -7,21 +7,17 @@
   "modules-left": [
     "custom/power",
     "custom/menu",
-    "custom/lmstudio",
     "tray",
     "hyprland/workspaces",
     "hyprland/submap"
   ],
   "modules-right": [
-    "custom/hyprwhspr",
     "pulseaudio",
     "backlight",
     "custom/temperature",
     "keyboard-state",
-    "custom/razerbattery",
     "battery",
     "network",
-    "custom/vpn",
     "bluetooth",
     "custom/updates",
     "custom/notification",
@@ -261,52 +257,5 @@
       "open_keybinds": "$HOME/.config/hypr/scripts/term_exec.sh --app-id hss-keybinds --title Keybinds -- sh -c 'editor=$(jq -r .roles.tui_editor.editor_bin \"$HOME/.config/hypr/roles.json\"); exec \"$editor\" \"$HOME/.config/hypr/sources/keybindings.lua\"'",
       "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
     }
-  },
-  "custom/razerbattery": {
-    "exec-if": "$HOME/.config/waybar/scripts/check_razer.sh",
-    "exec": "$HOME/.config/waybar/scripts/mouse_battery.sh",
-    "interval": 15,
-    "return-type": "text",
-    "tooltip": true,
-    "tooltip-format": "Wireless mouse\nBattery: {}"
-  },
-  "custom/vpn": {
-    "exec": "$HOME/.config/waybar/scripts/vpn_status.sh",
-    "interval": 5,
-    "return-type": "json",
-    "tooltip": true,
-    "on-click": "$HOME/.config/waybar/scripts/vpn_toggle_wrapper.sh toggle",
-    "on-click-right": "$HOME/.config/waybar/scripts/vpn_toggle_wrapper.sh status"
-  },
-  "custom/lmstudio": {
-    "exec": "$HOME/.config/waybar/scripts/lmstudio_status.sh",
-    "interval": 10,
-    "return-type": "json",
-    "tooltip": true,
-    "escape": true,
-    "on-click": "$HOME/.config/waybar/scripts/lmstudio_eject_model.sh",
-    "menu": "on-click-right",
-    "menu-file": "$HOME/.config/waybar/lmstudio_menu.xml",
-    "menu-actions": {
-      "google-gemma-3-12b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"google/gemma-3-12b\"",
-      "google-gemma-4-26b-a4b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"google/gemma-4-26b-a4b\"",
-      "mistralai-devstral-small-2-2512": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"mistralai/devstral-small-2-2512\"",
-      "mistralai-ministral-3-14b-reasoning": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"mistralai/ministral-3-14b-reasoning\"",
-      "nemotron-orchestrator-8b-deepseek-v3.2-speciale-distill": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"nemotron-orchestrator-8b-deepseek-v3.2-speciale-distill\"",
-      "openai-gpt-oss-20b-abliterated-uncensored-neo-imatrix": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"openai-gpt-oss-20b-abliterated-uncensored-neo-imatrix\"",
-      "openai-gpt-oss-20b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"openai/gpt-oss-20b\"",
-      "pixtral-12b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"pixtral-12b\"",
-      "qwen-qwen3-coder-30b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen/qwen3-coder-30b\"",
-      "qwen3-8b-deepseek-v3.2-speciale-distill": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen3-8b-deepseek-v3.2-speciale-distill\"",
-      "qwen3.5-24b-a3b-reap-0.32": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen3.5-24b-a3b-reap-0.32\"",
-      "qwen3.5-35b-a3b-uncensored-hauhaucs-aggressive": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen3.5-35b-a3b-uncensored-hauhaucs-aggressive\"",
-      "qwen3.6-35b-a3b": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"qwen3.6-35b-a3b\"",
-      "wizard-vicuna-30b-uncensored": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"wizard-vicuna-30b-uncensored\"",
-      "zai-org-glm-4.6v-flash": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"zai-org/glm-4.6v-flash\"",
-      "zai-org-glm-4.7-flash": "$HOME/.config/waybar/scripts/lmstudio_change_model.sh \"zai-org/glm-4.7-flash\""
-    }
-  },
-  "include": [
-    "~/.config/waybar/hyprwhspr-module.jsonc"
-  ]
+  }
 }

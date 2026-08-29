@@ -112,7 +112,6 @@ It sets up the following Components/Apps:
 - Power screen and quick power actions
 - Package, firmware, `.pacnew`, and cache maintenance actions
 - CPU temperature status with detailed sensor tooltips
-- Optional VPN, LM Studio, HyprWhspr, and Razer device modules
 
 **Additional Applications**
 - Keybindings (Extensive Keybinds with App for Overview)
@@ -355,8 +354,6 @@ cd ~/Hyprland-Simple-Setup
 - fwupd
 - pacman-contrib
 - zenity
-- wireguard-tools
-- openresolv
 
 **CLI Tools**
 - bat (Modern cat)
@@ -387,8 +384,6 @@ cd ~/Hyprland-Simple-Setup
 ### AUR Packages
 - xwaylandvideobridge (Screen sharing)
 - waybar-module-pacman-updates-git (Package update status)
-- hyprwhspr (Optional voice-input module)
-- razer-cli (Optional Razer device status)
 - hyprshot (Screenshot utility)
 - visual-studio-code-bin (Code editor)
 - lsplug (Plugin manager)

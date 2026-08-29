@@ -116,10 +116,6 @@ menu menuitem:hover {
 #custom-power,
 #custom-weather,
 #custom-menu,
-#custom-razerbattery,
-#custom-vpn,
-#custom-lmstudio,
-#custom-hyprwhspr,
 #wlr-taskbar {
   background: @background;
   font-family: "JetBrainsMono Nerd Font";
@@ -211,12 +207,6 @@ menu menuitem:hover {
   padding-right: 14px;
 }
 
-#custom-vpn {
-  padding-right: 14px;
-}
-
-#custom-vpn.vpn-up,
-#custom-vpn.vpn-down,
 #network.linked,
 #network.disconnected,
 #network.disabled,
@@ -237,12 +227,10 @@ menu menuitem:hover {
 
 #custom-power:hover,
 #custom-menu:hover,
-#custom-lmstudio:hover,
 #pulseaudio:hover,
 #backlight:hover,
 #custom-temperature:hover,
 #network:hover,
-#custom-vpn:hover,
 #bluetooth:hover,
 #custom-updates:hover,
 #custom-notification:hover,
@@ -304,26 +292,4 @@ menu menuitem:hover {
 
 #idle_inhibitor {
   /* Add unique CSS Options */
-}
-
-/* HyprWhspr states: keep the global Waybar module box styling above,
-   only change accent colors for state feedback. */
-#custom-hyprwhspr.ready,
-#custom-hyprwhspr.stopped {
-  color: @primary;
-  border-color: @primary;
-}
-
-#custom-hyprwhspr.recording {
-  color: @critical;
-  border-color: @critical;
-}
-
-#custom-hyprwhspr.error {
-  color: @warning;
-  border-color: @warning;
-}
-
-#custom-hyprwhspr:hover {
-  background-color: @hover-background;
 }

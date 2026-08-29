@@ -130,9 +130,7 @@
       "ddcutil",
       "fwupd",
       "pacman-contrib",
-      "zenity",
-      "wireguard-tools",
-      "openresolv"
+      "zenity"
     ],
     "theming": [
       "ttf-jetbrains-mono-nerd",
@@ -199,9 +197,7 @@
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
       "waybar-module-pacman-updates-git",
-      "input-remapper",
-      "hyprwhspr",
-      "razer-cli"
+      "input-remapper"
     ],
     "cli_tools": [
       "lsplug",
@@ -325,8 +321,6 @@
     "fwupd": "Firmware update service and command-line client",
     "pacman-contrib": "Package maintenance tools used by the Waybar update menu",
     "zenity": "GTK confirmation dialogs used by the Waybar update action",
-    "wireguard-tools": "WireGuard tools used by the Waybar VPN action",
-    "openresolv": "DNS integration fallback for WireGuard connections",
 
     "ttf-jetbrains-mono-nerd": "JetBrains Mono Nerd Font",
     "ttf-nerd-fonts-symbols": "Nerd Fonts symbols",
@@ -382,8 +376,6 @@
     "xwaylandvideobridge": "XWayland capture bridge",
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
-    "hyprwhspr": "Optional HyprWhspr voice-input module for Waybar",
-    "razer-cli": "Optional Razer device status client for Waybar",
     "lsplug": "Monitor plug/unplug events",
     "input-remapper": "Mouse and keyboard button remapper",
     "pacsea-bin": "Package search and install",
@@ -422,8 +414,6 @@
       "fwupd",
       "pacman-contrib",
       "zenity",
-      "wireguard-tools",
-      "openresolv",
       "curl",
       "less",
       "lm_sensors"
