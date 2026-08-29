@@ -684,6 +684,18 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(footer, vchunks[1]);
 }
 
+fn preflight_row_style(theme: Theme, selected: bool) -> Style {
+    if selected {
+        // Reverse video remains visible when the Linux console ignores RGB colors.
+        Style::default()
+            .fg(theme.blue)
+            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default().fg(theme.text)
+    }
+}
+
 fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -711,15 +723,14 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let mut rows: Vec<Row> = Vec::new();
     let sel = |field: PreflightField| app.preflight_focus == field;
     let mk = |action: &str, name: &str, value: String, selected: bool| {
-        let base = if selected {
-            Style::default()
-                .fg(app.theme.blue)
-                .add_modifier(Modifier::BOLD)
+        let base = preflight_row_style(app.theme, selected);
+        let name = if selected {
+            format!("> {name}")
         } else {
-            Style::default().fg(app.theme.text)
+            format!("  {name}")
         };
         Row::new(vec![
-            Cell::from(name.to_string()).style(base),
+            Cell::from(name).style(base),
             Cell::from(action.to_string()).style(base),
             Cell::from(value).style(base),
         ])
@@ -3495,4 +3506,20 @@ fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_preflight_row_has_color_independent_highlight() {
+        let theme = Theme::catppuccin_mocha();
+        let selected = preflight_row_style(theme, true);
+        let idle = preflight_row_style(theme, false);
+
+        assert!(selected.add_modifier.contains(Modifier::BOLD));
+        assert!(selected.add_modifier.contains(Modifier::REVERSED));
+        assert!(!idle.add_modifier.contains(Modifier::REVERSED));
+    }
 }
