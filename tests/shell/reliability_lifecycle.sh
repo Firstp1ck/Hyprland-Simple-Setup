@@ -53,3 +53,28 @@ if kill -0 "$keepalive_pid" 2>/dev/null; then
   exit 1
 fi
 printf 'ok - sudo keepalive is gone after exit\n'
+
+password_keepalive_out="$fixture/password-keepalive.out"
+sudo_cache="$fixture/sudo-cache"
+: > "$STUB_LOG"
+SUDO_PASSWORD='tui-provided-password' \
+STUB_SUDO_REQUIRE_PASSWORD=1 \
+STUB_SUDO_EXPECTED_PASSWORD='tui-provided-password' \
+STUB_SUDO_CACHE_FILE="$sudo_cache" \
+HSS_RELIABILITY_ACTION=keepalive \
+HSS_KEEPALIVE_INTERVAL=1 \
+HSS_HOLD_SECONDS=1 \
+  "$repo_root/setup.sh" --test-scenario reliability >"$password_keepalive_out" 2>&1
+password_keepalive_pid=$(head -n1 "$password_keepalive_out")
+[[ -f $sudo_cache ]]
+grep -Fq 'sudo -n -v' "$STUB_LOG"
+grep -Fq "sudo -S -p '' -v" "$STUB_LOG"
+if grep -Fq 'tui-provided-password' "$STUB_LOG"; then
+  printf 'not ok - password leaked into sudo command log\n'
+  exit 1
+fi
+if kill -0 "$password_keepalive_pid" 2>/dev/null; then
+  printf 'not ok - password keepalive still alive: %s\n' "$password_keepalive_pid"
+  exit 1
+fi
+printf 'ok - TUI password seeds and maintains unattended sudo credentials\n'

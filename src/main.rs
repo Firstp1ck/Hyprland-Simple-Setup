@@ -505,6 +505,56 @@ fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
     }
 }
 
+const SPINNER_FRAME_MS: u128 = 150;
+const SPINNER_FRAMES: [&str; 4] = ["|", "/", "-", "\\"];
+
+fn spinner_frame(elapsed: Duration) -> &'static str {
+    let index = (elapsed.as_millis() / SPINNER_FRAME_MS) as usize % SPINNER_FRAMES.len();
+    SPINNER_FRAMES[index]
+}
+
+fn installation_step_progress(sections: &[SetupSection]) -> (usize, usize) {
+    (
+        sections.iter().filter(|section| section.done).count(),
+        sections.len(),
+    )
+}
+
+fn installation_percent(completed: usize, total: usize) -> u16 {
+    completed
+        .min(total)
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(0) as u16
+}
+
+fn ascii_progress_bar(completed: usize, total: usize, width: usize) -> String {
+    if width == 0 {
+        return "[]".to_string();
+    }
+
+    let filled = completed
+        .min(total)
+        .saturating_mul(width)
+        .checked_div(total)
+        .unwrap_or(0);
+    let complete = total > 0 && completed >= total;
+    let mut bar = String::with_capacity(width + 2);
+    bar.push('[');
+    for index in 0..width {
+        let symbol = if index < filled {
+            '='
+        } else if !complete && index == filled {
+            '>'
+        } else {
+            '-'
+        };
+        bar.push(symbol);
+    }
+    bar.push(']');
+    bar
+}
+
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Split vertically to create a footer for keybind help
     let vchunks = Layout::default()
@@ -602,9 +652,19 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     f.render_widget(legend, left_chunks[1]);
 
     let desc = "Execute setup.sh with full flow";
+    let install_running = app.child.is_some();
+    let right_constraints = if install_running {
+        vec![
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![Constraint::Length(3), Constraint::Min(1)]
+    };
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .constraints(right_constraints)
         .split(chunks[1]);
 
     let script_path_text = app
@@ -666,6 +726,52 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         )
         .wrap(Wrap { trim: false });
     f.render_widget(logs, right_chunks[1]);
+
+    if install_running {
+        let progress_area = right_chunks[2];
+        let elapsed = app
+            .install_started_at
+            .as_ref()
+            .map(Instant::elapsed)
+            .unwrap_or_default();
+        let (completed, total) = installation_step_progress(&app.sections);
+        let percent = installation_percent(completed, total);
+        // The ASCII bar and reverse-video status remain visible on a 16-color Linux TTY.
+        let bar_width = usize::from(progress_area.width)
+            .saturating_sub(48)
+            .clamp(8, 32);
+        let bar = ascii_progress_bar(completed, total, bar_width);
+        let progress_label = if total == 0 {
+            format!(
+                "{bar} progress unavailable  elapsed {}",
+                format_duration(elapsed)
+            )
+        } else {
+            format!(
+                "{bar} {percent:>3}% ({completed}/{total} steps)  elapsed {}",
+                format_duration(elapsed)
+            )
+        };
+        let progress = Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" RUNNING {} ", spinner_frame(elapsed)),
+                Style::default()
+                    .fg(app.theme.text)
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::REVERSED),
+            ),
+            Span::raw(" "),
+            Span::styled(progress_label, Style::default().fg(app.theme.text)),
+        ]))
+        .block(
+            Block::default()
+                .title("Installation progress")
+                .borders(Borders::ALL)
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.mauve)),
+        );
+        f.render_widget(progress, progress_area);
+    }
 
     // Footer with keybind help
     let footer = Paragraph::new(Text::from(vec![Line::from(
@@ -3521,5 +3627,35 @@ mod tests {
         assert!(selected.add_modifier.contains(Modifier::BOLD));
         assert!(selected.add_modifier.contains(Modifier::REVERSED));
         assert!(!idle.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn spinner_advances_at_a_visible_rate() {
+        assert_eq!(spinner_frame(Duration::from_millis(0)), "|");
+        assert_eq!(spinner_frame(Duration::from_millis(150)), "/");
+        assert_eq!(spinner_frame(Duration::from_millis(300)), "-");
+        assert_eq!(spinner_frame(Duration::from_millis(450)), "\\");
+        assert_eq!(spinner_frame(Duration::from_millis(600)), "|");
+    }
+
+    #[test]
+    fn section_progress_counts_only_completed_steps() {
+        let sections = vec![
+            SetupSection {
+                title: "Done".to_string(),
+                done: true,
+                severity: StepSeverity::None,
+            },
+            SetupSection {
+                title: "Running".to_string(),
+                done: false,
+                severity: StepSeverity::None,
+            },
+        ];
+
+        assert_eq!(installation_step_progress(&sections), (1, 2));
+        assert_eq!(installation_percent(1, 2), 50);
+        assert_eq!(ascii_progress_bar(1, 2, 5), "[==>--]");
+        assert_eq!(ascii_progress_bar(2, 2, 5), "[=====]");
     }
 }

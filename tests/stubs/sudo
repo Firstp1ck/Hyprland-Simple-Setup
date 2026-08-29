@@ -5,11 +5,24 @@ set -euo pipefail
   printf ' %q' "$@"
   printf '\n'
 } >> "$STUB_LOG"
+reads_password=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -n|-S|-k|-v) shift ;;
+    -S) reads_password=true; shift ;;
+    -p) shift 2 ;;
+    -n|-k|-v) shift ;;
     *) break ;;
   esac
 done
+if [[ ${STUB_SUDO_REQUIRE_PASSWORD:-0} == 1 ]]; then
+  cache_file=${STUB_SUDO_CACHE_FILE:?STUB_SUDO_CACHE_FILE is required}
+  if [[ $reads_password == true ]]; then
+    IFS= read -r supplied_password
+    [[ $supplied_password == "${STUB_SUDO_EXPECTED_PASSWORD:?STUB_SUDO_EXPECTED_PASSWORD is required}" ]]
+    : > "$cache_file"
+  else
+    [[ -f $cache_file ]] || exit 1
+  fi
+fi
 [[ $# -gt 0 ]] || exit 0
 exec "$@"

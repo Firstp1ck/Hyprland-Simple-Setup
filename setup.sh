@@ -1279,8 +1279,8 @@ check_environment() {
             : # skip
         else
             if [ -n "$SUDO_PASSWORD" ]; then
-                # Validate provided password; -k ignores any cached creds; -v validates only
-                if ! echo "$SUDO_PASSWORD" | sudo -S -k -v &>/dev/null; then
+                # Validate once and seed sudo's timestamp before any nested package tool can need it.
+                if ! printf '%s\n' "$SUDO_PASSWORD" | sudo -S -k -p '' -v &>/dev/null; then
                     handle_error "Invalid sudo password or sudo not configured for this user."
                 fi
             else
@@ -2795,6 +2795,11 @@ main() {
         setup_sudo_password
     fi
 
+    check_environment
+    if ! is_dry_run; then
+        hss_start_sudo_keepalive || handle_error "Unable to keep sudo credentials active for unattended setup."
+    fi
+
     check_disk_space
     check_distro
     bootstrap_jq || return 1
@@ -2822,10 +2827,6 @@ main() {
     fi
     
     check_dependencies
-    check_environment
-    if ! is_dry_run; then
-        hss_start_sudo_keepalive
-    fi
     check_user_input
     
     if ! validate_wallpaper_dir; then
@@ -2954,7 +2955,7 @@ run_reliability_test_scenario() {
             ;;
         keepalive)
             hss_begin_run "reliability keepalive" || return $?
-            hss_start_sudo_keepalive
+            hss_start_sudo_keepalive || return $?
             printf '%s\n' "$HSS_KEEPALIVE_PID"
             sleep "${HSS_HOLD_SECONDS:-1}"
             ;;

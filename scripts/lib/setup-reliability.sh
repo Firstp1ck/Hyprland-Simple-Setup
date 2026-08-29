@@ -165,13 +165,23 @@ make_tmp() {
     printf -v "$output_var" '%s' "$path"
 }
 
+hss_refresh_sudo() {
+    sudo -n -v >/dev/null 2>&1 && return 0
+    [[ -n ${SUDO_PASSWORD:-} ]] || return 1
+    printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' -v >/dev/null 2>&1
+}
+
 hss_start_sudo_keepalive() {
     [[ -z $HSS_KEEPALIVE_PID ]] || return 0
+    hss_refresh_sudo || {
+        printf 'Unable to validate sudo credentials for unattended setup\n' >&2
+        return 1
+    }
     (
         while true; do
-            sudo -n true >/dev/null 2>&1 || true
             sleep "${HSS_KEEPALIVE_INTERVAL:-50}" & wait $! || exit
             kill -0 "$$" 2>/dev/null || exit
+            hss_refresh_sudo || exit
         done
     ) &
     HSS_KEEPALIVE_PID=$!
