@@ -111,6 +111,13 @@ pypr="$HOME/dotfiles/.config/pypr/config.toml"
 assert_count 1 '^command = "~/.config/hypr/scripts/term_exec.sh --app-id hss-scratchpad --title Scratchpad -- bash"$' "$pypr" "Pyprland terminal wrapper"
 assert_count 1 '^class = "hss-scratchpad"$' "$pypr" "Pyprland stable class"
 
+hyprlock="$HOME/dotfiles/.config/hypr/hyprlock.conf"
+assert_count 1 '^[[:space:]]*path = screenshot$' "$hyprlock" "hyprlock screenshot background"
+if grep -Fq "path = \$wallpaper" "$hyprlock"; then
+  printf 'not ok - hyprlock still uses the wallpaper directory as an image\n'
+  exit 1
+fi
+
 dry_output=$(DRY_RUN=true "$repo_root/setup.sh" --test-scenario roles 2>&1)
 role_dependent_paths=(
   "$HOME/dotfiles/.config/hypr/roles.json"
