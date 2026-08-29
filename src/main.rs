@@ -3811,9 +3811,9 @@ mod tests {
                 "Setting up Timeshift",
                 "Configuring grub-btrfsd",
                 "Configuring monitor",
+                "Enabling SDDM display manager",
                 "Configuring SDDM Theme",
                 "Installation Summary",
-                "Enabling SDDM display manager",
                 "Hyprland setup completed successfully!",
             ]
         );

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ ${1:-} == passwd && -n ${2:-} ]] || exit 2
+shell_path=$(<"${STUB_LOGIN_SHELL_FILE:?STUB_LOGIN_SHELL_FILE is required}")
+printf '%s:x:1000:1000:Test User:/home/%s:%s\n' "$2" "$2" "$shell_path"

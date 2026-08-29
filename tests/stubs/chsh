@@ -5,4 +5,16 @@ set -euo pipefail
   printf ' %q' "$@"
   printf '\n'
 } >> "$STUB_LOG"
+
+shell_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s) shell_path=${2:?missing shell path}; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+if [[ -n ${STUB_LOGIN_SHELL_FILE:-} && -n $shell_path ]]; then
+  printf '%s\n' "$shell_path" > "$STUB_LOGIN_SHELL_FILE"
+fi
 exit 0

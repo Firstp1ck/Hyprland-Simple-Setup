@@ -155,13 +155,17 @@ fi
 printf 'ok - GTK file chooser and selected editor MIME defaults are configured without a live Hyprland session\n'
 
 managed_wallpaper_script="$HOME/dotfiles/.config/hypr/scripts/change_wallpaper.sh"
+managed_calendar_script="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
 printf 'outdated managed script\n' > "$managed_wallpaper_script"
-chmod 0600 "$managed_wallpaper_script"
+printf 'outdated managed script\n' > "$managed_calendar_script"
+chmod 0600 "$managed_wallpaper_script" "$managed_calendar_script"
 HSS_RELIABILITY_ACTION=sync-managed \
   "$repo_root/setup.sh" --test-scenario reliability >"$fixture/sync-managed.out" 2>&1
 cmp -s "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" "$managed_wallpaper_script"
+cmp -s "$repo_root/dotfiles/.config/hypr/scripts/float_calendar.sh" "$managed_calendar_script"
 [[ -x $managed_wallpaper_script ]]
-printf 'ok - existing dotfiles receive installer-managed wallpaper startup fixes\n'
+[[ -x $managed_calendar_script ]]
+printf 'ok - existing dotfiles receive installer-managed wallpaper and calendar script fixes\n'
 
 default_config_dir="$HOME/.config/hypr/monitor-default-test"
 default_monitors="$default_config_dir/monitors.lua"
@@ -235,10 +239,11 @@ WALLPAPER_STUB_LOG="$wallpaper_stub_log" \
 HYPRPAPER_RUNNING_FILE="$fixture/hyprpaper-running" \
 PATH="$wallpaper_bin:$PATH" \
   "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" >"$fixture/wallpaper-manual.out" 2>&1
-grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-default.out"
-grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-manual.out"
+grep -Fq 'No explicit monitors configured; using active outputs and the hyprpaper fallback target.' "$fixture/wallpaper-default.out"
+grep -Fq 'No explicit monitors configured; using active outputs and the hyprpaper fallback target.' "$fixture/wallpaper-manual.out"
 [[ $(grep -Fxc 'start hyprpaper' "$wallpaper_stub_log") -eq 1 ]]
 grep -Eq '^, .*/default[.]png, cover$' "$wallpaper_stub_log"
+grep -Eq '^eDP-1, .*/default[.]png, cover$' "$wallpaper_stub_log"
 if grep -Fq 'MONITORS array is empty' "$fixture/wallpaper-default.out"; then
   printf 'not ok - empty monitor list still fails wallpaper startup\n'
   exit 1

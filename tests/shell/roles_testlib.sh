@@ -14,6 +14,7 @@ setup_role_fixture() {
   export NON_INTERACTIVE=true
   export DISTRO=arch
   export STUB_LOG="$root/stub.log"
+  export STUB_LOGIN_SHELL_FILE="$root/login-shell"
   export HSS_ETC_SHELLS="$root/shells"
   export PATH="$repo_root/tests/stubs:$PATH"
   export SELECTED_PACMAN_PACKAGES=""
@@ -28,6 +29,7 @@ setup_role_fixture() {
     ln -s "$HOME/dotfiles/.config/$name" "$HOME/.config/$name"
   done
   printf '%s\n' /usr/bin/fish /bin/bash /usr/bin/zsh > "$HSS_ETC_SHELLS"
+  printf '%s\n' /bin/bash > "$STUB_LOGIN_SHELL_FILE"
   : > "$STUB_LOG"
 }
 

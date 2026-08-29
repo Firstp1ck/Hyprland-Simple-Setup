@@ -1478,6 +1478,7 @@ sync_installer_managed_runtime_files() {
         ".config/hypr/scripts/change_wallpaper.sh"
         ".config/hypr/scripts/Startup_check.sh"
         ".config/hypr/scripts/run_once.sh"
+        ".config/hypr/scripts/float_calendar.sh"
     )
 
     for relative in "${managed_files[@]}"; do
@@ -2073,7 +2074,7 @@ install_aur_extras() {
 configure_shell() {
     announce_step "Configuring selected shell"
     load_role_selections || return 1
-    local shell_path invoking_user shells_file
+    local shell_path invoking_user shells_file configured_shell
     shell_path=$(role_field shell shell_path) || return 1
     invoking_user=${SUDO_USER:-$(id -un)}
     shells_file=${HSS_ETC_SHELLS:-/etc/shells}
@@ -2087,13 +2088,26 @@ configure_shell() {
         record_hard_failure "configure_shell" "Shell path '$shell_path' is not approved"
         return 1
     fi
-    if execute_command "sudo chsh -s '$shell_path' -- '$invoking_user'" "Set default shell for $invoking_user"; then
-        track_config_status "Default Shell ($ROLE_SHELL)" "$CHECK_MARK"
-    else
+    if ! execute_command "sudo chsh -s '$shell_path' -- '$invoking_user'" "Set default shell for $invoking_user"; then
         track_config_status "Default Shell ($ROLE_SHELL)" "$CROSS_MARK"
         record_hard_failure "configure_shell" "Failed to set shell for $invoking_user"
         return 1
     fi
+    if is_dry_run; then
+        print_message "Dry run: login shell verification skipped."
+        return 0
+    fi
+
+    configured_shell=$(getent passwd "$invoking_user" 2>/dev/null | awk -F: 'NR == 1 { print $7 }')
+    if [ "$configured_shell" != "$shell_path" ]; then
+        print_error "Login shell verification failed for $invoking_user: expected '$shell_path', found '${configured_shell:-unknown}'"
+        track_config_status "Default Shell ($ROLE_SHELL)" "$CROSS_MARK"
+        record_hard_failure "configure_shell" "Login shell verification failed for $invoking_user"
+        return 1
+    fi
+
+    print_message "Login shell for $invoking_user is now $shell_path. Log out completely and log back in to use it."
+    track_config_status "Default Shell ($ROLE_SHELL)" "$CHECK_MARK"
 
     [ "$ROLE_SHELL" = fish ] || return 0
     if [ "${HSS_TEST_MODE:-0}" = 1 ]; then
@@ -2735,11 +2749,12 @@ hl.workspace_rule({ workspace = \"2\", monitor = \"$secondary\" })
 configure_sddm_theme() {
     announce_step "Configuring SDDM Theme"
 
-    # Check if SDDM is the current display manager
-    if ! systemctl is-enabled sddm &>/dev/null; then
-        print_message "SDDM is not enabled as display manager. Skipping theme configuration."
-        track_config_status "SDDM Theme Setup" "$CIRCLE (Not enabled)"
-        record_skipped "configure_sddm_theme" "SDDM is not enabled as display manager"
+    # Package installation creates the theme directory. Service enablement is
+    # handled immediately before this step and is not a theme prerequisite.
+    if ! command -v sddm >/dev/null 2>&1 && [ ! -d /usr/share/sddm ]; then
+        print_message "SDDM is not installed. Skipping theme configuration."
+        track_config_status "SDDM Theme Setup" "$CIRCLE (Not installed)"
+        record_skipped "configure_sddm_theme" "SDDM is not installed"
         return 0
     fi
 
@@ -2806,19 +2821,19 @@ configure_sddm_theme() {
     track_config_status "SDDM Theme Setup" "$CHECK_MARK"
 }
 
-# Enable and start SDDM as the final step of installation
-enable_sddm_last() {
+# Enable SDDM after package installation and before configuring its theme.
+enable_sddm() {
     announce_step "Enabling SDDM display manager"
     if command -v systemctl >/dev/null 2>&1; then
         if execute_command "sudo systemctl enable sddm" "Enable SDDM"; then
             print_message "SDDM has been enabled."
         else
             print_warning "Failed to enable SDDM. You can try manually: sudo systemctl enable sddm"
-            record_soft_error "enable_sddm_last" "Failed to enable SDDM"
+            record_soft_error "enable_sddm" "Failed to enable SDDM"
         fi
     else
         print_warning "systemctl not available; skipping SDDM enable."
-        record_skipped "enable_sddm_last" "systemctl not available"
+        record_skipped "enable_sddm" "systemctl not available"
     fi
 }
 
@@ -3001,14 +3016,12 @@ main() {
     configure_timeshift
     configure_grub_btrfsd
     configure_monitor
+    enable_sddm
     configure_sddm_theme
     print_dry_run_summary
     print_status_summary
     verify_workspace_config
     print_final_recommendation_summary
-
-    # As the very last step, enable and start SDDM (may end current session)
-    enable_sddm_last
 
     announce_step "Hyprland setup completed successfully!"
 }

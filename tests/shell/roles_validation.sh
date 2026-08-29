@@ -31,9 +31,18 @@ export SELECTED_AUR_PACKAGES=""
 set_role_defaults
 ROLE_SHELL=zsh
 export ROLE_SHELL
+DRY_RUN=true "$repo_root/setup.sh" --test-scenario roles >/dev/null 2>&1
+[[ $(<"$STUB_LOGIN_SHELL_FILE") == /bin/bash ]]
 "$repo_root/setup.sh" --test-scenario roles >/dev/null 2>&1
 grep -Fq "chsh -s /usr/bin/zsh --" "$STUB_LOG"
-printf 'ok - chsh receives explicit zsh path and username\n'
+[[ $(<"$STUB_LOGIN_SHELL_FILE") == /usr/bin/zsh ]]
+printf 'ok - shell dry-run is non-mutating and a real run verifies the resulting login shell\n'
+
+enable_sddm_line=$(grep -n '^[[:space:]]*enable_sddm$' "$repo_root/setup.sh" | head -n1 | cut -d: -f1)
+configure_sddm_theme_line=$(grep -n '^[[:space:]]*configure_sddm_theme$' "$repo_root/setup.sh" | head -n1 | cut -d: -f1)
+[[ -n $enable_sddm_line && -n $configure_sddm_theme_line ]]
+(( enable_sddm_line < configure_sddm_theme_line ))
+printf 'ok - SDDM is enabled before its theme is configured\n'
 
 # Reproduce a previous installer run that enabled both terminal layouts, then
 # verify the reconciliation keeps only the selected Kitty session active.
@@ -118,9 +127,10 @@ for root in sources sources_example; do
     printf 'not ok - %s overrides XDG application discovery paths\n' "$root"
     exit 1
   fi
-  for class in hss-scratchpad hss-notes hss-calendar hss-clipboard; do
+  for class in hss-scratchpad hss-notes hss-clipboard; do
     assert_count 1 "^window_rule\\(\"${class}\"," "$windows" "$root stable $class rule"
   done
+  assert_count 1 '^window_rule\("org\.kde\.merkuro\.calendar",' "$windows" "$root Merkuro calendar rule"
 done
 
 jq -e '.roles.gui_editor.executable == "zeditor" and .roles.gui_editor.editor_bin == "zeditor"' \
@@ -135,6 +145,13 @@ assert_count 1 "\"on-click\": \"\\\$HOME/.config/hypr/scripts/menu_exec.sh --tog
 assert_count 1 "\"drun\": \"\\\$HOME/.config/hypr/scripts/menu_exec.sh\"" "$waybar" "Waybar dmenu wrapper"
 assert_count 1 '"hss-scratchpad"' "$waybar" "Waybar scratchpad ignore"
 assert_count 1 '"hss-clipboard"' "$waybar" "Waybar clipboard ignore"
+assert_count 1 'Left click: open Merkuro Calendar' "$waybar" "Waybar calendar tooltip"
+assert_count 1 "\"on-click\": \"\\\$HOME/.config/hypr/scripts/float_calendar.sh\"" "$waybar" "Waybar calendar launcher"
+
+calendar="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
+assert_count 1 'org\\\.kde\\\.merkuro\\\.calendar' "$calendar" "Merkuro window class"
+assert_count 1 '^    -- merkuro-calendar$' "$calendar" "Merkuro executable"
+assert_count 0 'calcurse' "$calendar" "removed Calcurse launcher"
 
 pypr="$HOME/dotfiles/.config/pypr/config.toml"
 assert_count 1 '^command = "~/.config/hypr/scripts/term_exec.sh --app-id hss-scratchpad --title Scratchpad -- bash"$' "$pypr" "Pyprland terminal wrapper"

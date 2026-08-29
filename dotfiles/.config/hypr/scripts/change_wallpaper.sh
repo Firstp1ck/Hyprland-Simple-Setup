@@ -32,13 +32,6 @@ if [ -z "$WALLPAPER" ]; then
   exit 1
 fi
 
-# Always assign the documented empty-monitor fallback first. Explicit monitor
-# assignments follow it so connected outputs receive their requested target.
-WALLPAPER_TARGETS=("" "${MONITORS[@]}")
-if [ ${#MONITORS[@]} -eq 0 ]; then
-  echo "No explicit monitors configured; using the hyprpaper fallback target."
-fi
-
 # Recover the active Hyprland environment for manual invocations.
 ensure_hyprland_env() {
   local uid runtime_dir hypr_dir sig wayland_sock
@@ -119,6 +112,30 @@ ensure_hyprpaper_running() {
 
 if ! ensure_hyprpaper_running; then
   exit 1
+fi
+
+# Assign the documented fallback, configured outputs, and every output that is
+# active now. The explicit active-output targets matter because hyprpaper's
+# fallback does not replace a target previously assigned to a monitor.
+WALLPAPER_TARGETS=("")
+append_wallpaper_target() {
+  local candidate=$1 existing
+  [ -n "$candidate" ] || return 0
+  for existing in "${WALLPAPER_TARGETS[@]}"; do
+    [ "$existing" = "$candidate" ] && return 0
+  done
+  WALLPAPER_TARGETS+=("$candidate")
+}
+
+for monitor in "${MONITORS[@]}"; do
+  append_wallpaper_target "$monitor"
+done
+while IFS= read -r monitor; do
+  append_wallpaper_target "$monitor"
+done < <(hyprctl monitors | sed -nE 's/^Monitor ([^ ]+).*/\1/p')
+
+if [ ${#MONITORS[@]} -eq 0 ]; then
+  echo "No explicit monitors configured; using active outputs and the hyprpaper fallback target."
 fi
 
 # A real wallpaper request is the IPC readiness check. Retry connection errors

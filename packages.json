@@ -18,6 +18,7 @@
       "python-requests",
       "python-pyquery",
       "tk",
+      "xorg-xwayland",
       "arch-wiki-docs",
       "hyprland",
       "hyprsunset",
@@ -159,7 +160,6 @@
       "fastfetch",
       "tldr",
       "zellij",
-      "calcurse",
       "psensor",
       "konsole",
       "playerctl",
@@ -172,7 +172,8 @@
       "lm_sensors"
     ],
     "gui_tools": [
-      "zed"
+      "zed",
+      "merkuro"
     ]
   },
   "aur_packages": {
@@ -222,7 +223,8 @@
     "python": "Python interpreter",
     "python-requests": "Python HTTP library",
     "python-pyquery": "jQuery-like HTML parser",
-    "tk": "Tk GUI toolkit",
+    "tk": "Tk GUI toolkit used by the keybind viewer",
+    "xorg-xwayland": "X11 compatibility server required by the Tk keybind viewer",
     "arch-wiki-docs": "Offline Arch Wiki",
     "hyprland": "Hyprland compositor",
     "xdg-desktop-portal-hyprland": "Portal backend for Hyprland",
@@ -347,7 +349,6 @@
     "fastfetch": "System info tool",
     "tldr": "Simplified man pages",
     "zellij": "Terminal workspace",
-    "calcurse": "CLI calendar and tasks",
     "psensor": "Hardware sensors monitor",
     "konsole": "KDE terminal",
     "playerctl": "Media player control",
@@ -367,6 +368,7 @@
     "fuzzel": "Wayland application launcher",
     "bemenu": "Dynamic Wayland menu",
     "zed": "Zed code editor",
+    "merkuro": "Calendar and tasks application",
     "visual-studio-code-bin": "VS Code (binary)",
     "cursor-bin": "Cursor code editor (binary, AUR)",
     "github-desktop-bin": "GitHub Desktop",
@@ -403,6 +405,8 @@
       "libnotify",
       "python",
       "python-requests",
+      "tk",
+      "xorg-xwayland",
       "hyprshot",
       "pavucontrol-qt",
       "qastools",
