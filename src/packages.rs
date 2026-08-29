@@ -666,6 +666,20 @@ mod tests {
     }
 
     #[test]
+    fn shipped_packages_use_current_hyprland_guiutils_name() {
+        let registry = shipped_registry();
+        let packages: BTreeSet<&str> = registry
+            .hyprland_packages
+            .values()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+
+        assert!(packages.contains("hyprland-guiutils"));
+        assert!(!packages.contains("hyprland-qtutils"));
+    }
+
+    #[test]
     fn zed_role_uses_the_installed_arch_executable() {
         let registry = shipped_registry();
         let zed = registry.roles["gui_editor"]

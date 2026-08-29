@@ -143,6 +143,7 @@ struct AppState {
     last_tick: Instant,
     scroll: u16,
     follow_tail: bool,
+    log_viewport_lines: usize,
     rx: Receiver<String>,
     tx: Sender<String>,
     setup_script: Option<PathBuf>,
@@ -241,6 +242,7 @@ impl AppState {
             last_tick: Instant::now(),
             scroll: 0,
             follow_tail: true,
+            log_viewport_lines: 1,
             rx,
             tx,
             setup_script,
@@ -375,10 +377,61 @@ impl AppState {
         if self.logs.len() > 5000 {
             let drop = self.logs.len() - 5000;
             self.logs.drain(0..drop);
+            if !self.follow_tail {
+                self.scroll = self.scroll.saturating_sub(drop as u16);
+            }
         }
-        if self.follow_tail {
-            self.scroll = self.logs.len().saturating_sub(1) as u16;
-        }
+        sync_output_scroll_after_append(
+            &mut self.scroll,
+            self.follow_tail,
+            self.logs.len(),
+            self.log_viewport_lines,
+        );
+    }
+}
+
+const OUTPUT_SCROLL_STEP: u16 = 8;
+
+fn output_tail_start(total_lines: usize, visible_lines: usize) -> u16 {
+    total_lines.saturating_sub(visible_lines) as u16
+}
+
+fn scroll_output_up(
+    scroll: &mut u16,
+    follow_tail: &mut bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    if *follow_tail {
+        *scroll = output_tail_start(total_lines, visible_lines);
+    }
+    *follow_tail = false;
+    *scroll = scroll.saturating_sub(OUTPUT_SCROLL_STEP);
+}
+
+fn scroll_output_down(scroll: &mut u16, total_lines: usize, visible_lines: usize) {
+    let max_scroll = output_tail_start(total_lines, visible_lines);
+    *scroll = scroll.saturating_add(OUTPUT_SCROLL_STEP).min(max_scroll);
+}
+
+fn resume_output_follow(
+    scroll: &mut u16,
+    follow_tail: &mut bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    *follow_tail = true;
+    *scroll = output_tail_start(total_lines, visible_lines);
+}
+
+fn sync_output_scroll_after_append(
+    scroll: &mut u16,
+    follow_tail: bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    if follow_tail {
+        *scroll = output_tail_start(total_lines, visible_lines);
     }
 }
 
@@ -399,7 +452,9 @@ fn main() -> Result<()> {
     let mut app = AppState::new(rx, app_tx, setup_script);
     app.push_log_line("Hyprland Setup TUI - ratatui + crossterm");
     app.push_log_line("Use Arrow Up/Down to select, Enter to run");
-    app.push_log_line("Keys: q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll");
+    app.push_log_line(
+        "Keys: q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll, Home/End=follow",
+    );
     if app.setup_script.is_none() {
         app.push_log_line(
             "setup.sh not found automatically. Set $HYPR_SETUP_PATH or run from repo root.",
@@ -453,9 +508,7 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
             }
-            // Ensure the Output pane follows the tail to show the final lines
-            app.follow_tail = true;
-            app.scroll = app.logs.len().saturating_sub(1) as u16;
+            // Preserve a user-selected scroll position when the process ends.
             // Mark the final section as done when the process ends
             if let Some(idx) = app.current_section.take()
                 && let Some(sec) = app.sections.get_mut(idx)
@@ -779,7 +832,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             Span::styled("Script: ", Style::default().fg(app.theme.yellow)),
             Span::raw(script_path_text),
         ]),
-        Line::from("q quit  Enter run  ↑↓ navigate  PgUp/PgDn scroll"),
+        Line::from("q quit  Enter run  ↑↓ navigate  PgUp/PgDn scroll  Home/End follow"),
     ])
     .block(
         Block::default()
@@ -793,16 +846,14 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     // Calculate visible slice to avoid cloning thousands of lines every frame
     let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
+    app.log_viewport_lines = visible_lines;
     let total_lines = app.logs.len();
-    let mut start_idx = app.scroll as usize;
-    if app.follow_tail {
-        start_idx = total_lines.saturating_sub(visible_lines);
+    let max_scroll = total_lines.saturating_sub(visible_lines);
+    let start_idx = if app.follow_tail {
+        max_scroll
     } else {
-        let max_scroll = total_lines.saturating_sub(1);
-        if start_idx > max_scroll {
-            start_idx = max_scroll;
-        }
-    }
+        (app.scroll as usize).min(max_scroll)
+    };
     let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
     let log_text: Vec<Line> = app.logs[start_idx..end_idx]
         .iter()
@@ -873,7 +924,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     // Footer with keybind help
     let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Enter: preflight   PgUp/PgDn: scroll   Home/End: follow   c: clear   k: kill   q: quit",
+        "Enter: preflight   PgUp/PgDn: scroll   Home/End: resume follow   c: clear   k: kill   q: quit",
     )]))
     .block(
         Block::default()
@@ -1877,24 +1928,21 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             KeyCode::Enter => {
                 app.ui_mode = UiMode::Preflight;
             }
-            KeyCode::PageUp => {
-                app.follow_tail = false;
-                app.scroll = app.scroll.saturating_sub(8);
-            }
+            KeyCode::PageUp => scroll_output_up(
+                &mut app.scroll,
+                &mut app.follow_tail,
+                app.logs.len(),
+                app.log_viewport_lines,
+            ),
             KeyCode::PageDown => {
-                let max = app.logs.len().saturating_sub(1) as u16;
-                app.scroll = (app.scroll.saturating_add(8)).min(max);
-                if app.scroll >= max {
-                    app.follow_tail = true;
-                }
+                scroll_output_down(&mut app.scroll, app.logs.len(), app.log_viewport_lines)
             }
-            KeyCode::Home => {
-                app.follow_tail = false;
-                app.scroll = 0;
-            }
-            KeyCode::End => {
-                app.follow_tail = true;
-            }
+            KeyCode::Home | KeyCode::End => resume_output_follow(
+                &mut app.scroll,
+                &mut app.follow_tail,
+                app.logs.len(),
+                app.log_viewport_lines,
+            ),
             KeyCode::Char('c') => {
                 app.logs.clear();
                 app.scroll = 0;
@@ -2106,9 +2154,6 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
-    // Auto-follow output from the start of the run
-    app.follow_tail = true;
-    app.scroll = app.logs.len().saturating_sub(1) as u16;
     let tx_out = app.tx.clone();
     if let Some(mut stdout) = stdout {
         thread::spawn(move || {
@@ -2762,23 +2807,20 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 
     match key.code {
         KeyCode::Char('q') => return Ok(true),
-        KeyCode::Home => {
-            app.follow_tail = false;
-            app.scroll = 0;
-        }
-        KeyCode::End => {
-            app.follow_tail = true;
-        }
-        KeyCode::PageUp => {
-            app.follow_tail = false;
-            app.scroll = app.scroll.saturating_sub(8);
-        }
+        KeyCode::Home | KeyCode::End => resume_output_follow(
+            &mut app.scroll,
+            &mut app.follow_tail,
+            app.logs.len(),
+            app.log_viewport_lines,
+        ),
+        KeyCode::PageUp => scroll_output_up(
+            &mut app.scroll,
+            &mut app.follow_tail,
+            app.logs.len(),
+            app.log_viewport_lines,
+        ),
         KeyCode::PageDown => {
-            let max = app.logs.len().saturating_sub(1) as u16;
-            app.scroll = (app.scroll.saturating_add(8)).min(max);
-            if app.scroll >= max {
-                app.follow_tail = true;
-            }
+            scroll_output_down(&mut app.scroll, app.logs.len(), app.log_viewport_lines)
         }
         KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => preflight_focus_next(app),
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => preflight_focus_prev(app),
@@ -3825,6 +3867,33 @@ mod tests {
             output_line_severity("[2026-08-29 10:59:08] package installation complete"),
             StepSeverity::None
         );
+    }
+
+    #[test]
+    fn manual_output_scroll_stays_detached_until_follow_is_resumed() {
+        let mut scroll = output_tail_start(100, 20);
+        let mut follow_tail = true;
+
+        scroll_output_up(&mut scroll, &mut follow_tail, 100, 20);
+        assert_eq!(scroll, 72);
+        assert!(!follow_tail);
+
+        sync_output_scroll_after_append(&mut scroll, follow_tail, 120, 20);
+        assert_eq!(scroll, 72);
+        assert!(!follow_tail);
+
+        for _ in 0..10 {
+            scroll_output_down(&mut scroll, 120, 20);
+        }
+        assert_eq!(scroll, 100);
+        assert!(!follow_tail);
+
+        resume_output_follow(&mut scroll, &mut follow_tail, 120, 20);
+        assert_eq!(scroll, 100);
+        assert!(follow_tail);
+
+        sync_output_scroll_after_append(&mut scroll, follow_tail, 121, 20);
+        assert_eq!(scroll, 101);
     }
 
     #[test]

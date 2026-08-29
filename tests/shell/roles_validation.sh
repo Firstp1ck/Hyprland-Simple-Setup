@@ -35,6 +35,26 @@ export ROLE_SHELL
 grep -Fq "chsh -s /usr/bin/zsh --" "$STUB_LOG"
 printf 'ok - chsh receives explicit zsh path and username\n'
 
+# Reproduce a previous installer run that enabled both terminal layouts, then
+# verify the reconciliation keeps only the selected Kitty session active.
+for root in sources sources_example; do
+  autostart="$HOME/dotfiles/.config/hypr/$root/autostart.lua"
+  sed -i 's|^    -- hl.exec_cmd("kitty -e zellij|    hl.exec_cmd("kitty -e zellij|' "$autostart"
+  sed -i '/hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "\/change_wallpaper.sh")/d' "$autostart"
+  sed -i 's|^    hl.exec_cmd("hyprpaper")$|    hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")|' "$autostart"
+done
+HSS_RELIABILITY_ACTION=autostart-extras \
+  "$repo_root/setup.sh" --test-scenario reliability >/dev/null 2>&1
+for root in sources sources_example; do
+  autostart="$HOME/dotfiles/.config/hypr/$root/autostart.lua"
+  [[ $(grep -Fxc '    hl.exec_cmd("hyprpaper")' "$autostart") -eq 1 ]]
+  [[ $(grep -Fxc '    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/change_wallpaper.sh")' "$autostart") -eq 1 ]]
+  [[ $(grep -Fxc '    hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")' "$autostart") -eq 0 ]]
+  [[ $(grep -Fxc '    hl.exec_cmd(apps.hyprscripts .. "/run_once.sh kitty-layout kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })' "$autostart") -eq 1 ]]
+  [[ $(grep -Fxc '    hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })' "$autostart") -eq 0 ]]
+done
+printf 'ok - Kitty autostart reconciliation disables the conflicting Zellij window\n'
+
 : > "$STUB_LOG"
 installed="$fixture/installed"
 printf '%s\n' kitty fish visual-studio-code-bin neovim wofi > "$installed"
@@ -86,9 +106,10 @@ for root in sources sources_example; do
   assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"
   assert_count 1 '^hl\.layer_rule\(\{ match = \{ namespace = "rofi" \}, dim_around = true \}\) -- hss-role:launcher-layer$' "$windows" "$root selected launcher layer rule"
   assert_count 1 'hss-role:launcher-layer$' "$windows" "$root launcher layer rule total"
-  assert_count 1 '^[[:space:]]*hl\.exec_cmd\(apps\.hyprscripts \.\. "/change_wallpaper\.sh"\)$' "$autostart" "$root wallpaper startup owner"
-  assert_count 0 '^[[:space:]]*hl\.exec_cmd\("hyprpaper"\)$' "$autostart" "$root concurrent hyprpaper launch"
+  assert_count 1 '^[[:space:]]*hl\.exec_cmd\("hyprpaper"\)$' "$autostart" "$root hyprpaper startup declaration"
+  assert_count 1 '^[[:space:]]*hl\.exec_cmd\("sleep 1; " \.\. apps\.hyprscripts \.\. "/change_wallpaper\.sh"\)$' "$autostart" "$root delayed wallpaper application"
   assert_count 1 'run_once\.sh kitty-layout kitty --session ~/.config/kitty/my_layout\.conf' "$autostart" "$root single-instance Kitty session declaration"
+  assert_count 0 '^[[:space:]]*hl\.exec_cmd\("kitty -e zellij ' "$autostart" "$root conflicting Kitty/Zellij autostart"
   assert_count 1 '^window_rule\("xwaylandvideobridge", {' "$windows" "$root XWayland video bridge rule"
   grep -Fq '    float = true,' "$windows"
   grep -Fq '    max_size = { 1, 1 },' "$windows"

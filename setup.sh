@@ -1471,6 +1471,29 @@ find_hyprland_setup_dir() {
     return 1
 }
 
+sync_installer_managed_runtime_files() {
+    local setup_dir=$1
+    local relative source destination
+    local managed_files=(
+        ".config/hypr/scripts/change_wallpaper.sh"
+        ".config/hypr/scripts/Startup_check.sh"
+        ".config/hypr/scripts/run_once.sh"
+    )
+
+    for relative in "${managed_files[@]}"; do
+        source="$setup_dir/dotfiles/$relative"
+        destination="$HOME/dotfiles/$relative"
+        [ -f "$source" ] || continue
+        if [ -f "$destination" ] && cmp -s -- "$source" "$destination"; then
+            continue
+        fi
+        copy_file_atomic "$destination" "$source" "Update installer-managed ${relative##*/}" || return 1
+        if ! is_dry_run && [ -x "$source" ]; then
+            chmod --reference="$source" -- "$destination" || return 1
+        fi
+    done
+}
+
 # Function to update configuration files with user input
 update_configs() {
     announce_step "Update configs"
@@ -1501,6 +1524,10 @@ update_configs() {
     else
         print_warning "Dotfiles directory already exists in Home directory"
     fi
+
+    # Refresh scripts whose behavior is owned by this installer without replacing
+    # unrelated user configuration in an existing dotfiles tree.
+    sync_installer_managed_runtime_files "$hyprland_setup_dir" || return 1
 
     # Continue with the rest of the configuration
     local hypr_config_dir="$HOME/dotfiles/.config/hypr"
@@ -1846,8 +1873,36 @@ configure_hypr_autostart_optional_extras() {
         replace_literal_prefix "$lua_file" "    -- $line" "    $line" "Enable autostart: $(basename "$file")"
     }
 
+    comment_lua_line_if_active() {
+        local lua_file="$1"
+        local line="$2"
+        grep -Fqx "    $line" "$lua_file" || return 0
+        replace_literal_prefix "$lua_file" "    $line" "    -- $line" "Disable conflicting terminal autostart"
+    }
+
+    reconcile_wallpaper_autostart() {
+        local lua_file="$1"
+        local replacement
+        printf -v replacement '    %s\n    %s' "$hyprpaper_line" "$delayed_wallpaper_line"
+
+        if grep -Fqx "    $hyprpaper_line" "$lua_file"; then
+            if ! grep -Fqx "    $delayed_wallpaper_line" "$lua_file"; then
+                replace_literal_prefix "$lua_file" "    $hyprpaper_line" "$replacement" "Delay wallpaper application until hyprpaper IPC is ready"
+            fi
+            comment_lua_line_if_active "$lua_file" "$legacy_wallpaper_line"
+        elif grep -Fqx "    $legacy_wallpaper_line" "$lua_file"; then
+            replace_literal_prefix "$lua_file" "    $legacy_wallpaper_line" "$replacement" "Start hyprpaper before applying wallpaper"
+        fi
+    }
+
     local configured_terminal=""
-    configured_terminal=$(role_field terminal executable 2>/dev/null || true)
+    local legacy_wallpaper_line='hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")'
+    local hyprpaper_line='hl.exec_cmd("hyprpaper")'
+    local delayed_wallpaper_line='hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/change_wallpaper.sh")'
+    local kitty_session_line='hl.exec_cmd(apps.hyprscripts .. "/run_once.sh kitty-layout kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })'
+    local kitty_zellij_line='hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
+    local alacritty_zellij_line='hl.exec_cmd("alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
+    configured_terminal=$(role_field terminal executable 2>/dev/null || printf '%s' "${ROLE_TERMINAL:-}")
 
     local lua_files=(
         "$HOME/dotfiles/.config/hypr/sources/autostart.lua"
@@ -1858,6 +1913,7 @@ configure_hypr_autostart_optional_extras() {
     for lua_file in "${lua_files[@]}"; do
         [ -f "$lua_file" ] || continue
 
+        reconcile_wallpaper_autostart "$lua_file"
         uncomment_lua_line_if_cmd_exists "$lua_file" "swaync" 'hl.exec_cmd("swaync")'
         uncomment_lua_line_if_cmd_exists "$lua_file" "nm-applet" 'hl.exec_cmd("nm-applet --indicator")'
         uncomment_lua_line_if_cmd_exists "$lua_file" "pypr" 'hl.exec_cmd("pypr")'
@@ -1867,13 +1923,16 @@ configure_hypr_autostart_optional_extras() {
         uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-applet" 'hl.exec_cmd("blueman-applet")'
         uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-tray" 'hl.exec_cmd("blueman-tray")'
 
+        # Exactly one terminal layout may be active. This also repairs prior runs
+        # that enabled both the Kitty session and the separate Kitty/Zellij layout.
+        comment_lua_line_if_active "$lua_file" "$kitty_session_line"
+        comment_lua_line_if_active "$lua_file" "$kitty_zellij_line"
+        comment_lua_line_if_active "$lua_file" "$alacritty_zellij_line"
+
         if [ "$configured_terminal" = "kitty" ]; then
-            uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" 'hl.exec_cmd(apps.hyprscripts .. "/run_once.sh kitty-layout kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })'
-            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
-                uncomment_lua_line_if_cmd_exists "$lua_file" "kitty" 'hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
-            fi
+            uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" "$kitty_session_line"
         elif [ "$configured_terminal" = "alacritty" ] && command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
-            uncomment_lua_line_if_cmd_exists "$lua_file" "alacritty" 'hl.exec_cmd("alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
+            uncomment_lua_line_if_cmd_exists "$lua_file" "alacritty" "$alacritty_zellij_line"
         fi
     done
 }
@@ -3013,6 +3072,14 @@ run_reliability_test_scenario() {
         filepicker)
             hss_begin_run "reliability filepicker" || return $?
             configure_filepicker
+            ;;
+        autostart-extras)
+            hss_begin_run "reliability autostart-extras" || return $?
+            configure_hypr_autostart_optional_extras
+            ;;
+        sync-managed)
+            hss_begin_run "reliability sync-managed" || return $?
+            sync_installer_managed_runtime_files "${HYPRLAND_SETUP_DIR:?HYPRLAND_SETUP_DIR is required}"
             ;;
         atomic)
             hss_begin_run "reliability atomic" || return $?

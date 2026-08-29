@@ -154,6 +154,15 @@ if grep -Fq 'applications.menu' "$STUB_LOG"; then
 fi
 printf 'ok - GTK file chooser and selected editor MIME defaults are configured without a live Hyprland session\n'
 
+managed_wallpaper_script="$HOME/dotfiles/.config/hypr/scripts/change_wallpaper.sh"
+printf 'outdated managed script\n' > "$managed_wallpaper_script"
+chmod 0600 "$managed_wallpaper_script"
+HSS_RELIABILITY_ACTION=sync-managed \
+  "$repo_root/setup.sh" --test-scenario reliability >"$fixture/sync-managed.out" 2>&1
+cmp -s "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" "$managed_wallpaper_script"
+[[ -x $managed_wallpaper_script ]]
+printf 'ok - existing dotfiles receive installer-managed wallpaper startup fixes\n'
+
 default_config_dir="$HOME/.config/hypr/monitor-default-test"
 default_monitors="$default_config_dir/monitors.lua"
 default_wallpaper="$default_config_dir/change_wallpaper.lua"
@@ -186,11 +195,6 @@ if [[ ${1:-} == monitors ]]; then
   printf 'Monitor eDP-1 (ID 0):\n'
   exit 0
 fi
-if [[ ${1:-} == dispatch && ${2:-} == exec && ${3:-} == hyprpaper ]]; then
-  touch "${HYPRPAPER_RUNNING_FILE:?}"
-  printf 'dispatch hyprpaper\n' >> "${WALLPAPER_STUB_LOG:?}"
-  exit 0
-fi
 if [[ ${1:-} == hyprpaper && ${2:-} == wallpaper ]]; then
   if [[ $# -eq 2 ]]; then
     printf 'parser diagnostics are not an IPC readiness probe\n' >&2
@@ -200,6 +204,11 @@ if [[ ${1:-} == hyprpaper && ${2:-} == wallpaper ]]; then
   exit 0
 fi
 exit 1
+EOF
+cat > "$wallpaper_bin/hyprpaper" <<'EOF'
+#!/usr/bin/env bash
+touch "${HYPRPAPER_RUNNING_FILE:?}"
+printf 'start hyprpaper\n' >> "${WALLPAPER_STUB_LOG:?}"
 EOF
 cat > "$wallpaper_bin/pgrep" <<'EOF'
 #!/usr/bin/env bash
@@ -212,7 +221,7 @@ cat > "$wallpaper_bin/pkill" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "$wallpaper_bin/hyprctl" "$wallpaper_bin/pgrep" "$wallpaper_bin/pkill"
+chmod +x "$wallpaper_bin/hyprctl" "$wallpaper_bin/hyprpaper" "$wallpaper_bin/pgrep" "$wallpaper_bin/pkill"
 : > "$wallpaper_stub_log"
 HOME="$wallpaper_home" \
 WALLPAPER_CHANGE_STAMP="$fixture/wallpaper-change-ran" \
@@ -228,7 +237,7 @@ PATH="$wallpaper_bin:$PATH" \
   "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" >"$fixture/wallpaper-manual.out" 2>&1
 grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-default.out"
 grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-manual.out"
-[[ $(grep -Fxc 'dispatch hyprpaper' "$wallpaper_stub_log") -eq 1 ]]
+[[ $(grep -Fxc 'start hyprpaper' "$wallpaper_stub_log") -eq 1 ]]
 grep -Eq '^, .*/default[.]png, cover$' "$wallpaper_stub_log"
 if grep -Fq 'MONITORS array is empty' "$fixture/wallpaper-default.out"; then
   printf 'not ok - empty monitor list still fails wallpaper startup\n'

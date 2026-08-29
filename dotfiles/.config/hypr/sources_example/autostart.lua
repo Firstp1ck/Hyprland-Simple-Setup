@@ -5,8 +5,9 @@ hl.on("hyprland.start", function()
     hl.exec_cmd([[hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set]])
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
 
-    -- The wallpaper script owns daemon startup to avoid a concurrent-launch race.
-    hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")
+    -- Start hyprpaper through Hyprland, then apply the wallpaper after its IPC initializes.
+    hl.exec_cmd("hyprpaper")
+    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/change_wallpaper.sh")
 
     hl.exec_cmd("wl-clip-persist --clipboard regular")
     hl.exec_cmd("wl-clipboard-history -t")

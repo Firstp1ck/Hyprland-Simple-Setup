@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-sleep 5 # Wait for 5 seconds to allow processes to start
+sleep 10 # Allow delayed wallpaper startup and IPC initialization to complete
 
 # Function to check if a process is running
 check_process() {
@@ -28,7 +28,7 @@ check_dolphin_fix() {
 
 check_wallpaper_change() {
     if [ ! -f "/tmp/wallpaper-change-ran" ]; then
-        notify-send -u critical "Autostart Warning" "Wallpaper change script did not run!"
+        notify-send -u critical "Autostart Warning" "Wallpaper change did not complete successfully!"
         return 1
     fi
     return 0

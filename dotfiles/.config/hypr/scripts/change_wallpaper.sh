@@ -2,7 +2,8 @@
 
 # Change wallpaper script for hyprpaper
 # This script randomly selects a wallpaper from a configured directory and applies it to all monitors.
-# It starts hyprpaper when needed and retries transient IPC connection failures.
+# It starts hyprpaper directly when needed, records startup output, and retries
+# transient IPC connection failures.
 # Compatible with hyprpaper 0.8.0+ (uses IPC format: 'monitor, path, fit_mode')
 
 # Load the system-specific Lua data file without executing arbitrary code.
@@ -68,20 +69,44 @@ ensure_hyprland_env() {
   fi
 }
 
-hypr_dispatch_exec() {
-  # Start a process *inside* the active Hyprland session.
-  # This avoids launching wlroots clients without the right logind/seat context.
-  hyprctl dispatch exec "$1" >/dev/null 2>&1
-}
-
 hyprpaper_is_running() {
   pgrep -u "$(id -u)" -x hyprpaper >/dev/null 2>&1
 }
 
-ensure_hyprpaper_running() {
+start_hyprpaper() {
   local attempt=0
   local max_attempts=30
+  local pid
+  local log_file="${HYPRPAPER_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/hyprpaper.log}"
 
+  if ! command -v hyprpaper >/dev/null 2>&1; then
+    echo "Error: hyprpaper is not installed or not available in PATH" >&2
+    return 1
+  fi
+
+  mkdir -p -- "$(dirname -- "$log_file")" || return 1
+  echo "hyprpaper is not running; starting it directly (log: $log_file)..." >&2
+  nohup hyprpaper --verbose >"$log_file" 2>&1 </dev/null &
+  pid=$!
+
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    hyprpaper_is_running && return 0
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.2
+    attempt=$((attempt + 1))
+  done
+
+  echo "Error: hyprpaper did not remain running after startup" >&2
+  if [ -s "$log_file" ]; then
+    echo "Last hyprpaper log lines:" >&2
+    tail -n 20 -- "$log_file" >&2
+  fi
+  return 1
+}
+
+ensure_hyprpaper_running() {
   ensure_hyprland_env
 
   if ! hyprctl monitors >/dev/null 2>&1; then
@@ -89,19 +114,7 @@ ensure_hyprpaper_running() {
     return 1
   fi
 
-  if ! hyprpaper_is_running; then
-    echo "hyprpaper is not running; starting it through Hyprland..." >&2
-    hypr_dispatch_exec "hyprpaper" || return 1
-  fi
-
-  while [ "$attempt" -lt "$max_attempts" ]; do
-    hyprpaper_is_running && return 0
-    sleep 0.2
-    attempt=$((attempt + 1))
-  done
-
-  echo "Error: hyprpaper did not remain running after startup" >&2
-  return 1
+  hyprpaper_is_running || start_hyprpaper
 }
 
 if ! ensure_hyprpaper_running; then

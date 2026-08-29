@@ -24,7 +24,7 @@ setup_role_fixture() {
   cp -a "$repo_root/dotfiles" "$HOME/dotfiles"
   rm -rf "$HOME/dotfiles/.config/hypr/sources"
   cp -a "$HOME/dotfiles/.config/hypr/sources_example" "$HOME/dotfiles/.config/hypr/sources"
-  for name in hypr fish waybar pypr; do
+  for name in hypr fish waybar pypr kitty zellij; do
     ln -s "$HOME/dotfiles/.config/$name" "$HOME/.config/$name"
   done
   printf '%s\n' /usr/bin/fish /bin/bash /usr/bin/zsh > "$HSS_ETC_SHELLS"

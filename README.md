@@ -295,7 +295,7 @@ cd ~/Hyprland-Simple-Setup
 - hyprpicker (Color picker)
 - wl-clipboard & wl-clip-persist (Clipboard managers)
 - hyprgraphics (Graphics utilities)
-- hyprland-qtutils (Qt integration)
+- hyprland-guiutils (Hyprland GUI utilities)
 - hyprland-qt-support (Qt support)
 - hyprwayland-scanner (Wayland protocol scanner)
 - python-pyquery
