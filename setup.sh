@@ -397,8 +397,8 @@ execute_command() {
         # Prefer using provided SUDO_PASSWORD to avoid prompts; fallback to -n in NON_INTERACTIVE
         local adjusted_cmd="$cmd"
         if [ -n "$SUDO_PASSWORD" ]; then
-            # Define a shell sudo() that feeds the password to sudo -S
-            bash -c 'sudo() { echo -n "$SUDO_PASSWORD" | command sudo -S "$@"; }; '"$adjusted_cmd"
+            # Export the wrapper so nested Bash tools such as makepkg inherit password-backed sudo.
+            bash -c 'sudo() { printf "%s\n" "$SUDO_PASSWORD" | command sudo -S -p "" "$@"; }; export -f sudo; '"$adjusted_cmd"
         else
             if [ "$NON_INTERACTIVE" = "true" ]; then
                 adjusted_cmd="${adjusted_cmd//sudo /sudo -n }"
@@ -1063,6 +1063,79 @@ check_bootloader() {
     export BOOTLOADER="$bootloader"
 }
 
+prepare_yay_checkout() {
+    local output_var=$1
+    local preferred=${HSS_YAY_DIR:-/tmp/yay}
+    local checkout remote quoted_checkout
+
+    if [[ -d $preferred && ! -L $preferred && -O $preferred && -f $preferred/PKGBUILD && -O $preferred/PKGBUILD ]] \
+        && git -C "$preferred" rev-parse --verify HEAD >/dev/null 2>&1; then
+        remote=$(git -C "$preferred" remote get-url origin 2>/dev/null || true)
+        if [[ $remote == https://aur.archlinux.org/yay.git ]]; then
+            print_message "Reusing existing yay checkout: $preferred"
+            printf -v "$output_var" '%s' "$preferred"
+            return 0
+        fi
+    fi
+
+    if [[ -e $preferred ]]; then
+        print_warning "Existing yay path is not a valid owned AUR checkout; using an isolated build directory."
+    fi
+    checkout="$HSS_RUN_TMP_DIR/yay"
+    printf -v quoted_checkout '%q' "$checkout"
+    execute_command "git clone --depth 1 https://aur.archlinux.org/yay.git $quoted_checkout" "Clone yay repository" || return 1
+    printf -v "$output_var" '%s' "$checkout"
+}
+
+prepare_makepkg_auth_wrapper() {
+    local output_var=$1
+    local wrapper
+    make_tmp wrapper makepkg-auth.XXXXXX || return 1
+    cat > "$wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ -n ${SUDO_PASSWORD:-} ]] || {
+    printf 'SUDO_PASSWORD is required for unattended package installation\n' >&2
+    exit 1
+}
+printf '%s\n' "$SUDO_PASSWORD" | command sudo -S -p '' -- "$@"
+EOF
+    chmod 700 "$wrapper" || return 1
+    printf -v "$output_var" '%s' "$wrapper"
+}
+
+prepare_makepkg_config() {
+    local output_var=$1 auth_wrapper=$2
+    local config fragment user_config
+    [[ -r /etc/makepkg.conf ]] || return 1
+    make_tmp config makepkg-conf.XXXXXX || return 1
+    {
+        printf 'source %q\n' /etc/makepkg.conf
+        for fragment in /etc/makepkg.conf.d/*.conf; do
+            [[ -r $fragment ]] && printf 'source %q\n' "$fragment"
+        done
+        user_config="${XDG_CONFIG_HOME:-$HOME/.config}/pacman/makepkg.conf"
+        if [[ -r $user_config ]]; then
+            printf 'source %q\n' "$user_config"
+        elif [[ -r $HOME/.makepkg.conf ]]; then
+            printf 'source %q\n' "$HOME/.makepkg.conf"
+        fi
+        printf 'PACMAN_AUTH=(%q)\n' "$auth_wrapper"
+    } > "$config"
+    chmod 600 "$config" || return 1
+    printf -v "$output_var" '%s' "$config"
+}
+
+bootstrap_yay() {
+    local yay_dir auth_wrapper makepkg_config quoted_dir quoted_config
+    prepare_yay_checkout yay_dir || return 1
+    prepare_makepkg_auth_wrapper auth_wrapper || return 1
+    prepare_makepkg_config makepkg_config "$auth_wrapper" || return 1
+    printf -v quoted_dir '%q' "$yay_dir"
+    printf -v quoted_config '%q' "$makepkg_config"
+    execute_command "(cd $quoted_dir && makepkg --config $quoted_config -si --noconfirm)" "Build and install yay"
+}
+
 check_yay() {
     # Prevent duplicate checks/installs within one run
     if [ "$AUR_HELPER_CHECKED" = "true" ] && [ -n "$AUR_HELPER" ]; then
@@ -1107,17 +1180,14 @@ check_yay() {
     # Install missing packages if any
     if [ ${#missing_packages[@]} -gt 0 ]; then
         print_message "Installing required packages: ${missing_packages[*]}"
-        distro_install "${missing_packages[@]}"
+        distro_install "${missing_packages[@]}" || handle_error "Failed to install dependencies required to build yay."
     fi
 
-    # Clone the yay repo and build it
-    execute_command "git clone https://aur.archlinux.org/yay.git /tmp/yay" "Clone yay repository"
-    cd /tmp/yay > /dev/null || return 
-    execute_command "makepkg -si --noconfirm" "Build and install yay"
+    bootstrap_yay || handle_error "'yay' could not be built and installed automatically."
 
     # Verify installation was successful
     if ! command -v yay &> /dev/null; then
-        handle_error "'yay' installation failed. Please install yay manually and re-run the script."
+        handle_error "'yay' installation completed without creating the yay command."
     else
         AUR_HELPER="yay"
         print_message "yay installed successfully!"
@@ -2958,6 +3028,14 @@ run_reliability_test_scenario() {
             hss_start_sudo_keepalive || return $?
             printf '%s\n' "$HSS_KEEPALIVE_PID"
             sleep "${HSS_HOLD_SECONDS:-1}"
+            ;;
+        nested-sudo)
+            hss_begin_run "reliability nested-sudo" || return $?
+            execute_command "bash -c 'sudo -n true'" "nested sudo propagation"
+            ;;
+        yay-bootstrap)
+            hss_begin_run "reliability yay-bootstrap" || return $?
+            bootstrap_yay
             ;;
         atomic)
             hss_begin_run "reliability atomic" || return $?

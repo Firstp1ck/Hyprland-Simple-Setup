@@ -78,3 +78,49 @@ if kill -0 "$password_keepalive_pid" 2>/dev/null; then
   exit 1
 fi
 printf 'ok - TUI password seeds and maintains unattended sudo credentials\n'
+
+nested_sudo_out="$fixture/nested-sudo.out"
+nested_sudo_cache="$fixture/nested-sudo-cache"
+: > "$STUB_LOG"
+SUDO_PASSWORD='tui-provided-password' \
+STUB_SUDO_REQUIRE_PASSWORD=1 \
+STUB_SUDO_EXPECTED_PASSWORD='tui-provided-password' \
+STUB_SUDO_CACHE_FILE="$nested_sudo_cache" \
+HSS_RELIABILITY_ACTION=nested-sudo \
+  "$repo_root/setup.sh" --test-scenario reliability >"$nested_sudo_out" 2>&1
+grep -Fq "sudo -S -p '' -n true" "$STUB_LOG"
+if grep -Fq 'tui-provided-password' "$STUB_LOG"; then
+  printf 'not ok - nested sudo leaked the password into the command log\n'
+  exit 1
+fi
+printf 'ok - nested Bash tools inherit password-backed sudo\n'
+
+yay_checkout="$fixture/existing-yay"
+mkdir -p "$yay_checkout"
+git -C "$yay_checkout" init -q
+git -C "$yay_checkout" config user.name test
+git -C "$yay_checkout" config user.email test@example.invalid
+printf 'pkgname=yay\npkgver=1\npkgrel=1\narch=(any)\n' > "$yay_checkout/PKGBUILD"
+git -C "$yay_checkout" add PKGBUILD
+git -C "$yay_checkout" commit -qm initial
+git -C "$yay_checkout" remote add origin https://aur.archlinux.org/yay.git
+yay_bootstrap_out="$fixture/yay-bootstrap.out"
+yay_sudo_cache="$fixture/yay-sudo-cache"
+: > "$STUB_LOG"
+SUDO_PASSWORD='tui-provided-password' \
+STUB_SUDO_REQUIRE_PASSWORD=1 \
+STUB_SUDO_EXPECTED_PASSWORD='tui-provided-password' \
+STUB_SUDO_CACHE_FILE="$yay_sudo_cache" \
+HSS_YAY_DIR="$yay_checkout" \
+HSS_RELIABILITY_ACTION=yay-bootstrap \
+  "$repo_root/setup.sh" --test-scenario reliability >"$yay_bootstrap_out" 2>&1
+grep -Fq "Reusing existing yay checkout: $yay_checkout" "$yay_bootstrap_out"
+grep -Fq "makepkg cwd=$yay_checkout" "$STUB_LOG"
+grep -Fq -- '--config' "$STUB_LOG"
+grep -Fq 'makepkg-auth=' "$STUB_LOG"
+grep -Fq "sudo -S -p '' -- /usr/bin/true" "$STUB_LOG"
+if grep -Fq 'tui-provided-password' "$STUB_LOG"; then
+  printf 'not ok - yay bootstrap leaked the password into the command log\n'
+  exit 1
+fi
+printf 'ok - yay bootstrap reuses checkout and supplies explicit makepkg authentication\n'

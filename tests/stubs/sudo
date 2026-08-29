@@ -11,6 +11,7 @@ while [[ $# -gt 0 ]]; do
     -S) reads_password=true; shift ;;
     -p) shift 2 ;;
     -n|-k|-v) shift ;;
+    --) shift; break ;;
     *) break ;;
   esac
 done

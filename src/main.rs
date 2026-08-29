@@ -440,7 +440,8 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 String::new()
             };
-            if status.success() {
+            let setup_succeeded = status.success();
+            if setup_succeeded {
                 app.push_log_line(format!(
                     "setup.sh finished successfully (exit {code}){}",
                     elapsed_msg
@@ -458,10 +459,14 @@ fn run_app<B: ratatui::backend::Backend>(
                 sec.done = true;
             }
             app.child = None;
-            // Show reboot confirmation popup
-            app.ui_mode = UiMode::Menu; // ensure popup on main view
-            app.editing = true;
-            app.edit_kind = EditKind::ConfirmReboot;
+            app.ui_mode = UiMode::Menu;
+            if setup_succeeded {
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmReboot;
+            } else {
+                app.editing = false;
+                app.edit_kind = EditKind::None;
+            }
         }
 
         terminal.draw(|f| draw_ui(f, app)).context("draw ui")?;
@@ -1858,6 +1863,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         // script -q (quiet) -f (flush) -c "<cmd>" /dev/null
         cmd = Command::new("script");
         cmd.arg("-q")
+            .arg("-e")
             .arg("-f")
             .arg("-c")
             .arg(cmdline)
