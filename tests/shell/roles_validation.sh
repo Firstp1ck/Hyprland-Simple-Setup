@@ -70,21 +70,21 @@ export ROLE_LAUNCHER=rofi
 "$repo_root/setup.sh" --test-scenario roles >/dev/null 2>&1
 
 for root in sources sources_example; do
-  app_variables="$HOME/dotfiles/.config/hypr/$root/app_variables.conf"
-  keybindings="$HOME/dotfiles/.config/hypr/$root/keybindings.conf"
-  windows="$HOME/dotfiles/.config/hypr/$root/windows_and_workspaces.conf"
+  app_variables="$HOME/dotfiles/.config/hypr/$root/app_variables.lua"
+  keybindings="$HOME/dotfiles/.config/hypr/$root/keybindings.lua"
+  windows="$HOME/dotfiles/.config/hypr/$root/windows_and_workspaces.lua"
 
-  assert_count 1 "^\\\$terminal[[:space:]]*=" "$app_variables" "$root terminal assignment"
-  assert_count 1 "^\\\$menu[[:space:]]*=" "$app_variables" "$root launcher assignment"
-  assert_count 1 "^\\\$browser[[:space:]]*=" "$app_variables" "$root browser assignment"
-  assert_count 1 "^\\\$editor[[:space:]]*=" "$app_variables" "$root editor assignment"
-  assert_count 1 "^bindd = \\\$mainMod, SPACE, Open Menu," "$keybindings" "$root Open Menu binding"
-  assert_count 1 '^windowrule = workspace 2 silent, match:class vivaldi-stable$' "$windows" "$root selected browser rule"
-  assert_count 1 '^windowrule = workspace 2.*match:class' "$windows" "$root browser role rule total"
-  assert_count 1 '^layerrule = dim_around on, match:namespace rofi$' "$windows" "$root selected launcher layer rule"
-  assert_count 1 '^layerrule = dim_around on, match:namespace' "$windows" "$root launcher layer rule total"
+  assert_count 1 '^[[:space:]]*terminal[[:space:]]*=' "$app_variables" "$root terminal assignment"
+  assert_count 1 '^[[:space:]]*menu[[:space:]]*=' "$app_variables" "$root launcher assignment"
+  assert_count 1 '^[[:space:]]*browser[[:space:]]*=' "$app_variables" "$root browser assignment"
+  assert_count 1 '^[[:space:]]*editor[[:space:]]*=' "$app_variables" "$root editor assignment"
+  assert_count 1 '^bind\(main_mod \.\. " \+ SPACE",' "$keybindings" "$root Open Menu binding"
+  assert_count 1 '^window_rule\("vivaldi-stable", \{ workspace = "2 silent" \}\) -- hss-role:browser-workspace$' "$windows" "$root selected browser rule"
+  assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"
+  assert_count 1 '^hl\.layer_rule\(\{ match = \{ namespace = "rofi" \}, dim_around = true \}\) -- hss-role:launcher-layer$' "$windows" "$root selected launcher layer rule"
+  assert_count 1 'hss-role:launcher-layer$' "$windows" "$root launcher layer rule total"
   for class in hss-scratchpad hss-notes hss-calendar hss-clipboard; do
-    assert_count 1 "^windowrule = .*match:class ${class}$" "$windows" "$root stable $class rule"
+    assert_count 1 "^window_rule\\(\"${class}\"," "$windows" "$root stable $class rule"
   done
 done
 
@@ -106,14 +106,14 @@ dry_output=$(DRY_RUN=true "$repo_root/setup.sh" --test-scenario roles 2>&1)
 role_dependent_paths=(
   "$HOME/dotfiles/.config/hypr/roles.json"
   "$HOME/.config/hypr/roles.json"
-  "$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
-  "$HOME/dotfiles/.config/hypr/sources/environment_variables.conf"
-  "$HOME/dotfiles/.config/hypr/sources/keybindings.conf"
-  "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
-  "$HOME/dotfiles/.config/hypr/sources_example/app_variables.conf"
-  "$HOME/dotfiles/.config/hypr/sources_example/environment_variables.conf"
-  "$HOME/dotfiles/.config/hypr/sources_example/keybindings.conf"
-  "$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.conf"
+  "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
+  "$HOME/dotfiles/.config/hypr/sources/environment_variables.lua"
+  "$HOME/dotfiles/.config/hypr/sources/keybindings.lua"
+  "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
+  "$HOME/dotfiles/.config/hypr/sources_example/app_variables.lua"
+  "$HOME/dotfiles/.config/hypr/sources_example/environment_variables.lua"
+  "$HOME/dotfiles/.config/hypr/sources_example/keybindings.lua"
+  "$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.lua"
   "$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
   "$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
 )

@@ -18,7 +18,7 @@ mkdir -p -- "$runtime_dir"
 chmod 700 "$runtime_dir"
 
 "$repo_root/tests/fixtures/hypr/assemble.sh" "$fixture_home"
-config_file="$fixture_home/.config/hypr/hyprland.conf"
+config_file="$fixture_home/.config/hypr/hyprland.lua"
 
 set +e
 XDG_RUNTIME_DIR="$runtime_dir" HOME="$fixture_home" \

@@ -16,14 +16,14 @@ for run in "$first" "$second"; do
   [[ -s $dir/manifest.tsv ]]
   grep -q '^end=' "$dir/meta"
   grep -q '^exit=0$' "$dir/meta"
-  windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+  windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
   [[ $(awk -F '\t' -v path="$windows" '$2 == path {count++} END {print count+0}' "$dir/manifest.tsv") -eq 1 ]]
 done
-grep -q "^\$terminal = 'alacritty'" "$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
-grep -q "^\$browser = 'firefox'" "$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+grep -q '^[[:space:]]*terminal = "alacritty",$' "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
+grep -q '^[[:space:]]*browser = "firefox",$' "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
 grep -q 'sudo -n chsh -s /usr/bin/fish -- ' "$STUB_LOG"
 second_manifest="$XDG_STATE_HOME/hyprland-simple-setup/runs/$second/manifest.tsv"
-windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
 IFS=$'\t' read -r _ _ before_hash after_hash backup_rel < <(awk -F '\t' -v path="$windows" '$2 == path' "$second_manifest")
 [[ $(sha256sum "$XDG_STATE_HOME/hyprland-simple-setup/runs/$second/$backup_rel" | cut -d' ' -f1) == "$before_hash" ]]
 [[ $(sha256sum "$windows" | cut -d' ' -f1) == "$after_hash" ]]
@@ -32,7 +32,7 @@ home_before=$(find "$HOME" -type f -print0 | sort -z | xargs -0 -r sha256sum | s
 dry_output=$(DRY_RUN=true ROLE_TERMINAL=ghostty "$repo_root/setup.sh" --test-scenario roles 2>&1)
 home_after=$(find "$HOME" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
 [[ $home_before == "$home_after" ]]
-grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.conf" <<< "$dry_output"
+grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.lua" <<< "$dry_output"
 
 list_output=$("$repo_root/setup.sh" --list-runs)
 grep -q "$first" <<< "$list_output"

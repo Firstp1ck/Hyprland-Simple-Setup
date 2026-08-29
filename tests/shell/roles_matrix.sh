@@ -18,7 +18,7 @@ while IFS=$'\t' read -r role package; do
   }
   actual=$(jq -er --arg role "$role" '.roles[$role].package' "$HOME/.config/hypr/roles.json")
   [[ "$actual" == "$package" ]] || { printf 'not ok - roles.json %s\n' "$role"; exit 1; }
-  grep -q "^\\\$terminal = " "$HOME/dotfiles/.config/hypr/sources/app_variables.conf"
+  grep -q '^[[:space:]]*terminal = ' "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
   grep -q 'sudo -n chsh -s' "$STUB_LOG"
 
   dry_output=$(DRY_RUN=true "$repo_root/setup.sh" --test-scenario roles 2>&1) || {
@@ -26,7 +26,7 @@ while IFS=$'\t' read -r role package; do
     rm -rf "$fixture"
     exit 1
   }
-  grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.conf" <<< "$dry_output"
+  grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.lua" <<< "$dry_output"
   grep -Fq "$HOME/.config/hypr/roles.json" <<< "$dry_output"
 
   count=$((count + 1))

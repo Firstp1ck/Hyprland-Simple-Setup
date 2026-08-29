@@ -576,21 +576,16 @@ get_first_hypr_monitor() {
     hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2; exit}'
 }
 
-# Ensure MONITORS is set in wallpaper config; if missing/placeholder, set to first monitor.
-# Accepts an optional path to a change_wallpaper.conf; defaults to the runtime config under ~/.config.
+# Ensure the wallpaper monitor list is populated in the Lua data file.
 ensure_wallpaper_monitors() {
-    local wallpaper_conf="${1:-$HOME/.config/hypr/sources_specific/change_wallpaper.conf}"
-    [ -f "$wallpaper_conf" ] || return 0
+    local wallpaper_lua="${1:-$HOME/.config/hypr/sources_specific/change_wallpaper.lua}"
+    [ -f "$wallpaper_lua" ] || return 0
 
-    # Read existing MONITORS line if any
     local current_line
-    current_line=$(grep -E '^[[:space:]]*MONITORS=' "$wallpaper_conf" 2>/dev/null || true)
+    current_line=$(grep -E '^[[:space:]]*monitors[[:space:]]*=' "$wallpaper_lua" 2>/dev/null || true)
 
-    # Decide if we need to set/update (no line, empty array, or contains placeholder MONITOR_N)
     local need_set=false
-    if [ -z "$current_line" ]; then
-        need_set=true
-    elif echo "$current_line" | grep -qE 'MONITORS=\(\)'; then
+    if [ -z "$current_line" ] || echo "$current_line" | grep -qE 'monitors[[:space:]]*=[[:space:]]*\{[[:space:]]*\}'; then
         need_set=true
     elif echo "$current_line" | grep -qE 'MONITOR_[0-9]'; then
         need_set=true
@@ -600,11 +595,11 @@ ensure_wallpaper_monitors() {
         local first_mon
         first_mon=$(get_first_hypr_monitor || true)
         if [ -z "$first_mon" ]; then
-            print_warning "Could not auto-detect a monitor via hyprctl; leaving MONITORS unchanged."
+            print_warning "Could not auto-detect a monitor via hyprctl; leaving the wallpaper monitor list unchanged."
             return 0
         fi
         print_message "Auto-detected monitor: $first_mon"
-        replace_config_line "$wallpaper_conf" '^MONITORS=' "MONITORS=(\"$first_mon\")" "Set MONITORS to first detected monitor"
+        replace_config_line "$wallpaper_lua" '^[[:space:]]*monitors[[:space:]]*=' "    monitors = { \"$first_mon\" }," "Set wallpaper monitor list"
     fi
 }
 
@@ -614,25 +609,23 @@ get_all_hypr_monitors() {
     hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2}'
 }
 
-# Auto-populate monitors.conf when it contains no active (uncommented) monitor= lines.
-# Generates a basic monitor=NAME,preferred,auto,1 entry for each detected monitor.
+# Auto-populate monitors.lua when it contains no active hl.monitor calls.
 ensure_monitors_conf() {
-    local monitors_conf="${1:-$HOME/.config/hypr/sources_specific/monitors.conf}"
-    [ -f "$monitors_conf" ] || return 0
+    local monitors_lua="${1:-$HOME/.config/hypr/sources_specific/monitors.lua}"
+    [ -f "$monitors_lua" ] || return 0
 
-    # Check if there are already active monitor= lines
-    if grep -qE '^[[:space:]]*monitor=' "$monitors_conf" 2>/dev/null; then
+    if grep -qE '^[[:space:]]*hl\.monitor\(' "$monitors_lua" 2>/dev/null; then
         return 0
     fi
 
     local monitor_names
     monitor_names=$(get_all_hypr_monitors || true)
     if [ -z "$monitor_names" ]; then
-        print_warning "Could not auto-detect monitors via hyprctl; leaving monitors.conf unchanged."
+        print_warning "Could not auto-detect monitors via hyprctl; leaving monitors.lua unchanged."
         return 0
     fi
 
-    print_message "Auto-populating monitors.conf with detected monitors..."
+    print_message "Auto-populating monitors.lua with detected monitors..."
     local all_names=()
     local monitor_lines=()
     local x_offset=0
@@ -649,8 +642,8 @@ ensure_monitors_conf() {
         fi
 
         local pos="${x_offset}x0"
-        monitor_lines+=("monitor=${mon_name},preferred,${pos},1")
-        print_message "  Added monitor=${mon_name},preferred,${pos},1"
+        monitor_lines+=("hl.monitor({ output = \"${mon_name}\", mode = \"preferred\", position = \"${pos}\", scale = 1 })")
+        print_message "  Added ${mon_name} at ${pos}"
         x_offset=$((x_offset + width))
     done <<< "$monitor_names"
 
@@ -663,14 +656,12 @@ ensure_monitors_conf() {
     if [ "${#all_names[@]}" -gt 0 ]; then
         local primary="${all_names[0]}"
         local secondary="${all_names[1]:-$primary}"
-        generated+="$(printf '\nworkspace=1,monitor:%s,default:true\n' "$primary")"
-        generated+=$'\n'
+        generated+="$(printf '\nhl.workspace_rule({ workspace = \"1\", monitor = \"%s\", default = true })\n' "$primary")"
         if [ "${#all_names[@]}" -gt 1 ]; then
-            generated+="$(printf 'workspace=2,monitor:%s\n' "$secondary")"
-            generated+=$'\n'
+            generated+="$(printf 'hl.workspace_rule({ workspace = \"2\", monitor = \"%s\" })\n' "$secondary")"
         fi
     fi
-    [[ -z $generated ]] || append_text_atomic "$monitors_conf" "auto-detected monitor configuration" "$generated"
+    [[ -z $generated ]] || append_text_atomic "$monitors_lua" "auto-detected monitor configuration" "$generated"
 }
 
 # Apply MONITOR_CONFIG directly (name:resolution:scale;...) without requiring
@@ -679,21 +670,14 @@ apply_monitor_config_from_env() {
     local monitor_config="${MONITOR_CONFIG:-}"
     [ -n "$monitor_config" ] || return 1
 
-    local hyprland_setup_dir=""
-    hyprland_setup_dir="$(find_hyprland_setup_dir || true)"
-
     local monitor_targets=(
-        "$HOME/.config/hypr/sources_specific/monitors.conf"
-        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
+        "$HOME/.config/hypr/sources_specific/monitors.lua"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"
     )
     local wallpaper_targets=(
-        "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
-        "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+        "$HOME/.config/hypr/sources_specific/change_wallpaper.lua"
+        "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"
     )
-    if [ -n "$hyprland_setup_dir" ]; then
-        monitor_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/monitors.conf")
-        wallpaper_targets+=("$hyprland_setup_dir/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf")
-    fi
 
     local entry
     local parsed_any=false
@@ -717,7 +701,7 @@ apply_monitor_config_from_env() {
             width=0
         fi
         local offset="${x_offset}x0"
-        monitor_lines+=("monitor=${nm},${cfg},${offset},${sc}")
+        monitor_lines+=("hl.monitor({ output = \"${nm}\", mode = \"${cfg}\", position = \"${offset}\", scale = ${sc} })")
         monitor_names+=("$nm")
         parsed_any=true
         x_offset=$((x_offset + width))
@@ -730,14 +714,14 @@ apply_monitor_config_from_env() {
 
     local workspace_lines=()
     if [ "${#monitor_names[@]}" -gt 0 ]; then
-        workspace_lines+=("workspace=1,monitor:${monitor_names[0]},default:true")
+        workspace_lines+=("hl.workspace_rule({ workspace = \"1\", monitor = \"${monitor_names[0]}\", default = true })")
     fi
     if [ "${#monitor_names[@]}" -gt 1 ]; then
-        workspace_lines+=("workspace=2,monitor:${monitor_names[1]}")
+        workspace_lines+=("hl.workspace_rule({ workspace = \"2\", monitor = \"${monitor_names[1]}\" })")
     fi
 
     local mt content line
-    content="# Check monitor names (e.g. DP-1, HDMI-A-1) with: \`hyprctl monitors\`"$'\n'
+    content="-- Generated from MONITOR_CONFIG by setup.sh."$'\n'
     for line in "${monitor_lines[@]}"; do content+="$line"$'\n'; done
     if [ "${#workspace_lines[@]}" -gt 0 ]; then
         content+=$'\n'
@@ -751,13 +735,14 @@ apply_monitor_config_from_env() {
     local monitors_str=""
     local m
     for m in "${monitor_names[@]}"; do
-        monitors_str+="\"$m\" "
+        [ -n "$monitors_str" ] && monitors_str+=", "
+        monitors_str+="\"$m\""
     done
     local wt
     for wt in "${wallpaper_targets[@]}"; do
         [ -f "$wt" ] || continue
-        replace_config_line "$wt" '^MONITORS=' "MONITORS=($monitors_str)" "apply monitor wallpaper targets"
-        print_message "Applied MONITORS to $(basename "$wt"): MONITORS=($monitors_str)"
+        replace_config_line "$wt" '^[[:space:]]*monitors[[:space:]]*=' "    monitors = { $monitors_str }," "apply monitor wallpaper targets"
+        print_message "Applied wallpaper monitors to $(basename "$wt")"
     done
 
     return 0
@@ -1508,15 +1493,6 @@ update_configs() {
         execute_command "mkdir -p '$hypr_config_dir/sources'" "Create sources directory"
     fi
 
-    # Update app_variables.conf to use hyprland_setup_dir instead of ~
-    local app_vars_conf="$hypr_config_dir/sources/app_variables.conf"
-    if [ -f "$app_vars_conf" ]; then
-        print_message "Updating wallpaper path in app_variables.conf..."
-        sed_file_atomic "$app_vars_conf" "Update wallpaper path in app_variables.conf" "s|\\\$wallpaper=~/$SETUP_DIR/Wallpaper/Forest_01.png|\\\$wallpaper=\"$hyprland_setup_dir/Wallpaper/Forest_01.png\"|g"
-    else
-        print_warning "app_variables.conf not found at $app_vars_conf"
-    fi
-
     # Run stow script after copying sources_example
     if [ -f "$HOME/dotfiles/.local/scripts/Start_stow_solve.sh" ]; then
         print_message "Setting up dotfiles with Start_stow_solve.sh..."
@@ -1548,29 +1524,28 @@ update_configs() {
     # Point WALLPAPER_DIR to the copied location from here on.
     WALLPAPER_DIR="$target_wallpaper_dir"
 
-    # Update the wallpaper configuration file.
-    # Keep both the runtime config under ~/.config and the stow source under ~/dotfiles in sync.
-    local wallpaper_conf_runtime="$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
-    local wallpaper_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
-    local wallpaper_conf
-    for wallpaper_conf in "$wallpaper_conf_runtime" "$wallpaper_conf_source"; do
-        execute_command "mkdir -p '$(dirname "$wallpaper_conf")'" "Create wallpaper config directory ($(basename "$wallpaper_conf"))"
-        if [ -f "$wallpaper_conf" ]; then
-            replace_config_line "$wallpaper_conf" '^WALLPAPER_DIR=' "WALLPAPER_DIR=\"$WALLPAPER_DIR\"" "Update WALLPAPER_DIR without touching MONITORS ($(basename "$wallpaper_conf"))"
+    # Keep the runtime wallpaper data and the Stow source in sync.
+    local wallpaper_lua_runtime="$HOME/.config/hypr/sources_specific/change_wallpaper.lua"
+    local wallpaper_lua_source="$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"
+    local wallpaper_lua
+    for wallpaper_lua in "$wallpaper_lua_runtime" "$wallpaper_lua_source"; do
+        execute_command "mkdir -p '$(dirname "$wallpaper_lua")'" "Create wallpaper config directory ($(basename "$wallpaper_lua"))"
+        if [ -f "$wallpaper_lua" ]; then
+            replace_config_line "$wallpaper_lua" '^[[:space:]]*wallpaper_dir[[:space:]]*=' "    wallpaper_dir = \"$WALLPAPER_DIR\"," "Update wallpaper directory ($(basename "$wallpaper_lua"))"
         else
-            write_text_atomic "$wallpaper_conf" "Create initial wallpaper config ($(basename "$wallpaper_conf"))" "# Wallpaper Configuration
-WALLPAPER_DIR=\"$WALLPAPER_DIR\"
+            write_text_atomic "$wallpaper_lua" "Create initial wallpaper config ($(basename "$wallpaper_lua"))" "return {
+    wallpaper_dir = \"$WALLPAPER_DIR\",
+    monitors = {},
+}
 "
         fi
-
-        # Ensure MONITORS is set (auto-detect first monitor if user did not set)
-        ensure_wallpaper_monitors "$wallpaper_conf"
+        ensure_wallpaper_monitors "$wallpaper_lua"
     done
 
-    # Auto-populate monitors.conf if it has no active monitor= lines
-    local monitors_conf_runtime="$HOME/.config/hypr/sources_specific/monitors.conf"
-    local monitors_conf_source="$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
-    for mc in "$monitors_conf_runtime" "$monitors_conf_source"; do
+    # Auto-populate monitors.lua if it has no active monitor declarations.
+    local monitors_lua_runtime="$HOME/.config/hypr/sources_specific/monitors.lua"
+    local monitors_lua_source="$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"
+    for mc in "$monitors_lua_runtime" "$monitors_lua_source"; do
         [ -f "$mc" ] && ensure_monitors_conf "$mc"
     done
 
@@ -1749,7 +1724,7 @@ generate_roles_json() {
 
 runtime_role_command() {
     local role=$1 field=${2:-args}
-    jq -er --arg role "$role" --arg field "$field" '[.roles[$role].executable] + (.roles[$role][$field] // []) | @sh' "$ROLE_DATA_FILE"
+    jq -er --arg role "$role" --arg field "$field" '[.roles[$role].executable] + (.roles[$role][$field] // []) | join(" ") | @json' "$ROLE_DATA_FILE"
 }
 
 configure_roles() {
@@ -1763,10 +1738,10 @@ configure_roles() {
     local terminal_command browser_command editor_command launcher_command
     local browser_exec browser_class terminal_exec editor_bin menu_dmenu launcher_process launcher_namespace
     if is_dry_run; then
-        terminal_command=$(role_option_json terminal | jq -r '[.executable] + .args | @sh')
-        browser_command=$(role_option_json browser | jq -r '[.executable] + .args | @sh')
-        editor_command=$(role_option_json gui_editor | jq -r '[.executable] + .args | @sh')
-        launcher_command=$(role_option_json launcher | jq -r '[.executable] + .args | @sh')
+        terminal_command=$(role_option_json terminal | jq -r '[.executable] + .args | join(" ") | @json')
+        browser_command=$(role_option_json browser | jq -r '[.executable] + .args | join(" ") | @json')
+        editor_command=$(role_option_json gui_editor | jq -r '[.executable] + .args | join(" ") | @json')
+        launcher_command=$(role_option_json launcher | jq -r '[.executable] + .args | join(" ") | @json')
         browser_exec=$(role_field browser executable)
         browser_class=$(role_field browser class)
         terminal_exec=$(role_field terminal executable)
@@ -1788,25 +1763,24 @@ configure_roles() {
         launcher_namespace=$(jq -er '.roles.launcher.namespace' "$ROLE_DATA_FILE")
     fi
 
-    local root file
+    local root file browser_exec_lua
+    browser_exec_lua=$(jq -n --arg value "$browser_exec" '$value')
     for root in "$HOME/dotfiles/.config/hypr/sources" "$HOME/dotfiles/.config/hypr/sources_example"; do
-        file="$root/app_variables.conf"
-        replace_literal_assignment "$file" '$terminal' "\$terminal = $terminal_command" "selected terminal"
-        replace_literal_assignment "$file" '$menu' "\$menu = $launcher_command" "selected launcher"
-        replace_literal_assignment "$file" '$browser' "\$browser = $browser_command" "selected browser"
-        replace_literal_assignment "$file" '$editor' "\$editor = $editor_command" "selected GUI editor"
+        file="$root/app_variables.lua"
+        replace_config_line "$file" '^[[:space:]]*terminal[[:space:]]*=' "    terminal = $terminal_command," "selected terminal"
+        replace_config_line "$file" '^[[:space:]]*menu[[:space:]]*=' "    menu = $launcher_command," "selected launcher"
+        replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser"
+        replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected GUI editor"
 
-        file="$root/environment_variables.conf"
-        replace_config_line "$file" '^env = BROWSER,' "env = BROWSER,$browser_exec" "selected browser environment"
+        file="$root/environment_variables.lua"
+        replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment"
 
-        file="$root/keybindings.conf"
-        replace_literal_prefix "$file" 'bindd = $mainMod, SPACE, Open Menu,' "bindd = \$mainMod, SPACE, Open Menu, exec, pkill $launcher_process || \$menu" "selected launcher process"
+        file="$root/keybindings.lua"
+        replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd(\"pkill $launcher_process || \" .. apps.menu))" "selected launcher process"
 
-        file="$root/windows_and_workspaces.conf"
-        remove_config_matching "$file" '^windowrule = workspace 2.*match:class' "replace browser role rule"
-        replace_config_line "$file" '^windowrule = workspace 2.*match:class' "windowrule = workspace 2 silent, match:class $browser_class" "selected browser workspace rule"
-        remove_config_matching "$file" '^layerrule = dim_around on, match:namespace' "replace launcher layer rule"
-        replace_config_line "$file" '^layerrule = dim_around on, match:namespace' "layerrule = dim_around on, match:namespace $launcher_namespace" "selected launcher namespace"
+        file="$root/windows_and_workspaces.lua"
+        replace_config_line "$file" 'hss-role:browser-workspace$' "window_rule(\"$browser_class\", { workspace = \"2 silent\" }) -- hss-role:browser-workspace" "selected browser workspace rule"
+        replace_config_line "$file" 'hss-role:launcher-layer$' "hl.layer_rule({ match = { namespace = \"$launcher_namespace\" }, dim_around = true }) -- hss-role:launcher-layer" "selected launcher namespace"
     done
 
     local fish_files=(
@@ -1834,66 +1808,50 @@ configure_roles() {
     print_message "Configured roles: browser=$ROLE_BROWSER terminal=$ROLE_TERMINAL shell=$ROLE_SHELL gui_editor=$ROLE_GUI_EDITOR tui_editor=$ROLE_TUI_EDITOR launcher=$ROLE_LAUNCHER"
 }
 configure_hypr_autostart_optional_extras() {
-    uncomment_line_if_cmd_exists() {
-        local conf_file="$1"
+    uncomment_lua_line_if_cmd_exists() {
+        local lua_file="$1"
         local cmd="$2"
         local line="$3"
         command -v "$cmd" >/dev/null 2>&1 || return 0
-        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: ${cmd}"
+        replace_literal_prefix "$lua_file" "    -- $line" "    $line" "Enable autostart: ${cmd}"
     }
 
-    uncomment_line_if_unit_exists() {
-        local conf_file="$1"
-        local unit="$2"
-        local line="$3"
-        systemctl --user list-unit-files --all 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit" || return 0
-        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: ${unit}"
-    }
-
-    uncomment_line_if_file_exists() {
-        local conf_file="$1"
+    uncomment_lua_line_if_file_exists() {
+        local lua_file="$1"
         local file="$2"
         local line="$3"
         [ -f "$file" ] || return 0
-        replace_literal_prefix "$conf_file" "# $line" "$line" "Enable autostart: $(basename "$file")"
+        replace_literal_prefix "$lua_file" "    -- $line" "    $line" "Enable autostart: $(basename "$file")"
     }
 
     local configured_terminal=""
     configured_terminal=$(role_field terminal executable 2>/dev/null || true)
 
-    local conf_files=(
-        "$HOME/dotfiles/.config/hypr/sources/autostart.conf"
-        "$HOME/dotfiles/.config/hypr/sources_example/autostart.conf"
+    local lua_files=(
+        "$HOME/dotfiles/.config/hypr/sources/autostart.lua"
+        "$HOME/dotfiles/.config/hypr/sources_example/autostart.lua"
     )
 
-    local conf_file=""
-    for conf_file in "${conf_files[@]}"; do
-        [ -f "$conf_file" ] || continue
+    local lua_file=""
+    for lua_file in "${lua_files[@]}"; do
+        [ -f "$lua_file" ] || continue
 
-        uncomment_line_if_cmd_exists "$conf_file" "swaync" "exec-once = swaync"
-        uncomment_line_if_cmd_exists "$conf_file" "nm-applet" "exec-once = nm-applet --indicator &"
-        uncomment_line_if_cmd_exists "$conf_file" "pypr" "exec-once = pypr"
-        uncomment_line_if_unit_exists "$conf_file" "app-org.kde.xwaylandvideobridge@autostart.service" "exec-once = systemctl --user start app-org.kde.xwaylandvideobridge@autostart.service &"
+        uncomment_lua_line_if_cmd_exists "$lua_file" "swaync" 'hl.exec_cmd("swaync")'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "nm-applet" 'hl.exec_cmd("nm-applet --indicator")'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "pypr" 'hl.exec_cmd("pypr")'
+        uncomment_lua_line_if_file_exists "$lua_file" "$HOME/dotfiles/.config/hypr/scripts/fix-dolphin.sh" 'hl.exec_cmd(apps.hyprscripts .. "/fix-dolphin.sh")'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "input-remapper-control" 'hl.exec_cmd("input-remapper-control --command autoload --device " .. apps.mouse)'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "hyprsunset" 'hl.exec_cmd("hyprsunset")'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-applet" 'hl.exec_cmd("blueman-applet")'
+        uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-tray" 'hl.exec_cmd("blueman-tray")'
 
-        # Lines that include Hyprland variables ($hyprscripts/$mouse) must stay literal.
-        uncomment_line_if_file_exists "$conf_file" "$HOME/dotfiles/.config/hypr/scripts/fix-dolphin.sh" "exec-once = \$hyprscripts/fix-dolphin.sh &"
-        uncomment_line_if_cmd_exists "$conf_file" "input-remapper-control" "exec-once = input-remapper-control --command autoload --device \$mouse &"
-
-        uncomment_line_if_cmd_exists "$conf_file" "hyprsunset" "exec-once = hyprsunset"
-        uncomment_line_if_cmd_exists "$conf_file" "blueman-applet" "exec-once = blueman-applet &"
-        uncomment_line_if_cmd_exists "$conf_file" "blueman-tray" "exec-once = blueman-tray &"
-
-        # Workspace 3 terminal examples: enable only when the referenced terminal + config exists.
         if [ "$configured_terminal" = "kitty" ]; then
-            uncomment_line_if_file_exists "$conf_file" "$HOME/.config/kitty/my_layout.conf" "exec-once = [workspace 3 silent] kitty --session ~/.config/kitty/my_layout.conf"
-
+            uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" 'hl.exec_cmd("kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })'
             if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
-                uncomment_line_if_cmd_exists "$conf_file" "kitty" "exec-once = [workspace 3 silent] kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
+                uncomment_lua_line_if_cmd_exists "$lua_file" "kitty" 'hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
             fi
-        elif [ "$configured_terminal" = "alacritty" ]; then
-            if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
-                uncomment_line_if_cmd_exists "$conf_file" "alacritty" "exec-once = [workspace 3 silent] alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl"
-            fi
+        elif [ "$configured_terminal" = "alacritty" ] && command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+            uncomment_lua_line_if_cmd_exists "$lua_file" "alacritty" 'hl.exec_cmd("alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
         fi
     done
 }
@@ -2431,14 +2389,14 @@ configure_monitor() {
                 print_message "Non-interactive: MONITOR_SETUP_ENABLED is not set; falling back to auto-detection"
                 local mc
                 for mc in \
-                    "$HOME/.config/hypr/sources_specific/monitors.conf" \
-                    "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"; do
+                    "$HOME/.config/hypr/sources_specific/monitors.lua" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"; do
                     [ -f "$mc" ] && ensure_monitors_conf "$mc"
                 done
                 local wc
                 for wc in \
-                    "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" \
-                    "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+                    "$HOME/.config/hypr/sources_specific/change_wallpaper.lua" \
+                    "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"; do
                     [ -f "$wc" ] && ensure_wallpaper_monitors "$wc"
                 done
                 track_config_status "Monitor Setup" "$CIRCLE (Auto-detected)"
@@ -2485,17 +2443,12 @@ configure_monitor() {
         local primary_monitor=""
         local primary_width=""
         local configured_monitors=()
-        # local monitors_conf_file="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/monitors.conf"
-        # Hyprland sources this file directly (see dotfiles/.config/hypr/hyprland.conf)
-        local monitors_conf_file="${HOME}/.config/hypr/sources_specific/monitors.conf"
-        # local wallpaper_conf="${HOME}/Dokumente/GitHub/$SETUP_DIR/dotfiles/.config/hypr/sources_example/change_wallpaper.conf"
-        local wallpaper_conf="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
+        # Hyprland requires this module from hyprland.lua.
+        local monitors_lua_file="${HOME}/.config/hypr/sources_specific/monitors.lua"
+        local wallpaper_lua="${HOME}/.config/hypr/sources_specific/change_wallpaper.lua"
 
-        if [ ! -f "$monitors_conf_file" ]; then
-            write_text_atomic "$monitors_conf_file" "Create monitor configuration" '# Check monitor names (e.g. DP-1, HDMI-A-1) with: `hyprctl monitors`
-# Example single monitor configuration:
-# monitor=DP-1,2560x1440@144,0x0,1
-# workspace=1,monitor:DP-1,default:true
+        if [ ! -f "$monitors_lua_file" ]; then
+            write_text_atomic "$monitors_lua_file" "Create monitor configuration" '-- Generated monitor configuration.
 '
         fi
 
@@ -2611,7 +2564,7 @@ configure_monitor() {
                 fi
             fi
 
-            replace_config_line "$monitors_conf_file" "^monitor=${monitor_name}," "monitor=${monitor_name},${chosen_resolution},${offset},${scale}" "Configure monitor $monitor_name"
+            replace_config_line "$monitors_lua_file" "^hl[.]monitor.*output = \"${monitor_name}\"" "hl.monitor({ output = \"${monitor_name}\", mode = \"${chosen_resolution}\", position = \"${offset}\", scale = ${scale} })" "Configure monitor $monitor_name"
 
             configured_monitors+=("$monitor_name")
         }
@@ -2628,18 +2581,11 @@ configure_monitor() {
         local primary="${configured_monitors[0]}"
         local secondary="${configured_monitors[1]:-$primary}"
         
-        # Update workspace assignments in monitors.conf
-        local workspace_tmp
-        make_tmp workspace_tmp monitor-workspaces.XXXXXX || return 1
-        awk -F, -v p="$primary" -v s="$secondary" 'BEGIN { OFS="," }
-            /^workspace=/ {
-                split($1, arr, "");
-                ws=arr[2];
-                if (ws % 2 == 1) { $2="monitor:" s } else { $2="monitor:" p }
-                print
-            }
-            !/^workspace=/ { print }
-        ' "$monitors_conf_file" > "$workspace_tmp" && write_file_atomic "$monitors_conf_file" "$workspace_tmp" "Update monitor workspace assignments"
+        remove_config_matching "$monitors_lua_file" '^hl[.]workspace_rule[(]' "Replace monitor workspace assignments"
+        append_text_atomic "$monitors_lua_file" "Update monitor workspace assignments" "
+hl.workspace_rule({ workspace = \"1\", monitor = \"$primary\", default = true })
+hl.workspace_rule({ workspace = \"2\", monitor = \"$secondary\" })
+"
 
         # Update wallpaper configuration (runtime + stow source if present)
         local monitors_str=""
@@ -2647,27 +2593,29 @@ configure_monitor() {
             monitors_str+="\"$m\" "
         done
 
-        local wallpaper_confs=(
-            "$HOME/.config/hypr/sources_specific/change_wallpaper.conf"
-            "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"
+        local wallpaper_lua_files=(
+            "$HOME/.config/hypr/sources_specific/change_wallpaper.lua"
+            "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"
         )
+        monitors_str=${monitors_str% }
+        monitors_str=${monitors_str//\" \"/\", \"}
         local wc
-        for wc in "${wallpaper_confs[@]}"; do
+        for wc in "${wallpaper_lua_files[@]}"; do
             if [ -f "$wc" ]; then
-                replace_config_line "$wc" '^MONITORS=' "MONITORS=($monitors_str)" "Update wallpaper monitor list"
-                print_message "Updated MONITORS in $(basename "$wc"): MONITORS=($monitors_str)"
+                replace_config_line "$wc" '^[[:space:]]*monitors[[:space:]]*=' "    monitors = { $monitors_str }," "Update wallpaper monitor list"
+                print_message "Updated wallpaper monitors in $(basename "$wc")"
             else
                 print_warning "Wallpaper configuration file not found: $wc"
             fi
         done
 
-        sed_file_atomic "$monitors_conf_file" "Remove monitor placeholders" '/MONITOR_[0-9]/d'
-        for wc in "$HOME/.config/hypr/sources_specific/change_wallpaper.conf" "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.conf"; do
+        sed_file_atomic "$monitors_lua_file" "Remove monitor placeholders" '/MONITOR_[0-9]/d'
+        for wc in "${wallpaper_lua_files[@]}"; do
             [ -f "$wc" ] && sed_file_atomic "$wc" "Remove wallpaper monitor placeholders" '/MONITOR_[0-9]/d'
         done
 
-        if [ -f "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" ]; then
-            copy_file_atomic "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf" "$monitors_conf_file" "Synchronize monitor source configuration"
+        if [ -f "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua" ]; then
+            copy_file_atomic "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua" "$monitors_lua_file" "Synchronize monitor source configuration"
         fi
 
     elif command -v kscreen-doctor &>/dev/null; then
@@ -2782,12 +2730,12 @@ verify_workspace_config() {
     print_message "Verifying workspace configuration"
     local issues=0
     local files=(
-        "$HOME/.config/hypr/sources_specific/monitors.conf"
-        "$HOME/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.conf"
-        "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
-        "$HOME/.dotfiles/.config/hypr/sources_specific/monitors.conf"
-        "$HOME/.dotfiles/.config/hypr/sources/windows_and_workspaces.conf"
+        "$HOME/.config/hypr/sources_specific/monitors.lua"
+        "$HOME/.config/hypr/sources/windows_and_workspaces.lua"
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"
+        "$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
+        "$HOME/.dotfiles/.config/hypr/sources_specific/monitors.lua"
+        "$HOME/.dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
         "$HOME/.config/waybar/config"
         "$HOME/.config/waybar/config.jsonc"
         "$HOME/.dotfiles/.config/waybar/config"

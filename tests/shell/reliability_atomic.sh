@@ -64,10 +64,10 @@ grep -q '^sudo .*mktemp' "$STUB_LOG"
 printf 'ok - privileged atomic path uses sudo stubs inside isolated test etc root\n'
 
 before=$(find "$HOME" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
-dry_output=$(DRY_RUN=true HSS_RELIABILITY_ACTION=dry-record HSS_DEST="$HOME/dotfiles/.config/hypr/sources/app_variables.conf" "$repo_root/setup.sh" --test-scenario reliability 2>&1)
+dry_output=$(DRY_RUN=true HSS_RELIABILITY_ACTION=dry-record HSS_DEST="$HOME/dotfiles/.config/hypr/sources/app_variables.lua" "$repo_root/setup.sh" --test-scenario reliability 2>&1)
 after=$(find "$HOME" -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum)
 [[ $before == "$after" ]]
-grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.conf" <<< "$dry_output"
+grep -Fq "$HOME/dotfiles/.config/hypr/sources/app_variables.lua" <<< "$dry_output"
 printf 'ok - dry run changes only state and reports destination with reason\n'
 
 first=$(cat "$XDG_STATE_HOME/hyprland-simple-setup/latest-run")

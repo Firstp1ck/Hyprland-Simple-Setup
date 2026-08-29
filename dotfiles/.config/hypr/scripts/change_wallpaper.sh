@@ -5,14 +5,23 @@
 # It handles hyprpaper's hanging IPC commands by running them in background and cleaning up afterwards.
 # Compatible with hyprpaper 0.8.0+ (uses new IPC format: 'monitor, path, fit_mode')
 
-# shellcheck disable=SC1090
-
-# Load system-specific configuration file
-CONFIG_FILE="${HOME}/.config/hypr/sources_specific/change_wallpaper.conf"
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
-else
+# Load the system-specific Lua data file without executing arbitrary code.
+CONFIG_FILE="${HOME}/.config/hypr/sources_specific/change_wallpaper.lua"
+if [ ! -f "$CONFIG_FILE" ]; then
     echo "Config file not found: $CONFIG_FILE"
+    exit 1
+fi
+
+WALLPAPER_DIR=$(sed -nE 's/^[[:space:]]*wallpaper_dir[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$CONFIG_FILE" | head -n1)
+WALLPAPER_DIR="${WALLPAPER_DIR/\$HOME/$HOME}"
+mapfile -t MONITORS < <(
+    sed -nE 's/^[[:space:]]*monitors[[:space:]]*=[[:space:]]*\{(.*)\}.*/\1/p' "$CONFIG_FILE" \
+        | grep -oE '"[^"]+"' \
+        | tr -d '"'
+)
+
+if [ -z "$WALLPAPER_DIR" ]; then
+    echo "Invalid wallpaper_dir in $CONFIG_FILE" >&2
     exit 1
 fi
 

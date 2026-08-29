@@ -42,7 +42,7 @@ check_numlock_setting() {
     return 0
 }
 
-# Array of processes to check (extracted from autostart.conf)
+# Array of processes to check (mirrors autostart.lua)
 processes=(
     "tor"
     "polkitd"

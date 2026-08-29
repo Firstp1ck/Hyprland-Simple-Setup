@@ -239,7 +239,7 @@
         "menu-actions": {
             "keybinds": "~/.config/waybar/scripts/keybinds.py",
             "drun": "$HOME/.config/hypr/scripts/menu_exec.sh",
-            "open_keybinds": "$HOME/.config/hypr/scripts/term_exec.sh --app-id hss-keybinds --title Keybinds -- sh -c 'editor=$(jq -r .roles.tui_editor.editor_bin \"$HOME/.config/hypr/roles.json\"); exec \"$editor\" \"$HOME/.config/hypr/sources/keybindings.conf\"'",
+            "open_keybinds": "$HOME/.config/hypr/scripts/term_exec.sh --app-id hss-keybinds --title Keybinds -- sh -c 'editor=$(jq -r .roles.tui_editor.editor_bin \"$HOME/.config/hypr/roles.json\"); exec \"$editor\" \"$HOME/.config/hypr/sources/keybindings.lua\"'",
             "snapshot": "$HOME/.config/waybar/scripts/snapshot.sh"
         }
     },

@@ -257,8 +257,9 @@ Notes:
 - `dotfiles/`
   - `.config/`
     - `hypr/` – Hyprland configs and scripts
-      - `hyprland.conf` – Main config
-      - `sources_example/` – Example modular configs (keybindings, monitors, autostart, etc.)
+      - `hyprland.lua` – Active Hyprland config
+      - `hyprland.conf` – Retained pre-Lua backup
+      - `sources_example/` – Example Lua modules with retained `.conf` backups
       - `scripts/` – Helper scripts (wallpaper, sunset, dolphin fix, etc.)
     - `waybar/` – Status bar config, style, and scripts (weather, updates)
     - `wofi/` – Application launcher config and style
@@ -394,27 +395,21 @@ cd ~/Hyprland-Simple-Setup
 
 2. Update the following files with your system-specific details:
    - **Wallpaper Configuration:**  
-     Create or edit `~/.config/hypr/sources/change_wallpaper.conf` with:
-     ```bash
-     # Your wallpaper directory path
-     WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
-     
-     # Your monitor names (check with hyprctl monitors)
-     MONITORS=(
-         "DP-1"
-         "HDMI-A-1"
-         # Add more monitors as needed
-     )
+     Create or edit `~/.config/hypr/sources_specific/change_wallpaper.lua`:
+     ```lua
+     return {
+         wallpaper_dir = "$HOME/Pictures/Wallpapers",
+         monitors = { "DP-1", "HDMI-A-1" },
+     }
      ```
    - **Hyprlock Wallpaper Path:**  
      Update the `background` path in `~/.config/hypr/hyprlock.conf` to match your wallpaper directory.
      
    - **Display Configuration:**  
-     Create or edit `~/.config/hypr/sources/displays.conf` to match your monitor setup:
-     ```bash
-     monitor=DP-1,2560x1440@144,0x0,1
-     monitor=HDMI-A-1,1920x1080@60,2560x0,1
-     # Add more monitor configurations as needed
+     Create or edit `~/.config/hypr/sources_specific/monitors.lua` to match your monitor setup:
+     ```lua
+     hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })
+     hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "2560x0", scale = 1 })
      ```
 
    - **Environment Variables:**  
@@ -484,34 +479,32 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   ```
 
 ### Window Rules
-- Add custom window rules in `~/.config/hypr/sources/windows_and_workspaces.conf`:
-  ```ini
-  # Example window rules
-  windowrulev2 = float,class:^(org\.pulseaudio\.pavucontrol)$
-  windowrulev2 = center,class:^(org\.pulseaudio\.pavucontrol)$
-  windowrule = workspace 2 silent, match:class zen
-  # Alternative: windowrule = workspace 2 silent, match:class vivaldi-stable
-  windowrule = opacity 0.95, ^(Code)$
+- Add custom window rules in `~/.config/hypr/sources/windows_and_workspaces.lua`:
+  ```lua
+  hl.window_rule({
+      match = { class = "org.pulseaudio.pavucontrol" },
+      float = true,
+      center = true,
+  })
+  hl.window_rule({ match = { class = "zen" }, workspace = "2 silent" })
   ```
 
 ### Keybindings
-- Customize shortcuts in `~/.config/hypr/sources/keybindings.conf`:
-  ```ini
-  # Media controls
-  bind = , XF86AudioPlay, exec, playerctl play-pause
-  bind = , XF86AudioNext, exec, playerctl next
-  
-  # Screenshot bindings
-  bind = , Print, exec, hyprshot -m output
-  bind = SHIFT, Print, exec, hyprshot -m region
+- Customize shortcuts in `~/.config/hypr/sources/keybindings.lua`:
+  ```lua
+  hl.bind("XF86AudioPlay", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
+  hl.bind("XF86AudioNext", hl.dsp.exec_cmd("playerctl next"), { locked = true })
+  hl.bind("Print", hl.dsp.exec_cmd("hyprshot --mode output"))
+  hl.bind("SHIFT + Print", hl.dsp.exec_cmd("hyprshot --mode region"))
   ```
 
 ### Autostart Applications
-- Add or modify autostart programs in `~/.config/hypr/sources/exec_once.conf`:
-  ```bash  
-  # User applications
-  exec-once = [workspace 2 silent] $browser
-  exec-once = [workspace 3] code
+- Add or modify autostart programs in `~/.config/hypr/sources/autostart.lua`:
+  ```lua
+  hl.on("hyprland.start", function()
+      hl.exec_cmd("zen-browser", { workspace = "2 silent" })
+      hl.exec_cmd("code", { workspace = "3" })
+  end)
   ```
 
 ### Monitor Configuration
@@ -531,21 +524,22 @@ The setup provides an interactive monitor configuration workflow:
      - Position (automatically calculated)
 
 3. Configuration Storage:
-   - Settings saved to `~/.config/hypr/sources/displays.conf`
+   - Settings are saved to `~/.config/hypr/sources_specific/monitors.lua`
    - Format example:
-     ```bash
-     monitor=DP-1,2560x1440@144,0x0,1
-     monitor=HDMI-A-1,1920x1080@60,2560x0,1
+     ```lua
+     hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })
+     hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "2560x0", scale = 1 })
      ```
 
 ### Remove Default Tweaks
-- Configure misc options to remove default settings:
-  ```ini
-  misc {
-      vfr = true # Enable VFR (Variable Frame Rate) for Hyprland
-      force_default_wallpaper = 0 # Set to 0 or 1 to disable the anime mascot wallpapers
-      disable_hyprland_logo = true # If true disables the random hyprland logo / anime girl background. :(
-  }
+- Configure miscellaneous options in `sources/look_and_feel.lua`:
+  ```lua
+  hl.config({
+      misc = {
+          force_default_wallpaper = 0,
+          disable_hyprland_logo = true,
+      },
+  })
   ```
 
 For more customization options, refer to:
@@ -571,7 +565,7 @@ For more customization options, refer to:
   ```
 - If monitors are not detected properly:
   1. Ensure your GPU drivers are properly installed
-  2. Try adding manual monitor configuration to `hyprland.conf`
+  2. Try adding manual monitor configuration to `sources_specific/monitors.lua`
   3. Check if your display cable is properly connected
 
 ### Wallpaper Management
@@ -617,7 +611,7 @@ For more customization options, refer to:
   nvidia-smi  # For NVIDIA GPUs
   radeontop   # For AMD GPUs
   ```
-- Reduce animation complexity in `~/.config/hypr/sources/look_and_feel.conf` if needed
+- Reduce animation complexity in `~/.config/hypr/sources/look_and_feel.lua` if needed
 
 ### Application Integration
 - XWayland applications not working:
@@ -665,7 +659,7 @@ For more customization options, refer to:
 - If Hyprland fails to start:
   1. Switch to another TTY (Ctrl+Alt+F2)
   2. Check logs: `less ~/.local/share/hyprland/hyprland.log`
-  3. Try with minimal config: `mv ~/.config/hypr/hyprland.conf ~/.config/hypr/hyprland.conf.bak`
+  3. Try with a minimal `~/.config/hypr/hyprland.lua`; the retained `hyprland.conf` is only a backup
 
 For persistent issues:
 - Check [Hyprland GitHub Issues](https://github.com/hyprwm/Hyprland/issues)
