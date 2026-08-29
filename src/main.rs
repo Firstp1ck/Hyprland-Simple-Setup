@@ -600,6 +600,80 @@ fn setup_section_marker(section: &SetupSection, is_current: bool) -> &'static st
     }
 }
 
+fn timestamp_prefix_end(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    if bytes.len() >= 22
+        && bytes[0] == b'['
+        && bytes[5] == b'-'
+        && bytes[8] == b'-'
+        && bytes[11] == b' '
+        && bytes[14] == b':'
+        && bytes[17] == b':'
+        && bytes[20] == b']'
+        && bytes[21] == b' '
+    {
+        Some(22)
+    } else {
+        None
+    }
+}
+
+fn output_line_severity(line: &str) -> StepSeverity {
+    let clean = strip_ansi_sequences(line);
+    let message = timestamp_prefix_end(&clean)
+        .and_then(|end| clean.get(end..))
+        .unwrap_or(&clean)
+        .trim();
+    let lower = message.to_lowercase();
+
+    if lower.contains("[error]")
+        || lower.contains("error:")
+        || lower.starts_with("fatal:")
+        || lower.starts_with("x [")
+        || lower.starts_with("✗ [")
+        || lower.starts_with("hard failures (")
+        || lower.starts_with("setup.sh exited with status")
+    {
+        StepSeverity::Error
+    } else if lower.contains("[!]")
+        || lower.contains("[warning]")
+        || lower.contains("warning:")
+        || lower.starts_with("! [")
+        || lower.starts_with("○ [")
+        || lower.starts_with("o [")
+        || lower.starts_with("soft errors (")
+        || lower.starts_with("skipped steps (")
+    {
+        StepSeverity::Warning
+    } else {
+        StepSeverity::None
+    }
+}
+
+fn live_output_line(theme: Theme, stored_line: &str) -> Line<'static> {
+    let clean = strip_ansi_sequences(stored_line);
+    let severity = output_line_severity(&clean);
+    let message_style = match severity {
+        StepSeverity::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        StepSeverity::Warning => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        StepSeverity::None => Style::default().fg(theme.subtext0),
+    };
+
+    if let Some(end) = timestamp_prefix_end(&clean) {
+        Line::from(vec![
+            Span::styled(
+                clean[..end].to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(clean[end..].to_string(), message_style),
+        ])
+    } else {
+        Line::from(Span::styled(clean, message_style))
+    }
+}
+
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Split vertically to create a footer for keybind help
     let vchunks = Layout::default()
@@ -732,7 +806,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
     let log_text: Vec<Line> = app.logs[start_idx..end_idx]
         .iter()
-        .map(|l| Line::from(l.clone()))
+        .map(|line| live_output_line(app.theme, line))
         .collect();
 
     let logs = Paragraph::new(log_text)
@@ -3490,21 +3564,14 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         return;
     }
 
-    // Check for warnings/errors and annotate current section
-    let lower = trimmed.to_lowercase();
-    let mut sev: Option<StepSeverity> = None;
-    if lower.contains("[error]") || lower.starts_with("error: ") {
-        sev = Some(StepSeverity::Error);
-    } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ")
-    {
-        sev = Some(StepSeverity::Warning);
-    }
-    if let Some(sev_val) = sev
+    // Check for warnings/errors and annotate current section.
+    let sev = output_line_severity(trimmed);
+    if sev != StepSeverity::None
         && let Some(idx) = app.current_section
         && let Some(sec) = app.sections.get_mut(idx)
     {
         // Upgrade severity if needed (Error overrides Warning)
-        match (sec.severity, sev_val) {
+        match (sec.severity, sev) {
             (StepSeverity::Error, _) => {}
             (StepSeverity::Warning, StepSeverity::Error) => sec.severity = StepSeverity::Error,
             (StepSeverity::None, s) => sec.severity = s,
@@ -3734,5 +3801,48 @@ mod tests {
             setup_section_style(theme, &error, false).fg,
             Some(Color::Red)
         );
+    }
+
+    #[test]
+    fn live_output_detects_structured_warnings_and_errors() {
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] [ERROR] package failed"),
+            StepSeverity::Error
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] X [install] hard failure"),
+            StepSeverity::Error
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] [!] skipped optional step"),
+            StepSeverity::Warning
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] Skipped Steps (2):"),
+            StepSeverity::Warning
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] package installation complete"),
+            StepSeverity::None
+        );
+    }
+
+    #[test]
+    fn live_output_uses_tty_colors_and_strips_ansi() {
+        let theme = Theme::catppuccin_mocha();
+        let error = live_output_line(
+            theme,
+            "[2026-08-29 10:59:08] \u{1b}[31m[ERROR] package failed\u{1b}[0m",
+        );
+        let warning = live_output_line(theme, "\u{1b}[33m[!] skipped optional step\u{1b}[0m");
+
+        assert_eq!(error.spans.len(), 2);
+        assert_eq!(error.spans[0].style.fg, Some(Color::DarkGray));
+        assert_eq!(error.spans[1].style.fg, Some(Color::Red));
+        assert!(error.spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert!(!error.spans[1].content.contains('\u{1b}'));
+        assert_eq!(warning.spans[0].style.fg, Some(Color::Yellow));
+        assert!(warning.spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(!warning.spans[0].content.contains('\u{1b}'));
     }
 }
