@@ -664,4 +664,18 @@ mod tests {
         assert!(error.contains("Browser"));
         assert!(error.contains("Launcher"));
     }
+
+    #[test]
+    fn zed_role_uses_the_installed_arch_executable() {
+        let registry = shipped_registry();
+        let zed = registry.roles["gui_editor"]
+            .options
+            .iter()
+            .find(|option| option.package == "zed")
+            .expect("Zed must remain a GUI editor option");
+
+        assert_eq!(zed.executable, "zeditor");
+        assert_eq!(zed.editor_bin.as_deref(), Some("zeditor"));
+        assert_eq!(zed.desktop_file.as_deref(), Some("dev.zed.Zed.desktop"));
+    }
 }

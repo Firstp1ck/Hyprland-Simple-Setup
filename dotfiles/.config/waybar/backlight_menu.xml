@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkMenu" id="menu">
+    <child>
+      <object class="GtkMenuItem" id="set-to-100">
+        <property name="label">Set to 100%</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator1"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="set-to-75">
+        <property name="label">Set to 75%</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator2"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="set-to-50">
+        <property name="label">Set to 50%</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator3"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="set-to-25">
+        <property name="label">Set to 25%</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator4"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="set-to-10">
+        <property name="label">Set to 10%</property>
+      </object>
+    </child> 
+  </object>
+</interface> 

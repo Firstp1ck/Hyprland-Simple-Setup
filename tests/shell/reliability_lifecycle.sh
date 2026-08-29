@@ -186,19 +186,27 @@ if [[ ${1:-} == monitors ]]; then
   printf 'Monitor eDP-1 (ID 0):\n'
   exit 0
 fi
+if [[ ${1:-} == dispatch && ${2:-} == exec && ${3:-} == hyprpaper ]]; then
+  touch "${HYPRPAPER_RUNNING_FILE:?}"
+  printf 'dispatch hyprpaper\n' >> "${WALLPAPER_STUB_LOG:?}"
+  exit 0
+fi
 if [[ ${1:-} == hyprpaper && ${2:-} == wallpaper ]]; then
   if [[ $# -eq 2 ]]; then
-    printf 'not enough args\n'
-  else
-    printf '%s\n' "$3" >> "${WALLPAPER_STUB_LOG:?}"
+    printf 'parser diagnostics are not an IPC readiness probe\n' >&2
+    exit 77
   fi
+  printf '%s\n' "$3" >> "${WALLPAPER_STUB_LOG:?}"
   exit 0
 fi
 exit 1
 EOF
 cat > "$wallpaper_bin/pgrep" <<'EOF'
 #!/usr/bin/env bash
-exit 0
+if [[ -z ${HYPRPAPER_RUNNING_FILE:-} ]]; then
+  exit 0
+fi
+[[ -e $HYPRPAPER_RUNNING_FILE ]]
 EOF
 cat > "$wallpaper_bin/pkill" <<'EOF'
 #!/usr/bin/env bash
@@ -209,12 +217,90 @@ chmod +x "$wallpaper_bin/hyprctl" "$wallpaper_bin/pgrep" "$wallpaper_bin/pkill"
 HOME="$wallpaper_home" \
 WALLPAPER_CHANGE_STAMP="$fixture/wallpaper-change-ran" \
 WALLPAPER_STUB_LOG="$wallpaper_stub_log" \
+HYPRPAPER_RUNNING_FILE="$fixture/hyprpaper-running" \
 PATH="$wallpaper_bin:$PATH" \
   "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" >"$fixture/wallpaper-default.out" 2>&1
+HOME="$wallpaper_home" \
+WALLPAPER_CHANGE_STAMP="$fixture/wallpaper-change-ran-manual" \
+WALLPAPER_STUB_LOG="$wallpaper_stub_log" \
+HYPRPAPER_RUNNING_FILE="$fixture/hyprpaper-running" \
+PATH="$wallpaper_bin:$PATH" \
+  "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" >"$fixture/wallpaper-manual.out" 2>&1
 grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-default.out"
+grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-manual.out"
+[[ $(grep -Fxc 'dispatch hyprpaper' "$wallpaper_stub_log") -eq 1 ]]
 grep -Eq '^, .*/default[.]png, cover$' "$wallpaper_stub_log"
 if grep -Fq 'MONITORS array is empty' "$fixture/wallpaper-default.out"; then
   printf 'not ok - empty monitor list still fails wallpaper startup\n'
   exit 1
 fi
-printf 'ok - wallpaper script applies the default target when monitor list is empty\n'
+expected_wallpaper="$wallpaper_home/Pictures/Wallpapers/default.png"
+[[ $(readlink -- "$wallpaper_home/.cache/wlogout/current-wallpaper") == "$expected_wallpaper" ]]
+printf 'ok - wallpaper script works at autostart and on a manual rerun without restarting hyprpaper\n'
+
+cat > "$wallpaper_bin/wlogout" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "${WLOGOUT_STUB_LOG:?}"
+EOF
+chmod +x "$wallpaper_bin/wlogout"
+mkdir -p "$wallpaper_home/.config/wlogout"
+cp "$repo_root/dotfiles/.config/wlogout/style.css" "$wallpaper_home/.config/wlogout/style.css"
+WLOGOUT_STUB_LOG="$fixture/wlogout-stub.log" \
+HOME="$wallpaper_home" \
+PATH="$wallpaper_bin:$PATH" \
+  "$repo_root/dotfiles/.config/waybar/scripts/launch_power_screen.sh"
+[[ $(readlink -- "$wallpaper_home/.cache/wlogout/current-wallpaper") == "$expected_wallpaper" ]]
+grep -Fq -- "--protocol layer-shell --css $wallpaper_home/.config/wlogout/style.css" "$fixture/wlogout-stub.log"
+grep -Fq 'background-image: url("../../.cache/wlogout/current-wallpaper")' "$wallpaper_home/.config/wlogout/style.css"
+if grep -Fq 'hyprpaper listactive' "$repo_root/dotfiles/.config/waybar/scripts/launch_power_screen.sh"; then
+  printf 'not ok - wlogout launcher still relies on removed hyprpaper listactive IPC\n'
+  exit 1
+fi
+printf 'ok - wlogout consumes the wallpaper cache without removed IPC commands\n'
+
+package_bin="$fixture/package-bin"
+mkdir -p "$package_bin"
+cat > "$package_bin/pacman" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  -Qnq) printf '%s\n' base linux fastfetch ;;
+  -Qmq) printf '%s\n' aur-one aur-two ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$package_bin/pacman"
+package_output=$(PATH="$package_bin:$PATH" "$repo_root/dotfiles/.config/fastfetch/package-count.sh")
+[[ $package_output == '5 (pacman: 3, AUR/foreign: 2)' ]]
+grep -Fq '"text": "~/.config/fastfetch/package-count.sh"' "$repo_root/dotfiles/.config/fastfetch/config.jsonc"
+if grep -Fq '"format": "{1} (pacman: {2})"' "$repo_root/dotfiles/.config/fastfetch/config.jsonc"; then
+  printf 'not ok - Fastfetch still uses unstable numeric package placeholders\n'
+  exit 1
+fi
+printf 'ok - Fastfetch reports native and AUR/foreign package counts\n'
+
+run_once_dir="$fixture/run-once"
+run_once_log="$run_once_dir/runs.log"
+run_once_ready="$run_once_dir/ready"
+mkdir -p "$run_once_dir/runtime"
+cat > "$run_once_dir/hold.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'run\n' >> "${RUN_ONCE_LOG:?}"
+touch "${RUN_ONCE_READY:?}"
+sleep 1
+EOF
+chmod +x "$run_once_dir/hold.sh"
+RUN_ONCE_LOG="$run_once_log" RUN_ONCE_READY="$run_once_ready" \
+XDG_RUNTIME_DIR="$run_once_dir/runtime" HYPRLAND_INSTANCE_SIGNATURE=test-instance \
+  "$repo_root/dotfiles/.config/hypr/scripts/run_once.sh" kitty-layout "$run_once_dir/hold.sh" &
+run_once_pid=$!
+for _ in {1..50}; do
+  [[ -e $run_once_ready ]] && break
+  sleep 0.02
+done
+[[ -e $run_once_ready ]]
+RUN_ONCE_LOG="$run_once_log" RUN_ONCE_READY="$run_once_ready" \
+XDG_RUNTIME_DIR="$run_once_dir/runtime" HYPRLAND_INSTANCE_SIGNATURE=test-instance \
+  "$repo_root/dotfiles/.config/hypr/scripts/run_once.sh" kitty-layout "$run_once_dir/hold.sh"
+wait "$run_once_pid"
+[[ $(grep -c '^run$' "$run_once_log") -eq 1 ]]
+printf 'ok - per-session run-once lock suppresses a duplicate Kitty layout launch\n'

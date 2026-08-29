@@ -74,16 +74,21 @@ for root in sources sources_example; do
   keybindings="$HOME/dotfiles/.config/hypr/$root/keybindings.lua"
   windows="$HOME/dotfiles/.config/hypr/$root/windows_and_workspaces.lua"
   environment="$HOME/dotfiles/.config/hypr/$root/environment_variables.lua"
+  autostart="$HOME/dotfiles/.config/hypr/$root/autostart.lua"
 
   assert_count 1 '^[[:space:]]*terminal[[:space:]]*=' "$app_variables" "$root terminal assignment"
   assert_count 1 '^[[:space:]]*menu[[:space:]]*=' "$app_variables" "$root launcher assignment"
   assert_count 1 '^[[:space:]]*browser[[:space:]]*=' "$app_variables" "$root browser assignment"
   assert_count 1 '^[[:space:]]*editor[[:space:]]*=' "$app_variables" "$root editor assignment"
+  assert_count 1 '^[[:space:]]*editor[[:space:]]*=[[:space:]]*"zeditor",$' "$app_variables" "$root Zed executable"
   assert_count 1 '^bind\(main_mod \.\. " \+ SPACE",' "$keybindings" "$root Open Menu binding"
   assert_count 1 '^window_rule\("vivaldi-stable", \{ workspace = "2 silent" \}\) -- hss-role:browser-workspace$' "$windows" "$root selected browser rule"
   assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"
   assert_count 1 '^hl\.layer_rule\(\{ match = \{ namespace = "rofi" \}, dim_around = true \}\) -- hss-role:launcher-layer$' "$windows" "$root selected launcher layer rule"
   assert_count 1 'hss-role:launcher-layer$' "$windows" "$root launcher layer rule total"
+  assert_count 1 '^[[:space:]]*hl\.exec_cmd\(apps\.hyprscripts \.\. "/change_wallpaper\.sh"\)$' "$autostart" "$root wallpaper startup owner"
+  assert_count 0 '^[[:space:]]*hl\.exec_cmd\("hyprpaper"\)$' "$autostart" "$root concurrent hyprpaper launch"
+  assert_count 1 'run_once\.sh kitty-layout kitty --session ~/.config/kitty/my_layout\.conf' "$autostart" "$root single-instance Kitty session declaration"
   assert_count 1 '^window_rule\("xwaylandvideobridge", {' "$windows" "$root XWayland video bridge rule"
   grep -Fq '    float = true,' "$windows"
   grep -Fq '    max_size = { 1, 1 },' "$windows"
@@ -96,6 +101,9 @@ for root in sources sources_example; do
     assert_count 1 "^window_rule\\(\"${class}\"," "$windows" "$root stable $class rule"
   done
 done
+
+jq -e '.roles.gui_editor.executable == "zeditor" and .roles.gui_editor.editor_bin == "zeditor"' \
+  "$HOME/dotfiles/.config/hypr/roles.json" >/dev/null
 
 fish_config="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
 assert_count 1 '^set -gx MENU_DMENU "rofi -dmenu"$' "$fish_config" "valid Fish MENU_DMENU mirror"

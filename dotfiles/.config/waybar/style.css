@@ -1,5 +1,10 @@
 @define-color primary #96d8ff;
+@define-color text #cdd6f4;
+@define-color muted #a6adc8;
+@define-color warning #f9e2af;
+@define-color critical #ff7b92;
 @define-color background rgba(21, 18, 27, 0.8);
+@define-color hover-background rgba(18, 38, 70, 0.5);
 
 /* All Modules */
 * {
@@ -14,54 +19,78 @@ window#waybar {
 }
 
 tooltip {
-  background: @background;
+  background: #11111b;
+  color: #cdd6f4;
   border-radius: 10px;
-  border-width: 10px;
+  border-width: 0.5px;
   border-style: solid;
-  border-color: #11111b;
+  border-color: @primary;
+}
+
+tooltip label {
+  color: #cdd6f4;
+  background: transparent;
+  padding: 6px 10px;
 }
 
 /* Dropdown menus */
 menu {
-  background: @background;
+  background: #11111b;
+  color: #cdd6f4;
   border: 1px solid @primary;
   border-radius: 10px;
 }
 
-menu menuitem {
+menu menuitem,
+menu menuitem label {
   background: transparent;
+  color: #cdd6f4;
 }
 
 menu menuitem:hover {
-  background-color: rgba(150, 216, 255, 0.1);
+  background-color: @hover-background;
   border-color: @primary;
 }
 
 /* Workspaces */
+#workspaces {
+  background: @background;
+  font-family: "JetBrainsMono Nerd Font";
+  opacity: 1.0;
+  padding: 2px 4px;
+  margin: 0;
+  margin-top: 4px;
+  border: 0.75px solid @primary;
+  border-radius: 10px;
+}
+
 #workspaces button {
-  color: #585858;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 0;
+  min-height: 0;
+  color: #a6adc8;
 }
 
 #workspaces button.active {
+  background: rgba(150, 216, 255, 0.12);
   color: @primary;
 }
 
 #workspaces button.urgent {
   color: #11111b;
-  background: #a6e3a1;
-  border-radius: 10px;
+  background: @warning;
 }
 
 #workspaces button:hover {
-  background: #010116;
+  background: @hover-background;
   color: #cdd6f4;
-  border-color: @primary;
-  border-radius: 10px;
 }
 
 /* Bar modules */
 #window,
-#workspaces,
 #custom-clipboard,
 #menu,
 #submap,
@@ -74,6 +103,7 @@ menu menuitem:hover {
 #cpu,
 #memory,
 #temperature,
+#custom-temperature,
 #keyboard-state,
 #clock,
 #language,
@@ -89,21 +119,22 @@ menu menuitem:hover {
 #custom-razerbattery,
 #custom-vpn,
 #custom-lmstudio,
+#custom-hyprwhspr,
 #wlr-taskbar {
   background: @background;
   font-family: "JetBrainsMono Nerd Font";
   opacity: 1.0;
-  padding: 0px 10px;
+  padding: 6px 10px;
   margin: 0px 0px;
-  margin-top: 5px;
-  border: 0.5px solid @primary;
+  margin-top: 4px;
+  border: 0.75px solid @primary;
   border-radius: 10px;
 }
 
 /* Individual modules */
 #submap {
   background-color: rgba(10, 10, 10, 0.8);
-  color: rgba(152, 239, 106, 1);
+  color: @primary;
 }
 
 #menu {
@@ -113,24 +144,33 @@ menu menuitem:hover {
 }
 
 #battery {
-  color: #a8ff96;
+  color: @primary;
   padding-right: 15px;
 }
 
-#power-profiles-daemon.performance {
+#battery.warning {
+  color: @warning;
+  border-color: @warning;
+  background-color: rgba(249, 226, 175, 0.5);
+}
+
+#battery.critical {
+  color: @critical;
+  border-color: @critical;
+  background-color: rgba(255, 88, 116, 0.5);
+}
+
+#power-profiles-daemon.performance,
+#power-profiles-daemon.balanced,
+#power-profiles-daemon.power-saver {
   color: @primary;
 }
 
-#power-profiles-daemon.balanced {
-  color: #9ca6ff;
-}
-
-#power-profiles-daemon.power-saver {
-  color: #9a7eff;
-}
-
-#temperature.critical {
-  color: #ff5874;
+#temperature.critical,
+#custom-temperature.critical {
+  color: #11111b;
+  border-color: @critical;
+  background-color: @critical;
 }
 
 #clock {
@@ -167,10 +207,6 @@ menu menuitem:hover {
   padding-left: 5px;
 }
 
-#custom-razerbattery {
-  padding-right: 0px;
-}
-
 #network {
   padding-right: 14px;
 }
@@ -179,24 +215,48 @@ menu menuitem:hover {
   padding-right: 14px;
 }
 
-#custom-vpn.vpn-up {
-  color: #a8ff96;
+#custom-vpn.vpn-up,
+#custom-vpn.vpn-down,
+#network.linked,
+#network.disconnected,
+#network.disabled,
+#bluetooth.connected,
+#bluetooth.off,
+#bluetooth.disabled,
+#bluetooth.no-controller,
+#keyboard-state label.locked {
+  color: @primary;
 }
 
-#custom-vpn.vpn-down {
-  color: #585858;
+#pulseaudio.muted,
+#pulseaudio.sink-muted,
+#pulseaudio.source-muted {
+  color: @warning;
+  border-color: @warning;
+}
+
+#custom-power:hover,
+#custom-menu:hover,
+#custom-lmstudio:hover,
+#pulseaudio:hover,
+#backlight:hover,
+#custom-temperature:hover,
+#network:hover,
+#custom-vpn:hover,
+#bluetooth:hover,
+#custom-updates:hover,
+#custom-notification:hover,
+#clock:hover {
+  background-color: @hover-background;
+  border-color: #cdd6f4;
+}
+
+#custom-temperature.critical:hover {
+  color: @critical;
 }
 
 /* Not Used CSS Modues, defined with other Modules above */
 #tray {
-  /* Add unique CSS Options */
-}
-
-#workspaces {
-  /* Add unique CSS Options */
-}
-
-#workspaces button.focused {
   /* Add unique CSS Options */
 }
 
@@ -212,7 +272,8 @@ menu menuitem:hover {
   /* Add unique CSS Options */
 }
 
-#temperature {
+#temperature,
+#custom-temperature {
   /* Add unique CSS Options */
 }
 
@@ -243,4 +304,26 @@ menu menuitem:hover {
 
 #idle_inhibitor {
   /* Add unique CSS Options */
+}
+
+/* HyprWhspr states: keep the global Waybar module box styling above,
+   only change accent colors for state feedback. */
+#custom-hyprwhspr.ready,
+#custom-hyprwhspr.stopped {
+  color: @primary;
+  border-color: @primary;
+}
+
+#custom-hyprwhspr.recording {
+  color: @critical;
+  border-color: @critical;
+}
+
+#custom-hyprwhspr.error {
+  color: @warning;
+  border-color: @warning;
+}
+
+#custom-hyprwhspr:hover {
+  background-color: @hover-background;
 }

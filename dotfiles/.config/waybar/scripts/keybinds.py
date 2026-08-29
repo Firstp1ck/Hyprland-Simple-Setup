@@ -16,7 +16,6 @@ The interface is built using tkinter and follows a modern, dark theme design.
 
 import tkinter as tk
 from tkinter import ttk
-import subprocess
 import re
 import json
 import os
@@ -30,6 +29,8 @@ class KeybindsConfig:
     # File paths
     FAVORITES_FILE: str = os.path.expanduser("~/.config/waybar/keybinds_favorites.json")
     LOG_FILE: str = os.path.expanduser("~/.config/waybar/scripts/keybinds.log")
+    HYPR_KEYBINDS_FILE: str = os.path.expanduser("~/.config/hypr/sources/keybindings.lua")
+    HYPR_APP_VARIABLES_FILE: str = os.path.expanduser("~/.config/hypr/sources/app_variables.lua")
     
     # Theme colors
     BG_COLOR: str = "#2E3440"  # Dark background
@@ -150,67 +151,369 @@ class KeybindsData:
         except Exception as e:
             self.logger.error(f"Error saving favorites to {KeybindsConfig.FAVORITES_FILE}: {str(e)}", exc_info=True)
     
-    def parse_hyprctl_binds(self) -> List[Dict[str, Union[str, int]]]:
-        """Parse keybinds from hyprctl command output."""
+    def parse_lua_keybinds(self) -> List[Dict[str, Union[str, int]]]:
+        """Parse keybinds directly from the Hyprland Lua config."""
         try:
-            if not os.path.exists('/usr/bin/hyprctl'):
-                self.logger.error("hyprctl not found at /usr/bin/hyprctl")
-                raise FileNotFoundError("hyprctl not found. Please make sure Hyprland is installed.")
-            
-            self.logger.info("Executing hyprctl binds command")
-            result = subprocess.run(['hyprctl', 'binds'], capture_output=True, text=True)
-            if result.returncode != 0:
-                self.logger.error(f"hyprctl command failed with return code {result.returncode}: {result.stderr}")
-                raise subprocess.CalledProcessError(result.returncode, 'hyprctl', result.stderr)
-            
-            if not result.stdout.strip():
-                self.logger.error("No keybinds found in hyprctl output")
-                raise ValueError("No keybinds found. Please check your Hyprland configuration.")
-            
-            binds = []
-            current_bind = {}
-            
-            self.logger.info("Parsing hyprctl output")
-            for line in result.stdout.split('\n'):
-                line = line.strip()
-                if not line:
-                    if current_bind and ('key' in current_bind or 'keycode' in current_bind) and 'description' in current_bind and current_bind['description']:
-                        binds.append(current_bind)
-                    current_bind = {}
-                    continue
-                
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    key = key.strip()
-                    value = value.strip()
-                    
-                    if key == 'modmask' and value != '0':
-                        current_bind['modmask'] = int(value)
-                    elif key == 'key' and value != '0':
-                        if value.startswith('mouse:'):
-                            mouse_code = int(value.split(':')[1])
-                            current_bind['key'] = KeybindsConfig.MOUSE_MAP.get(mouse_code, f"Mouse {mouse_code}")
-                        else:
-                            current_bind['key'] = value
-                    elif key == 'keycode' and value != '0':
-                        current_bind['key'] = self.get_keycode_name(value)
-                    elif key == 'description':
-                        current_bind['description'] = value
-            
-            if current_bind and ('key' in current_bind or 'keycode' in current_bind) and 'description' in current_bind and current_bind['description']:
-                binds.append(current_bind)
-            
+            keybinds_path = Path(os.environ.get("HYPR_KEYBINDS_LUA", KeybindsConfig.HYPR_KEYBINDS_FILE)).expanduser()
+            if not keybinds_path.exists():
+                raise FileNotFoundError(f"Hyprland Lua keybind config not found: {keybinds_path}")
+
+            self.logger.info(f"Parsing Hyprland Lua keybinds from {keybinds_path}")
+            lua_text = keybinds_path.read_text()
+            lua_vars = self._load_lua_symbols(lua_text)
+            binds: List[Dict[str, Union[str, int]]] = []
+
+            binds.extend(self._parse_lua_for_loops(lua_text, lua_vars))
+
+            for statement in self._collect_lua_bind_statements(lua_text):
+                bind = self._parse_lua_bind_statement(statement, lua_vars)
+                if bind:
+                    binds.append(bind)
+
             if not binds:
-                self.logger.error("No valid keybinds found after parsing")
-                raise ValueError("No valid keybinds found in Hyprland configuration.")
-            
-            self.logger.info(f"Successfully parsed {len(binds)} keybinds")
+                raise ValueError(f"No valid keybinds found in {keybinds_path}")
+
             self.binds = binds
+            self.logger.info(f"Successfully parsed {len(binds)} Lua keybinds")
             return binds
-            
         except Exception as e:
-            self.logger.error(f"Error parsing keybinds: {str(e)}", exc_info=True)
+            self.logger.error(f"Error parsing Lua keybinds: {str(e)}", exc_info=True)
             return []
+
+    def parse_hyprctl_binds(self) -> List[Dict[str, Union[str, int]]]:
+        """Compatibility wrapper: the viewer now reads Hyprland's Lua config."""
+        return self.parse_lua_keybinds()
+
+    def _load_lua_symbols(self, keybinds_text: str) -> Dict[str, str]:
+        """Load simple local symbols and app variables used by keybindings.lua."""
+        symbols = {"HOME": str(Path.home())}
+
+        app_vars_path = Path(KeybindsConfig.HYPR_APP_VARIABLES_FILE).expanduser()
+        if app_vars_path.exists():
+            app_text = app_vars_path.read_text()
+            for name, value in re.findall(r'\b([A-Za-z_][\w]*)\s*=\s*"([^"]*)"', app_text):
+                symbols[f"vars.{name}"] = value
+            if "vars.hyprscripts" not in symbols:
+                symbols["vars.hyprscripts"] = str(Path.home() / ".config/hypr/scripts")
+            if "vars.wayscripts" not in symbols:
+                symbols["vars.wayscripts"] = str(Path.home() / ".config/waybar/scripts")
+            if "vars.calendar" not in symbols and "vars.hyprscripts" in symbols:
+                symbols["vars.calendar"] = f"{symbols['vars.hyprscripts']}/float_calendar.sh"
+
+        for name, value in re.findall(r'\blocal\s+([A-Za-z_][\w]*)\s*=\s*"([^"]*)"', keybinds_text):
+            symbols[name] = value
+        for name, expr in re.findall(r'^\s*local\s+([A-Za-z_][\w]*)\s*=\s*(.+)$', keybinds_text, re.M):
+            if name not in symbols and not expr.startswith(("rawget", "false", "true", "function")):
+                symbols[name] = self._resolve_lua_expr(expr, symbols)
+
+        return symbols
+
+    def _collect_lua_bind_statements(self, lua_text: str) -> List[str]:
+        """Collect top-level bind_exec, bind_dispatch, and hl.bind statements."""
+        statements = []
+        current: List[str] = []
+        depth = 0
+        collecting = False
+
+        in_function = False
+        for raw_line in lua_text.splitlines():
+            stripped = raw_line.strip()
+            if stripped.startswith("local function"):
+                in_function = True
+                continue
+            if in_function:
+                if stripped == "end" and raw_line.startswith("end"):
+                    in_function = False
+                continue
+            if stripped.startswith("--"):
+                continue
+            if not collecting and not stripped.startswith(("bind_exec(", "bind_dispatch(", "hl.bind(")):
+                continue
+
+            collecting = True
+            current.append(raw_line)
+            depth += self._paren_delta(raw_line)
+            if depth <= 0:
+                statement = "\n".join(current)
+                if '"F" .. i' not in statement and 'F" .. i' not in statement:
+                    statements.append(statement)
+                current = []
+                depth = 0
+                collecting = False
+
+        return statements
+
+    def _paren_delta(self, text: str) -> int:
+        """Return net parenthesis delta while ignoring quoted Lua strings."""
+        delta = 0
+        quote = None
+        i = 0
+        in_long = False
+        while i < len(text):
+            ch = text[i]
+            nxt = text[i:i + 2]
+            if in_long:
+                if nxt == "]]":
+                    in_long = False
+                    i += 2
+                    continue
+            elif quote:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif nxt == "[[":
+                in_long = True
+                i += 2
+                continue
+            elif ch in ('"', "'"):
+                quote = ch
+            elif ch == "(":
+                delta += 1
+            elif ch == ")":
+                delta -= 1
+            i += 1
+        return delta
+
+    def _parse_lua_bind_statement(self, statement: str, symbols: Dict[str, str]) -> Optional[Dict[str, Union[str, int]]]:
+        statement = statement.strip()
+        if statement.startswith("bind_exec("):
+            args = self._split_lua_args(statement[len("bind_exec("):-1])
+            if len(args) >= 3:
+                keybind = self._format_keybind(self._resolve_lua_expr(args[0], symbols), self._resolve_lua_expr(args[1], symbols))
+                command = self._resolve_lua_expr(args[2], symbols)
+                description = self._description_from_flags(args[3:]) or self._describe_command(command)
+                return {"keybind": keybind, "description": description, "command": command}
+        elif statement.startswith("bind_dispatch("):
+            args = self._split_lua_args(statement[len("bind_dispatch("):-1])
+            if len(args) >= 3:
+                keybind = self._format_keybind(self._resolve_lua_expr(args[0], symbols), self._resolve_lua_expr(args[1], symbols))
+                dispatcher = self._resolve_lua_expr(args[2], symbols)
+                dispatch_args = self._resolve_lua_expr(args[3], symbols) if len(args) > 3 else ""
+                return {"keybind": keybind, "description": self._describe_dispatcher(dispatcher, dispatch_args)}
+        elif statement.startswith("hl.bind("):
+            args = self._split_lua_args(statement[len("hl.bind("):-1])
+            if len(args) >= 2:
+                if "hl.dsp.no_op" in args[1]:
+                    return None
+                keybind = self._normalize_keybind(self._resolve_lua_expr(args[0], symbols))
+                description = self._description_from_flags(args[2:]) or self._describe_lua_action(args[1])
+                return {"keybind": keybind, "description": description}
+        return None
+
+    def _parse_lua_for_loops(self, lua_text: str, symbols: Dict[str, str]) -> List[Dict[str, Union[str, int]]]:
+        """Expand the simple numbered workspace loop used in keybindings.lua."""
+        binds: List[Dict[str, Union[str, int]]] = []
+        match = re.search(r'for\s+i\s*=\s*(\d+)\s*,\s*(\d+)\s+do(?P<body>.*?)\nend', lua_text, re.S)
+        if not match:
+            return binds
+
+        start, end = int(match.group(1)), int(match.group(2))
+        body = match.group("body")
+        shift = symbols.get("mainMod2", "SHIFT")
+        for i in range(start, end + 1):
+            if 'hl.dsp.focus({ workspace = i })' in body:
+                binds.append({"keybind": f"F{i}", "description": f"Open workspace {i}"})
+            if 'hl.dsp.window.move({ workspace = i })' in body:
+                binds.append({"keybind": f"{shift} + F{i}", "description": f"Move window to workspace {i}"})
+        return binds
+
+    def _split_lua_args(self, text: str) -> List[str]:
+        args = []
+        start = 0
+        depth = 0
+        quote = None
+        in_long = False
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            nxt = text[i:i + 2]
+            if in_long:
+                if nxt == "]]":
+                    in_long = False
+                    i += 2
+                    continue
+            elif quote:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif nxt == "[[":
+                in_long = True
+                i += 2
+                continue
+            elif ch in ('"', "'"):
+                quote = ch
+            elif ch in "({[":
+                depth += 1
+            elif ch in ")}]":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                args.append(text[start:i].strip())
+                start = i + 1
+            i += 1
+        tail = text[start:].strip()
+        if tail:
+            args.append(tail)
+        return args
+
+    def _split_lua_concat(self, expr: str) -> List[str]:
+        parts = []
+        start = 0
+        depth = 0
+        quote = None
+        i = 0
+        while i < len(expr):
+            ch = expr[i]
+            nxt = expr[i:i + 2]
+            if quote:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif ch in ('"', "'"):
+                quote = ch
+            elif ch in "({[":
+                depth += 1
+            elif ch in ")}]":
+                depth -= 1
+            elif nxt == ".." and depth == 0:
+                parts.append(expr[start:i].strip())
+                start = i + 2
+                i += 2
+                continue
+            i += 1
+        tail = expr[start:].strip()
+        if tail:
+            parts.append(tail)
+        return parts
+
+    def _split_lua_or(self, expr: str) -> Optional[Tuple[str, str]]:
+        depth = 0
+        quote = None
+        i = 0
+        while i < len(expr):
+            ch = expr[i]
+            if quote:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif ch in ('"', "'"):
+                quote = ch
+            elif ch in "({[":
+                depth += 1
+            elif ch in ")}]":
+                depth -= 1
+            elif depth == 0 and expr[i:i + 4] == " or ":
+                return expr[:i].strip(), expr[i + 4:].strip()
+            i += 1
+        return None
+
+    def _resolve_lua_expr(self, expr: str, symbols: Dict[str, str]) -> str:
+        expr = expr.strip()
+        while expr.startswith("(") and expr.endswith(")") and self._paren_delta(expr[1:-1]) == 0:
+            expr = expr[1:-1].strip()
+
+        if expr.startswith("[[") and expr.endswith("]]"):
+            return expr[2:-2]
+        if (expr.startswith('"') and expr.endswith('"')) or (expr.startswith("'") and expr.endswith("'")):
+            return expr[1:-1]
+        if expr.startswith("combo(") and expr.endswith(")"):
+            args = self._split_lua_args(expr[len("combo("):-1])
+            if len(args) == 2:
+                return self._format_keybind(self._resolve_lua_expr(args[0], symbols), self._resolve_lua_expr(args[1], symbols))
+        concat = self._split_lua_concat(expr)
+        if len(concat) > 1:
+            return "".join(self._resolve_lua_expr(part, symbols) for part in concat)
+        lua_or = self._split_lua_or(expr)
+        if lua_or:
+            first, fallback = lua_or
+            if first in symbols:
+                return symbols[first]
+            return self._resolve_lua_expr(fallback, symbols)
+        if expr.startswith("os.getenv"):
+            return str(Path.home())
+        if expr in symbols:
+            return symbols[expr]
+        return re.sub(r'\s+', ' ', expr)
+
+    def _format_keybind(self, mods: str, key: str) -> str:
+        if not mods:
+            return self._normalize_keybind(key)
+        return self._normalize_keybind(f"{mods} + {key}")
+
+    def _normalize_keybind(self, keybind: str) -> str:
+        keybind = keybind.replace("code:104", "Enter")
+        keybind = keybind.replace("code:110", "Home")
+        keybind = keybind.replace("code:94", "Less")
+        keybind = keybind.replace("code:49", "§")
+        return re.sub(r'\s*\+\s*', ' + ', keybind).strip()
+
+    def _description_from_flags(self, args: List[str]) -> str:
+        joined = "\n".join(args)
+        match = re.search(r'description\s*=\s*"([^"]+)"', joined)
+        return match.group(1) if match else ""
+
+    def _describe_command(self, command: str) -> str:
+        command = command.strip()
+        script_match = re.search(r'([^\s/]+)\.sh(?:\s|$)', command)
+        if script_match:
+            return script_match.group(1).replace("_", " ").replace("-", " ").title()
+        if "hyprshot" in command or "satty" in command:
+            return "Take screenshot"
+        if command.startswith("wpctl set-volume"):
+            return "Adjust volume"
+        if command.startswith("wpctl set-mute"):
+            return "Toggle mute"
+        if command.startswith("brightnessctl"):
+            return "Adjust brightness"
+        if command.startswith("playerctl"):
+            return f"Media {command.split(maxsplit=1)[1] if len(command.split()) > 1 else 'control'}"
+        if "power_action.sh" in command:
+            return command.rsplit(" ", 1)[-1].title()
+        return f"Run: {command}"
+
+    def _describe_dispatcher(self, dispatcher: str, args: str = "") -> str:
+        suffix = f" {args}" if args else ""
+        return f"Hyprland dispatch: {dispatcher}{suffix}"
+
+    def _describe_lua_action(self, action: str) -> str:
+        compact = re.sub(r'\s+', ' ', action.strip())
+        if "window.close" in compact:
+            return "Close window"
+        if "fullscreen_state" in compact:
+            return "Toggle fullscreen"
+        if "window.pseudo" in compact:
+            return "Toggle pseudo tiling"
+        if "layout(\"togglesplit\")" in compact:
+            return "Toggle split layout"
+        if "group.toggle" in compact:
+            return "Toggle group"
+        if "group.next" in compact:
+            return "Next group window"
+        if "focus({ direction" in compact:
+            match = re.search(r'direction\s*=\s*"([^"]+)"', compact)
+            return f"Focus {match.group(1)}" if match else "Focus window"
+        if "workspace = \"e+1\"" in compact:
+            return "Next workspace"
+        if "workspace = \"e-1\"" in compact:
+            return "Previous workspace"
+        if "window.drag" in compact:
+            return "Move window with mouse"
+        if "window.resize" in compact:
+            return "Resize window with mouse"
+        if "submap(\"clean\")" in compact or "get_current_submap" in compact:
+            return "Toggle clean submap"
+        if "exec_cmd" in compact:
+            match = re.search(r'exec_cmd\((.*)\)', compact)
+            if match:
+                return self._describe_command(match.group(1).strip('"'))
+        return "Lua action"
     
     def get_modifier_name(self, modmask: int) -> str:
         """Convert a modifier mask value to a human-readable string."""
@@ -588,10 +891,13 @@ class KeybindsUI:
             
             # Sort binds into categories
             for bind in self.data.binds:
-                mod = self.data.get_modifier_name(bind.get('modmask', 0))
-                key = bind.get('key', '')
-                keybind = f"{mod} + {key}" if mod else key
-                description = bind.get('description', '')
+                if 'keybind' in bind:
+                    keybind = str(bind.get('keybind', ''))
+                else:
+                    mod = self.data.get_modifier_name(bind.get('modmask', 0))
+                    key = bind.get('key', '')
+                    keybind = f"{mod} + {key}" if mod else key
+                description = str(bind.get('description', ''))
                 
                 # Determine category
                 assigned_category = "Miscellaneous"
@@ -626,8 +932,8 @@ class KeybindsApp:
     
     def run(self) -> None:
         """Run the application."""
-        # Parse keybinds
-        binds = self.data.parse_hyprctl_binds()
+        # Parse keybinds from the Hyprland Lua config
+        binds = self.data.parse_lua_keybinds()
         if not binds:
             return
         

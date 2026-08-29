@@ -70,7 +70,10 @@
       "pipewire-pulse",
       "wireplumber",
       "pavucontrol",
-      "pulseaudio-qt"
+      "pavucontrol-qt",
+      "pulseaudio-qt",
+      "qastools",
+      "alsa-utils"
     ],
     "kernel": [
       "linux",
@@ -118,8 +121,18 @@
       "bluez",
       "bluez-utils",
       "blueman",
+      "bluedevil",
+      "kcmutils",
+      "plasma-nm",
+      "plasma-workspace",
+      "plasma-systemmonitor",
       "swaync",
-      "ddcutil"
+      "ddcutil",
+      "fwupd",
+      "pacman-contrib",
+      "zenity",
+      "wireguard-tools",
+      "openresolv"
     ],
     "theming": [
       "ttf-jetbrains-mono-nerd",
@@ -155,7 +168,10 @@
       "brightnessctl",
       "reflector",
       "libnotify",
-      "jq"
+      "jq",
+      "curl",
+      "less",
+      "lm_sensors"
     ],
     "gui_tools": [
       "zed"
@@ -183,7 +199,9 @@
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
       "waybar-module-pacman-updates-git",
-      "input-remapper"
+      "input-remapper",
+      "hyprwhspr",
+      "razer-cli"
     ],
     "cli_tools": [
       "lsplug",
@@ -251,8 +269,11 @@
     "pipewire": "Audio/video server",
     "pipewire-pulse": "PulseAudio replacement",
     "wireplumber": "PipeWire session manager",
-    "pavucontrol": "Volume control GUI",
+    "pavucontrol": "GTK volume control",
+    "pavucontrol-qt": "Qt volume control used by the Waybar audio action",
     "pulseaudio-qt": "Qt bindings for PulseAudio",
+    "qastools": "Qt ALSA mixer used by the Waybar audio menu",
+    "alsa-utils": "ALSA command-line tools and mixer utilities",
 
     "linux": "Linux kernel",
     "linux-headers": "Kernel headers",
@@ -294,8 +315,18 @@
     "bluez": "Bluetooth stack",
     "bluez-utils": "Bluetooth utilities",
     "blueman": "Bluetooth manager GUI",
+    "bluedevil": "KDE Bluetooth settings module used by Waybar",
+    "kcmutils": "KDE settings module launcher used by Waybar",
+    "plasma-nm": "KDE network settings and picker used by Waybar",
+    "plasma-workspace": "Provides plasmawindowed for the Waybar network picker",
+    "plasma-systemmonitor": "System monitor opened from the Waybar temperature module",
     "swaync": "Notification center",
     "ddcutil": "Monitor DDC control",
+    "fwupd": "Firmware update service and command-line client",
+    "pacman-contrib": "Package maintenance tools used by the Waybar update menu",
+    "zenity": "GTK confirmation dialogs used by the Waybar update action",
+    "wireguard-tools": "WireGuard tools used by the Waybar VPN action",
+    "openresolv": "DNS integration fallback for WireGuard connections",
 
     "ttf-jetbrains-mono-nerd": "JetBrains Mono Nerd Font",
     "ttf-nerd-fonts-symbols": "Nerd Fonts symbols",
@@ -330,6 +361,9 @@
     "reflector": "Arch mirrorlist updater",
     "libnotify": "Desktop notifications library",
     "jq": "JSON processor",
+    "curl": "HTTP client used by Waybar integrations",
+    "less": "Pager used by the Waybar update log viewer",
+    "lm_sensors": "Hardware sensor tools used by the Waybar temperature module",
 
     "pyprland": "Hyprland plugin manager",
     "hyprsunset": "Night light for Hyprland",
@@ -348,6 +382,8 @@
     "xwaylandvideobridge": "XWayland capture bridge",
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
+    "hyprwhspr": "Optional HyprWhspr voice-input module for Waybar",
+    "razer-cli": "Optional Razer device status client for Waybar",
     "lsplug": "Monitor plug/unplug events",
     "input-remapper": "Mouse and keyboard button remapper",
     "pacsea-bin": "Package search and install",
@@ -375,7 +411,22 @@
       "libnotify",
       "python",
       "python-requests",
-      "hyprshot"
+      "hyprshot",
+      "pavucontrol-qt",
+      "qastools",
+      "bluedevil",
+      "kcmutils",
+      "plasma-nm",
+      "plasma-workspace",
+      "plasma-systemmonitor",
+      "fwupd",
+      "pacman-contrib",
+      "zenity",
+      "wireguard-tools",
+      "openresolv",
+      "curl",
+      "less",
+      "lm_sensors"
     ],
     "aur": []
   },
@@ -510,9 +561,9 @@
         {
           "package": "zed",
           "source": "pacman",
-          "executable": "zed",
+          "executable": "zeditor",
           "args": [],
-          "editor_bin": "zed",
+          "editor_bin": "zeditor",
           "desktop_file": "dev.zed.Zed.desktop"
         }
       ]

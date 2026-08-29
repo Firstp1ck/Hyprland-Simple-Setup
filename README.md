@@ -106,14 +106,13 @@ It sets up the following Components/Apps:
 - Shell Configuration (Fish Shell - with useful aliases)
 - CLI Tools for a more convenient terminal experience
 
-**Waybar Applications**
-- Bluetooth (In Waybar) (Bluetooth-Manager)
-- Network (In Waybar) (Network-Manager)
-- Power Button (In Waybar)
-- Update Button (In Waybar) (waybar-module-pacman-updates-git)
-- Temperatur Sensor (In Waybar) (psensor)¨
-- Power Profiles (In Waybar)
-- Weather (In Waybar) (Swiss Specific - Needs adjustments for other countries)
+**Waybar applications**
+- Audio controls with Pavucontrol Qt and QasMixer
+- Bluetooth and network controls through KDE settings modules
+- Power screen and quick power actions
+- Package, firmware, `.pacnew`, and cache maintenance actions
+- CPU temperature status with detailed sensor tooltips
+- Optional VPN, LM Studio, HyprWhspr, and Razer device modules
 
 **Additional Applications**
 - Keybindings (Extensive Keybinds with App for Overview)
@@ -309,7 +308,7 @@ cd ~/Hyprland-Simple-Setup
 - fd (Modern find)
 - fzf (Fuzzy finder)
 - stow (Dotfiles management)
-- nvim (Text editor)
+- neovim (Text editor)
 - xdg-user-dirs
 - onefetch
 - ark
@@ -341,10 +340,23 @@ cd ~/Hyprland-Simple-Setup
 - bluez
 - bluez-utils
 - blueman
+- bluedevil
+- kcmutils
+- plasma-nm
+- plasma-workspace
+- plasma-systemmonitor
 - pipewire
 - pipewire-pulse
 - pavucontrol
+- pavucontrol-qt
 - pulseaudio-qt
+- qastools
+- alsa-utils
+- fwupd
+- pacman-contrib
+- zenity
+- wireguard-tools
+- openresolv
 
 **CLI Tools**
 - bat (Modern cat)
@@ -359,6 +371,9 @@ cd ~/Hyprland-Simple-Setup
 - duf
 - zellij
 - calcurse
+- curl
+- less
+- lm_sensors
 
 **Theming and Appearance**
 - ttf-jetbrains-mono-nerd
@@ -370,7 +385,10 @@ cd ~/Hyprland-Simple-Setup
 - qalculate-gtk
 
 ### AUR Packages
-- xwaylandvideobridge-git (Screen sharing)
+- xwaylandvideobridge (Screen sharing)
+- waybar-module-pacman-updates-git (Package update status)
+- hyprwhspr (Optional voice-input module)
+- razer-cli (Optional Razer device status)
 - hyprshot (Screenshot utility)
 - visual-studio-code-bin (Code editor)
 - lsplug (Plugin manager)

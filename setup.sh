@@ -1868,7 +1868,7 @@ configure_hypr_autostart_optional_extras() {
         uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-tray" 'hl.exec_cmd("blueman-tray")'
 
         if [ "$configured_terminal" = "kitty" ]; then
-            uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" 'hl.exec_cmd("kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })'
+            uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" 'hl.exec_cmd(apps.hyprscripts .. "/run_once.sh kitty-layout kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })'
             if command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
                 uncomment_lua_line_if_cmd_exists "$lua_file" "kitty" 'hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
             fi
