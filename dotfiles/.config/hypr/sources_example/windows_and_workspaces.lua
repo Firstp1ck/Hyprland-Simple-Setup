@@ -20,7 +20,15 @@ hl.window_rule({
     no_focus = true,
 })
 
-window_rule("xwaylandvideobridge", { opacity = "0.0 override", no_anim = true, no_focus = true, no_blur = true })
+window_rule("xwaylandvideobridge", {
+    float = true,
+    max_size = { 1, 1 },
+    opacity = "0.0 override",
+    no_initial_focus = true,
+    no_focus = true,
+    no_anim = true,
+    no_blur = true,
+})
 window_rule("blueman-manager", { float = true, center = true })
 window_rule("nm-connection-editor", { float = true, center = true })
 window_rule("org.qbittorrent.qBittorrent", { float = true, center = true })

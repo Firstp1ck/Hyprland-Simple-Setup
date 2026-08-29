@@ -124,3 +124,97 @@ if grep -Fq 'tui-provided-password' "$STUB_LOG"; then
   exit 1
 fi
 printf 'ok - yay bootstrap reuses checkout and supplies explicit makepkg authentication\n'
+
+filepicker_config_dir="$HOME/.config/xdg-desktop-portal"
+filepicker_desktop_dir="$HOME/.local/share/applications"
+mkdir -p "$filepicker_config_dir" "$filepicker_desktop_dir"
+printf '%s\n' \
+  '[preferred]' \
+  'default = hyprland;gtk' \
+  'org.freedesktop.impl.portal.FileChooser = kde' > "$filepicker_config_dir/hyprland-portals.conf"
+printf '%s\n' \
+  '[Desktop Entry]' \
+  'Type=Application' \
+  'Name=Visual Studio Code' \
+  'Exec=code %F' \
+  'MimeType=text/plain;application/x-shellscript;' > "$filepicker_desktop_dir/visual-studio-code.desktop"
+update-desktop-database "$filepicker_desktop_dir"
+HSS_RELIABILITY_ACTION=filepicker \
+  "$repo_root/setup.sh" --test-scenario reliability >"$fixture/filepicker.out" 2>&1
+grep -Fq 'org.freedesktop.impl.portal.FileChooser = gtk' "$filepicker_config_dir/hyprland-portals.conf"
+if grep -Fq 'org.freedesktop.impl.portal.FileChooser = kde' "$filepicker_config_dir/hyprland-portals.conf"; then
+  printf 'not ok - file chooser still selects the KDE backend\n'
+  exit 1
+fi
+[[ $(xdg-mime query default text/plain) == visual-studio-code.desktop ]]
+[[ $(xdg-mime query default application/x-shellscript) == visual-studio-code.desktop ]]
+if grep -Fq 'applications.menu' "$STUB_LOG"; then
+  printf 'not ok - file chooser setup still mutates the system application menu\n'
+  exit 1
+fi
+printf 'ok - GTK file chooser and selected editor MIME defaults are configured without a live Hyprland session\n'
+
+default_config_dir="$HOME/.config/hypr/monitor-default-test"
+default_monitors="$default_config_dir/monitors.lua"
+default_wallpaper="$default_config_dir/change_wallpaper.lua"
+wallpaper_dir_literal="\$HOME/Pictures/Wallpapers"
+mkdir -p "$default_config_dir"
+printf '%s\n' '-- no explicit monitor rules' > "$default_monitors"
+printf '%s\n' 'return {' "    wallpaper_dir = \"$wallpaper_dir_literal\"," '    monitors = {},' '}' > "$default_wallpaper"
+HSS_MONITORS_FILE="$default_monitors" \
+HSS_WALLPAPER_FILE="$default_wallpaper" \
+HSS_RELIABILITY_ACTION=monitor-defaults \
+  "$repo_root/setup.sh" --test-scenario reliability >"$fixture/monitor-defaults.out" 2>&1
+grep -Fq 'hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })' "$default_monitors"
+grep -Fq '    monitors = {},' "$default_wallpaper"
+grep -Fq 'using the hyprpaper fallback target' "$fixture/monitor-defaults.out"
+printf 'ok - missing monitor choices install Hyprland and hyprpaper defaults\n'
+
+wallpaper_home="$fixture/wallpaper-home"
+wallpaper_bin="$fixture/wallpaper-bin"
+wallpaper_stub_log="$fixture/wallpaper-stub.log"
+mkdir -p "$wallpaper_home/.config/hypr/sources_specific" "$wallpaper_home/Pictures/Wallpapers" "$wallpaper_bin"
+printf 'wallpaper fixture\n' > "$wallpaper_home/Pictures/Wallpapers/default.png"
+printf '%s\n' \
+  'return {' \
+  "    wallpaper_dir = \"$wallpaper_dir_literal\"," \
+  '    monitors = {},' \
+  '}' > "$wallpaper_home/.config/hypr/sources_specific/change_wallpaper.lua"
+cat > "$wallpaper_bin/hyprctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${1:-} == monitors ]]; then
+  printf 'Monitor eDP-1 (ID 0):\n'
+  exit 0
+fi
+if [[ ${1:-} == hyprpaper && ${2:-} == wallpaper ]]; then
+  if [[ $# -eq 2 ]]; then
+    printf 'not enough args\n'
+  else
+    printf '%s\n' "$3" >> "${WALLPAPER_STUB_LOG:?}"
+  fi
+  exit 0
+fi
+exit 1
+EOF
+cat > "$wallpaper_bin/pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$wallpaper_bin/pkill" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$wallpaper_bin/hyprctl" "$wallpaper_bin/pgrep" "$wallpaper_bin/pkill"
+: > "$wallpaper_stub_log"
+HOME="$wallpaper_home" \
+WALLPAPER_CHANGE_STAMP="$fixture/wallpaper-change-ran" \
+WALLPAPER_STUB_LOG="$wallpaper_stub_log" \
+PATH="$wallpaper_bin:$PATH" \
+  "$repo_root/dotfiles/.config/hypr/scripts/change_wallpaper.sh" >"$fixture/wallpaper-default.out" 2>&1
+grep -Fq 'No explicit monitors configured; using the hyprpaper fallback target.' "$fixture/wallpaper-default.out"
+grep -Eq '^, .*/default[.]png, cover$' "$wallpaper_stub_log"
+if grep -Fq 'MONITORS array is empty' "$fixture/wallpaper-default.out"; then
+  printf 'not ok - empty monitor list still fails wallpaper startup\n'
+  exit 1
+fi
+printf 'ok - wallpaper script applies the default target when monitor list is empty\n'

@@ -73,6 +73,7 @@ for root in sources sources_example; do
   app_variables="$HOME/dotfiles/.config/hypr/$root/app_variables.lua"
   keybindings="$HOME/dotfiles/.config/hypr/$root/keybindings.lua"
   windows="$HOME/dotfiles/.config/hypr/$root/windows_and_workspaces.lua"
+  environment="$HOME/dotfiles/.config/hypr/$root/environment_variables.lua"
 
   assert_count 1 '^[[:space:]]*terminal[[:space:]]*=' "$app_variables" "$root terminal assignment"
   assert_count 1 '^[[:space:]]*menu[[:space:]]*=' "$app_variables" "$root launcher assignment"
@@ -83,6 +84,14 @@ for root in sources sources_example; do
   assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"
   assert_count 1 '^hl\.layer_rule\(\{ match = \{ namespace = "rofi" \}, dim_around = true \}\) -- hss-role:launcher-layer$' "$windows" "$root selected launcher layer rule"
   assert_count 1 'hss-role:launcher-layer$' "$windows" "$root launcher layer rule total"
+  assert_count 1 '^window_rule\("xwaylandvideobridge", {' "$windows" "$root XWayland video bridge rule"
+  grep -Fq '    float = true,' "$windows"
+  grep -Fq '    max_size = { 1, 1 },' "$windows"
+  grep -Fq '    no_initial_focus = true,' "$windows"
+  if grep -Eq 'XDG_MENU_PREFIX|XDG_DATA_DIRS' "$environment"; then
+    printf 'not ok - %s overrides XDG application discovery paths\n' "$root"
+    exit 1
+  fi
   for class in hss-scratchpad hss-notes hss-calendar hss-clipboard; do
     assert_count 1 "^window_rule\\(\"${class}\"," "$windows" "$root stable $class rule"
   done

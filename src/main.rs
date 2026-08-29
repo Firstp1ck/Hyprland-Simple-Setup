@@ -165,6 +165,7 @@ struct AppState {
     install_started_at: Option<Instant>,
     // Live sections parsed from setup.sh output
     sections: Vec<SetupSection>,
+    planned_section_count: usize,
     current_section: Option<usize>,
     // Packages data and selections
     pacman_cats: Vec<(String, Vec<String>)>,
@@ -232,6 +233,8 @@ impl AppState {
             Vec::new()
         };
 
+        let planned_section_count = sections_init.len();
+
         let mut s = Self {
             list_state,
             logs: Vec::new(),
@@ -267,6 +270,7 @@ impl AppState {
             child: None,
             install_started_at: None,
             sections: sections_init,
+            planned_section_count,
             current_section: None,
             pacman_cats: Vec::new(),
             aur_cats: Vec::new(),
@@ -518,11 +522,16 @@ fn spinner_frame(elapsed: Duration) -> &'static str {
     SPINNER_FRAMES[index]
 }
 
-fn installation_step_progress(sections: &[SetupSection]) -> (usize, usize) {
-    (
-        sections.iter().filter(|section| section.done).count(),
-        sections.len(),
-    )
+fn installation_step_progress(
+    sections: &[SetupSection],
+    planned_section_count: usize,
+) -> (usize, usize) {
+    let completed = sections
+        .iter()
+        .take(planned_section_count)
+        .filter(|section| section.done)
+        .count();
+    (completed, planned_section_count)
 }
 
 fn installation_percent(completed: usize, total: usize) -> u16 {
@@ -560,6 +569,37 @@ fn ascii_progress_bar(completed: usize, total: usize, width: usize) -> String {
     bar
 }
 
+fn setup_section_style(theme: Theme, section: &SetupSection, is_current: bool) -> Style {
+    let color = match section.severity {
+        StepSeverity::Error => Color::Red,
+        // Use terminal palette colors here: Linux virtual consoles may ignore RGB colors.
+        StepSeverity::Warning => Color::Yellow,
+        StepSeverity::None if is_current => Color::Blue,
+        StepSeverity::None if section.done => Color::Green,
+        StepSeverity::None => theme.text,
+    };
+    let style = Style::default().fg(color);
+    if is_current {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
+fn setup_section_marker(section: &SetupSection, is_current: bool) -> &'static str {
+    if is_current {
+        ">"
+    } else if !section.done {
+        " "
+    } else {
+        match section.severity {
+            StepSeverity::None => "x",
+            StepSeverity::Warning => "!",
+            StepSeverity::Error => "X",
+        }
+    }
+}
+
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Split vertically to create a footer for keybind help
     let vchunks = Layout::default()
@@ -593,37 +633,15 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .split(left_inner);
 
     if !app.sections.is_empty() {
-        // Render sections with color: green=done, white/palette text=pending, blue=current
         let mut lines: Vec<Line> = Vec::new();
-        for (idx, sec) in app.sections.iter().enumerate() {
-            // Determine color priority: Error > Warning > Blue(current) > Green(done) > default
-            let style = if Some(idx) == app.current_section {
-                match sec.severity {
-                    StepSeverity::Error => {
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                    }
-                    StepSeverity::Warning => Style::default()
-                        .fg(app.theme.yellow)
-                        .add_modifier(Modifier::BOLD),
-                    StepSeverity::None => Style::default()
-                        .fg(app.theme.blue)
-                        .add_modifier(Modifier::BOLD),
-                }
-            } else if sec.done {
-                match sec.severity {
-                    StepSeverity::Error => Style::default().fg(Color::Red),
-                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
-                    StepSeverity::None => Style::default().fg(Color::Green),
-                }
-            } else {
-                // Pending
-                match sec.severity {
-                    StepSeverity::Error => Style::default().fg(Color::Red),
-                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
-                    StepSeverity::None => Style::default().fg(app.theme.text),
-                }
-            };
-            lines.push(Line::from(Span::styled(format!("• {}", sec.title), style)));
+        for (idx, section) in app.sections.iter().enumerate() {
+            let is_current = Some(idx) == app.current_section;
+            let style = setup_section_style(app.theme, section, is_current);
+            let marker = setup_section_marker(section, is_current);
+            lines.push(Line::from(Span::styled(
+                format!("[{marker}] {}", section.title),
+                style,
+            )));
         }
         let left_widget = Paragraph::new(Text::from(lines));
         f.render_widget(left_widget, left_chunks[0]);
@@ -645,13 +663,13 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Legend row at bottom of the Actions pane
     let legend = Paragraph::new(Text::from(vec![Line::from(vec![
         Span::styled("Legend: ", Style::default().fg(app.theme.subtext0)),
-        Span::styled("Current", Style::default().fg(app.theme.blue)),
+        Span::styled("> Current", Style::default().fg(Color::Blue)),
         Span::raw("  "),
-        Span::styled("Done", Style::default().fg(Color::Green)),
+        Span::styled("x Done", Style::default().fg(Color::Green)),
         Span::raw("  "),
-        Span::styled("Warning", Style::default().fg(app.theme.yellow)),
+        Span::styled("! Warning", Style::default().fg(Color::Yellow)),
         Span::raw("  "),
-        Span::styled("Error", Style::default().fg(Color::Red)),
+        Span::styled("X Error", Style::default().fg(Color::Red)),
     ])]))
     .style(Style::default().fg(app.theme.subtext0));
     f.render_widget(legend, left_chunks[1]);
@@ -739,7 +757,8 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .as_ref()
             .map(Instant::elapsed)
             .unwrap_or_default();
-        let (completed, total) = installation_step_progress(&app.sections);
+        let (completed, total) =
+            installation_step_progress(&app.sections, app.planned_section_count);
         let percent = installation_percent(completed, total);
         // The ASCII bar and reverse-video status remain visible on a 16-color Linux TTY.
         let bar_width = usize::from(progress_area.width)
@@ -2009,6 +2028,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     app.child = Some(child);
     // Reset sections and pre-load expected steps from script so the full list is visible from the start
     app.sections = preload_sections_from_script(&script);
+    app.planned_section_count = app.sections.len();
     app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
@@ -3427,9 +3447,18 @@ fn format_duration(d: Duration) -> String {
     }
 }
 
+fn normalized_section_title(title: &str) -> String {
+    title
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     // Detect headings like "=== Step ===" or "========= Step ========="
-    let trimmed = raw_line.trim();
+    let clean_line = strip_ansi_sequences(raw_line);
+    let trimmed = clean_line.trim();
     let is_heading = (trimmed.starts_with("=== ") && trimmed.ends_with(" ==="))
         || (trimmed.starts_with("=========") && trimmed.ends_with("========="));
     if is_heading {
@@ -3441,8 +3470,14 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         {
             prev.done = true;
         }
-        // If we preloaded, try to move focus to matching title; otherwise append
-        if let Some(pos) = app.sections.iter().position(|s| s.title == title) {
+        // Match case- and whitespace-insensitively so display-only shell changes do not
+        // create a new progress step and change the denominator during a run.
+        let normalized_title = normalized_section_title(&title);
+        if let Some(pos) = app
+            .sections
+            .iter()
+            .position(|section| normalized_section_title(&section.title) == normalized_title)
+        {
             app.current_section = Some(pos);
         } else {
             app.sections.push(SetupSection {
@@ -3456,8 +3491,7 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     }
 
     // Check for warnings/errors and annotate current section
-    let clean = strip_ansi_sequences(trimmed);
-    let lower = clean.to_lowercase();
+    let lower = trimmed.to_lowercase();
     let mut sev: Option<StepSeverity> = None;
     if lower.contains("[error]") || lower.starts_with("error: ") {
         sev = Some(StepSeverity::Error);
@@ -3490,134 +3524,95 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     }
 }
 
+fn shell_function_name(line: &str) -> Option<String> {
+    let declaration = line.trim().strip_suffix('{')?.trim_end();
+    let name = declaration.strip_suffix("()")?.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+fn literal_step_title(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    for prefix in ["announce_step \"", "extended_announce_step \""] {
+        if let Some(rest) = trimmed.strip_prefix(prefix)
+            && let Some(end) = rest.find('"')
+        {
+            return Some(rest[..end].to_string());
+        }
+    }
+
+    // Some legacy steps, such as Installation Summary, print the same heading directly.
+    let heading_start = trimmed.find("========= ")? + "========= ".len();
+    let rest = &trimmed[heading_start..];
+    let heading_end = rest.find(" =========")?;
+    let title = rest[..heading_end].trim();
+    (!title.is_empty()).then(|| title.to_string())
+}
+
+fn push_unique_section(sections: &mut Vec<SetupSection>, title: String) {
+    if sections.iter().any(|section| section.title == title) {
+        return;
+    }
+    sections.push(SetupSection {
+        title,
+        done: false,
+        severity: StepSeverity::None,
+    });
+}
+
 fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
-    // Strategy: derive order from the main() call sequence.
-    // 1) Collect function definitions present in the script.
-    // 2) Scan the main() block, extract called function names in order.
-    // 3) For each called function, look up the first announce_step title in its body.
-    // 4) Build the sections vector in that order, and append the final marker.
-    let mut out: Vec<SetupSection> = Vec::new();
     let Ok(content) = fs::read_to_string(script_path) else {
-        return out;
+        return Vec::new();
     };
-
     let lines: Vec<&str> = content.lines().collect();
+    let function_starts: Vec<(String, usize)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| shell_function_name(line).map(|name| (name, index)))
+        .collect();
 
-    // 1) Find function definitions: pattern "name() {"
     use std::collections::HashMap;
-    let mut fn_starts: HashMap<String, usize> = HashMap::new();
-    for (i, raw) in lines.iter().enumerate() {
-        let t = raw.trim();
-        if let Some(paren) = t.find("(){") {
-            // rough; many functions are formatted as "name() {"
-            let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
-                fn_starts.insert(name.to_string(), i);
-            }
-        } else if let Some(paren) = t.find("() {") {
-            let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
-                fn_starts.insert(name.to_string(), i);
-            }
-        }
-    }
+    let function_ranges: HashMap<String, (usize, usize)> = function_starts
+        .iter()
+        .enumerate()
+        .map(|(position, (name, start))| {
+            let end = function_starts
+                .get(position + 1)
+                .map(|(_, next_start)| *next_start)
+                .unwrap_or(lines.len());
+            (name.clone(), (*start + 1, end))
+        })
+        .collect();
 
-    // Helper: extract first announce title inside a function body starting at index
-    let mut title_cache: HashMap<String, String> = HashMap::new();
-    let mut get_title_for_fn = |fname: &str| -> Option<String> {
-        if let Some(t) = title_cache.get(fname) {
-            return Some(t.clone());
-        }
-        let start = *fn_starts.get(fname)?;
-        // find body range by brace counting from the line containing "{" forward
-        let mut depth: i32 = 0;
-        let mut in_body = false;
-        for raw in &lines[start..] {
-            let s = *raw;
-            if !in_body {
-                if s.contains('{') {
-                    in_body = true;
-                    depth = 1;
-                }
-                continue;
-            }
-            // check for announce_step
-            let t = s.trim();
-            if let Some(rest) = t
-                .strip_prefix("announce_step \"")
-                .or_else(|| t.strip_prefix("extended_announce_step \""))
-                && let Some(end) = rest.find('"')
-            {
-                let title = rest[..end].to_string();
-                title_cache.insert(fname.to_string(), title.clone());
-                return Some(title);
-            }
-            if s.contains('{') {
-                depth += 1;
-            }
-            if s.contains('}') {
-                depth -= 1;
-                if depth <= 0 {
-                    break;
-                }
-            }
-        }
-        None
+    let Some(&(main_start, main_end)) = function_ranges.get("main") else {
+        return Vec::new();
     };
+    let mut sections = Vec::new();
+    for line in &lines[main_start..main_end] {
+        let trimmed = line.trim();
+        if let Some(title) = literal_step_title(trimmed) {
+            push_unique_section(&mut sections, title);
+            continue;
+        }
 
-    // 2) Extract the main() block lines
-    let mut main_start = None;
-    for (i, raw) in lines.iter().enumerate() {
-        if raw.trim_start().starts_with("main() {") {
-            main_start = Some(i);
-            break;
+        let called_function = trimmed.split_whitespace().next().unwrap_or("");
+        let Some(&(function_start, function_end)) = function_ranges.get(called_function) else {
+            continue;
+        };
+        if let Some(title) = lines[function_start..function_end]
+            .iter()
+            .find_map(|function_line| literal_step_title(function_line))
+        {
+            push_unique_section(&mut sections, title);
         }
     }
-    if let Some(start_idx) = main_start {
-        let mut depth: i32 = 0;
-        let mut in_body = false;
-        let mut called: Vec<String> = Vec::new();
-        for raw in &lines[start_idx..] {
-            let s = *raw;
-            if !in_body {
-                if s.contains('{') {
-                    in_body = true;
-                    depth = 1;
-                }
-                continue;
-            }
-            let t = s.trim();
-            // stop at end of main
-            if t.contains('}') {
-                depth -= 1;
-                if depth <= 0 {
-                    break;
-                }
-            }
-            if t.contains('{') {
-                depth += 1; // nested blocks inside main (if/else)
-            }
-            // very simple call detection for shell: a line starting with a known function name
-            // (functions are invoked as plain identifiers like: update_pacman)
-            let token = t.split_whitespace().next().unwrap_or("");
-            if fn_starts.contains_key(token) {
-                called.push(token.to_string());
-            }
-        }
-        // 3) Map to titles and build sections
-        for fname in called {
-            if let Some(title) = get_title_for_fn(&fname)
-                && !out.iter().any(|s| s.title == title)
-            {
-                out.push(SetupSection {
-                    title,
-                    done: false,
-                    severity: StepSeverity::None,
-                });
-            }
-        }
-    }
-    out
+    sections
 }
 
 #[cfg(test)]
@@ -3659,9 +3654,85 @@ mod tests {
             },
         ];
 
-        assert_eq!(installation_step_progress(&sections), (1, 2));
+        assert_eq!(installation_step_progress(&sections, 2), (1, 2));
+
+        let mut sections_with_unplanned_output = sections.clone();
+        sections_with_unplanned_output.push(SetupSection {
+            title: "Unexpected diagnostic heading".to_string(),
+            done: true,
+            severity: StepSeverity::None,
+        });
+        assert_eq!(
+            installation_step_progress(&sections_with_unplanned_output, 2),
+            (1, 2)
+        );
         assert_eq!(installation_percent(1, 2), 50);
         assert_eq!(ascii_progress_bar(1, 2, 5), "[==>--]");
         assert_eq!(ascii_progress_bar(2, 2, 5), "[=====]");
+    }
+
+    #[test]
+    fn setup_progress_plan_contains_the_complete_main_flow() {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let titles: Vec<String> = preload_sections_from_script(&script)
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+
+        assert_eq!(
+            titles,
+            vec![
+                "Updating Arch mirrors",
+                "Updating pacman packages",
+                "Updating AUR packages",
+                "Removing pacman cache",
+                "Install pacman packages",
+                "Install AUR extras",
+                "Verifying selected packages",
+                "Update configs",
+                "Configuring selected application roles",
+                "Configuring selected shell",
+                "Configuring Environment",
+                "Configuring NetworkManager",
+                "Configuring WiFi",
+                "Configuring Bluetooth",
+                "Configuring gnome-keyring",
+                "Configuring filepicker",
+                "Configuring Pacman Color",
+                "Setting up Timeshift",
+                "Configuring grub-btrfsd",
+                "Configuring monitor",
+                "Configuring SDDM Theme",
+                "Installation Summary",
+                "Enabling SDDM display manager",
+                "Hyprland setup completed successfully!",
+            ]
+        );
+    }
+
+    #[test]
+    fn completed_non_success_sections_have_tty_visible_states() {
+        let theme = Theme::catppuccin_mocha();
+        let warning = SetupSection {
+            title: "Skipped step".to_string(),
+            done: true,
+            severity: StepSeverity::Warning,
+        };
+        let error = SetupSection {
+            title: "Failed step".to_string(),
+            done: true,
+            severity: StepSeverity::Error,
+        };
+
+        assert_eq!(setup_section_marker(&warning, false), "!");
+        assert_eq!(
+            setup_section_style(theme, &warning, false).fg,
+            Some(Color::Yellow)
+        );
+        assert_eq!(setup_section_marker(&error, false), "X");
+        assert_eq!(
+            setup_section_style(theme, &error, false).fg,
+            Some(Color::Red)
+        );
     }
 }

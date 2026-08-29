@@ -1,5 +1,6 @@
--- Check monitor names with `hyprctl monitors all`.
--- setup.sh populates this file when monitor auto-detection or manual setup runs.
+-- Hyprland's fallback rule handles every monitor that has no explicit rule.
+-- Manual monitor setup replaces this file with output-specific rules.
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
 -- Example single-monitor configuration:
 -- hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })

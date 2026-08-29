@@ -126,25 +126,28 @@ if [ -z "$WALLPAPER" ]; then
   exit 1
 fi
 
-# Check if monitors array is set
-if [ ${#MONITORS[@]} -eq 0 ]; then
-  echo "Error: MONITORS array is empty" >&2
-  exit 1
+# An empty configured list is valid: hyprpaper uses an empty monitor selector
+# as the fallback for every output without a monitor-specific wallpaper.
+WALLPAPER_TARGETS=("${MONITORS[@]}")
+if [ ${#WALLPAPER_TARGETS[@]} -eq 0 ]; then
+  WALLPAPER_TARGETS=("")
+  echo "No explicit monitors configured; using the hyprpaper fallback target."
 fi
 
 # Clean up any old hanging processes from previous runs
 pkill -f "hyprctl.*hyprpaper" 2>/dev/null
 sleep 0.1
 
-# Set fallback wallpaper target first (empty monitor selector).
-# This follows current hyprpaper IPC docs and avoids "no target" on
-# dynamic outputs until monitor-specific assignments are applied.
-hyprctl hyprpaper wallpaper ", $WALLPAPER, cover" >/dev/null 2>&1 || true
+# Keep a fallback assignment for future hot-plugged outputs when explicit
+# monitor targets are configured. Empty configurations apply it in the loop.
+if [ ${#MONITORS[@]} -gt 0 ]; then
+  hyprctl hyprpaper wallpaper ", $WALLPAPER, cover" >/dev/null 2>&1 || true
+fi
 
-# Set wallpaper on each monitor with retry logic
+# Set wallpaper on each configured monitor, or the fallback target, with retries.
 # New hyprpaper 0.8.0 IPC format: 'monitor, path, fit_mode'
 # fit_mode is optional and defaults to 'cover' if omitted
-for monitor in "${MONITORS[@]}"; do
+for monitor in "${WALLPAPER_TARGETS[@]}"; do
   retry_count=0
   max_retries=3
   success=false
@@ -165,7 +168,8 @@ for monitor in "${MONITORS[@]}"; do
   done
   
   if [ "$success" = false ]; then
-    echo "Error: Failed to set wallpaper on $monitor after $max_retries attempts" >&2
+    monitor_label=${monitor:-"the fallback target"}
+    echo "Error: Failed to set wallpaper on $monitor_label after $max_retries attempts" >&2
     [ -n "${wallpaper_out:-}" ] && echo "hyprpaper output: $wallpaper_out" >&2
   fi
 done
@@ -175,7 +179,7 @@ done
 CURRENT_WALL="(unavailable - listactive removed in hyprpaper 0.8.0)"
 
 # Create timestamp file for autostart checks
-touch /tmp/wallpaper-change-ran
+touch "${WALLPAPER_CHANGE_STAMP:-/tmp/wallpaper-change-ran}"
 
 echo "Current wallpaper: $CURRENT_WALL"
 echo "New wallpaper: $WALLPAPER"

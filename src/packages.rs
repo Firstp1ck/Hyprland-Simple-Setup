@@ -53,6 +53,8 @@ pub struct RoleOption {
     #[serde(default)]
     pub editor_bin: Option<String>,
     #[serde(default)]
+    pub desktop_file: Option<String>,
+    #[serde(default)]
     pub dmenu_executable: Option<String>,
     #[serde(default)]
     pub dmenu_args: Option<Vec<String>>,
@@ -450,7 +452,10 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
     match role_name {
         "browser" | "terminal" => {
             require_token(&option.class, "class", &option.package)?;
-            reject_fields(option, &["shell_path", "editor_bin", "dmenu"])?;
+            reject_fields(
+                option,
+                &["shell_path", "editor_bin", "desktop_file", "dmenu"],
+            )?;
         }
         "shell" => {
             let shell_path = option.shell_path.as_deref().with_context(|| {
@@ -460,11 +465,16 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
                 bail!("shell path for {} must be absolute", option.package);
             }
             validate_executable(shell_path, "shell_path")?;
-            reject_fields(option, &["class", "editor_bin", "dmenu"])?;
+            reject_fields(option, &["class", "editor_bin", "desktop_file", "dmenu"])?;
         }
-        "gui_editor" | "tui_editor" => {
+        "gui_editor" => {
             require_token(&option.editor_bin, "editor_bin", &option.package)?;
+            require_token(&option.desktop_file, "desktop_file", &option.package)?;
             reject_fields(option, &["class", "shell_path", "dmenu"])?;
+        }
+        "tui_editor" => {
+            require_token(&option.editor_bin, "editor_bin", &option.package)?;
+            reject_fields(option, &["class", "shell_path", "desktop_file", "dmenu"])?;
         }
         "launcher" => {
             let dmenu = option.dmenu_executable.as_deref().with_context(|| {
@@ -479,7 +489,10 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
             })?)?;
             require_token(&option.process, "process", &option.package)?;
             require_token(&option.namespace, "namespace", &option.package)?;
-            reject_fields(option, &["class", "shell_path", "editor_bin"])?;
+            reject_fields(
+                option,
+                &["class", "shell_path", "editor_bin", "desktop_file"],
+            )?;
         }
         _ => bail!("unknown role {role_name}"),
     }
@@ -492,6 +505,7 @@ fn reject_fields(option: &RoleOption, fields: &[&str]) -> Result<()> {
             "class" => option.class.is_some(),
             "shell_path" => option.shell_path.is_some(),
             "editor_bin" => option.editor_bin.is_some(),
+            "desktop_file" => option.desktop_file.is_some(),
             "dmenu" => {
                 option.dmenu_executable.is_some()
                     || option.dmenu_args.is_some()

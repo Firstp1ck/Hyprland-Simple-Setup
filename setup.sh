@@ -569,37 +569,15 @@ is_pacman_group_installed() {
     return 0
 }
 
-# Detect first Hyprland monitor name from `hyprctl monitors`
-get_first_hypr_monitor() {
-    command -v hyprctl >/dev/null 2>&1 || return 1
-    # Be tolerant to any leading whitespace in hyprctl output
-    hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2; exit}'
-}
-
-# Ensure the wallpaper monitor list is populated in the Lua data file.
+# An empty wallpaper monitor list intentionally selects hyprpaper's fallback target.
 ensure_wallpaper_monitors() {
     local wallpaper_lua="${1:-$HOME/.config/hypr/sources_specific/change_wallpaper.lua}"
     [ -f "$wallpaper_lua" ] || return 0
 
     local current_line
     current_line=$(grep -E '^[[:space:]]*monitors[[:space:]]*=' "$wallpaper_lua" 2>/dev/null || true)
-
-    local need_set=false
     if [ -z "$current_line" ] || echo "$current_line" | grep -qE 'monitors[[:space:]]*=[[:space:]]*\{[[:space:]]*\}'; then
-        need_set=true
-    elif echo "$current_line" | grep -qE 'MONITOR_[0-9]'; then
-        need_set=true
-    fi
-
-    if [ "$need_set" = true ]; then
-        local first_mon
-        first_mon=$(get_first_hypr_monitor || true)
-        if [ -z "$first_mon" ]; then
-            print_warning "Could not auto-detect a monitor via hyprctl; leaving the wallpaper monitor list unchanged."
-            return 0
-        fi
-        print_message "Auto-detected monitor: $first_mon"
-        replace_config_line "$wallpaper_lua" '^[[:space:]]*monitors[[:space:]]*=' "    monitors = { \"$first_mon\" }," "Set wallpaper monitor list"
+        print_message "No explicit wallpaper monitors configured; using the hyprpaper fallback target."
     fi
 }
 
@@ -609,7 +587,7 @@ get_all_hypr_monitors() {
     hyprctl monitors 2>/dev/null | awk '/^[[:space:]]*Monitor /{print $2}'
 }
 
-# Auto-populate monitors.lua when it contains no active hl.monitor calls.
+# Ensure Hyprland has its documented fallback rule when no explicit monitor setup exists.
 ensure_monitors_conf() {
     local monitors_lua="${1:-$HOME/.config/hypr/sources_specific/monitors.lua}"
     [ -f "$monitors_lua" ] || return 0
@@ -618,50 +596,24 @@ ensure_monitors_conf() {
         return 0
     fi
 
-    local monitor_names
-    monitor_names=$(get_all_hypr_monitors || true)
-    if [ -z "$monitor_names" ]; then
-        print_warning "Could not auto-detect monitors via hyprctl; leaving monitors.lua unchanged."
-        return 0
-    fi
+    print_message "No explicit monitor configuration found; using Hyprland defaults."
+    append_text_atomic "$monitors_lua" "default monitor configuration" '
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
+'
+}
 
-    print_message "Auto-populating monitors.lua with detected monitors..."
-    local all_names=()
-    local monitor_lines=()
-    local x_offset=0
-    while IFS= read -r mon_name; do
-        [ -z "$mon_name" ] && continue
-        all_names+=("$mon_name")
-        local width
-        width=$(hyprctl monitors 2>/dev/null | awk -v name="$mon_name" '
-            /^[[:space:]]*Monitor /{found=($2==name)}
-            found && /^[[:space:]]*[0-9]+x[0-9]+@/{split($1,a,"x"); split(a[2],b,"@"); print a[1]; exit}
-        ')
-        if ! [[ "${width:-}" =~ ^[0-9]+$ ]]; then
-            width=0
-        fi
-
-        local pos="${x_offset}x0"
-        monitor_lines+=("hl.monitor({ output = \"${mon_name}\", mode = \"preferred\", position = \"${pos}\", scale = 1 })")
-        print_message "  Added ${mon_name} at ${pos}"
-        x_offset=$((x_offset + width))
-    done <<< "$monitor_names"
-
-    local generated=""
-    if [ "${#monitor_lines[@]}" -gt 0 ]; then
-        generated+=$'\n'
-        generated+="$(printf '%s\n' "${monitor_lines[@]}")"
-        generated+=$'\n'
-    fi
-    if [ "${#all_names[@]}" -gt 0 ]; then
-        local primary="${all_names[0]}"
-        local secondary="${all_names[1]:-$primary}"
-        generated+="$(printf '\nhl.workspace_rule({ workspace = \"1\", monitor = \"%s\", default = true })\n' "$primary")"
-        if [ "${#all_names[@]}" -gt 1 ]; then
-            generated+="$(printf 'hl.workspace_rule({ workspace = \"2\", monitor = \"%s\" })\n' "$secondary")"
-        fi
-    fi
-    [[ -z $generated ]] || append_text_atomic "$monitors_lua" "auto-detected monitor configuration" "$generated"
+apply_default_monitor_configuration() {
+    local config
+    for config in \
+        "$HOME/.config/hypr/sources_specific/monitors.lua" \
+        "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"; do
+        [ -f "$config" ] && ensure_monitors_conf "$config"
+    done
+    for config in \
+        "$HOME/.config/hypr/sources_specific/change_wallpaper.lua" \
+        "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"; do
+        [ -f "$config" ] && ensure_wallpaper_monitors "$config"
+    done
 }
 
 # Apply MONITOR_CONFIG directly (name:resolution:scale;...) without requiring
@@ -2267,40 +2219,66 @@ configure_gnome_keyring() {
     fi
 }
 
+desktop_application_exists() {
+    local desktop_file="$1"
+    local data_dirs="${XDG_DATA_DIRS:-}"
+    data_dirs+="${data_dirs:+:}$HOME/.local/share:/usr/local/share:/usr/share"
+    data_dirs+=":$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share"
+
+    local data_dir
+    while IFS= read -r data_dir; do
+        [ -n "$data_dir" ] || continue
+        data_dir=${data_dir//\$HOME/$HOME}
+        [ -f "$data_dir/applications/$desktop_file" ] && return 0
+    done < <(printf '%s' "$data_dirs" | tr ':' '\n')
+    return 1
+}
+
 configure_filepicker() {
     announce_step "Configuring filepicker"
 
-    if ! check_hyprland; then
-        print_message "Not running in Hyprland. Skipping filepicker configuration."
-        track_config_status "Filepicker Setup" "$CIRCLE (Not in Hyprland)"
-        record_skipped "configure_filepicker" "Not running in Hyprland session"
-        return 0
-    fi
+    load_role_selections || return 1
     local conf_dir="${HOME}/.config/xdg-desktop-portal"
     local conf_file="${conf_dir}/hyprland-portals.conf"
     local desired_content="[preferred]
 default = hyprland;gtk
-org.freedesktop.impl.portal.FileChooser = kde
+org.freedesktop.impl.portal.FileChooser = gtk
 "
-    if [ -f "$conf_file" ]; then
-        if grep -q "default = hyprland;gtk" "$conf_file" && grep -q "org.freedesktop.impl.portal.FileChooser = kde" "$conf_file"; then
-            print_message "Filepicker configuration already set."
-        else
-            print_message "Updating filepicker configuration..."
-            write_text_atomic "$conf_file" "Update filepicker configuration" "$desired_content"
-        fi
+    if ! is_dry_run; then
+        mkdir -p "$conf_dir"
+    fi
+    if [ -f "$conf_file" ] \
+        && grep -q "default = hyprland;gtk" "$conf_file" \
+        && grep -q "org.freedesktop.impl.portal.FileChooser = gtk" "$conf_file"; then
+        print_message "GTK file chooser configuration already set."
     else
-        print_message "Creating filepicker configuration..."
-        write_text_atomic "$conf_file" "Create filepicker configuration" "$desired_content"
+        print_message "Configuring the GTK file chooser backend..."
+        write_text_atomic "$conf_file" "Configure GTK file chooser backend" "$desired_content" || return 1
     fi
 
-    if [ ! -L "/etc/xdg/menus/applications.menu" ]; then
-        execute_command "sudo ln -s /etc/xdg/menus/plasma-applications.menu /etc/xdg/menus/applications.menu" "Symlink applications.menu to plasma-applications.menu"
-    else
-        print_message "Symlink for applications.menu already exists."
+    local editor_desktop
+    editor_desktop=$(role_field gui_editor desktop_file) || return 1
+    if ! desktop_application_exists "$editor_desktop"; then
+        print_warning "Selected editor desktop entry is unavailable: $editor_desktop"
+        record_warning "configure_filepicker" "Selected editor desktop entry is unavailable: $editor_desktop"
+        track_config_status "Filepicker Setup" "$CIRCLE (Editor desktop entry unavailable)"
+        return 0
+    fi
+    if ! command -v xdg-mime >/dev/null 2>&1; then
+        print_warning "xdg-mime is unavailable; text-file associations were not configured."
+        record_warning "configure_filepicker" "xdg-mime is unavailable"
+        track_config_status "Filepicker Setup" "$CIRCLE (xdg-mime unavailable)"
+        return 0
     fi
 
-    track_config_status "Filepicker Setup" "$CHECK_MARK"
+    if execute_command "xdg-mime default '$editor_desktop' text/plain && xdg-mime default '$editor_desktop' application/x-shellscript" "Associate text files with the selected GUI editor"; then
+        print_message "Text files will open with $editor_desktop"
+        track_config_status "Filepicker Setup" "$CHECK_MARK"
+    else
+        print_warning "Could not configure text-file associations."
+        record_warning "configure_filepicker" "xdg-mime failed for $editor_desktop"
+        track_config_status "Filepicker Setup" "$CIRCLE (MIME association failed)"
+    fi
 }
 
 configure_pacman_color() {
@@ -2456,27 +2434,17 @@ configure_monitor() {
                 print_message "Non-interactive: proceeding with monitor setup"
                 ;;
             *)
-                print_message "Non-interactive: MONITOR_SETUP_ENABLED is not set; falling back to auto-detection"
-                local mc
-                for mc in \
-                    "$HOME/.config/hypr/sources_specific/monitors.lua" \
-                    "$HOME/dotfiles/.config/hypr/sources_specific/monitors.lua"; do
-                    [ -f "$mc" ] && ensure_monitors_conf "$mc"
-                done
-                local wc
-                for wc in \
-                    "$HOME/.config/hypr/sources_specific/change_wallpaper.lua" \
-                    "$HOME/dotfiles/.config/hypr/sources_specific/change_wallpaper.lua"; do
-                    [ -f "$wc" ] && ensure_wallpaper_monitors "$wc"
-                done
-                track_config_status "Monitor Setup" "$CIRCLE (Auto-detected)"
+                print_message "Non-interactive: monitor setup is disabled; using Hyprland and hyprpaper defaults"
+                apply_default_monitor_configuration
+                track_config_status "Monitor Setup" "$CHECK_MARK (Default automatic configuration)"
                 return 0
                 ;;
         esac
     else
         if ! prompt_yes_no "Would you like to configure your monitor settings?"; then
-            print_message "Monitor setup skipped by user."
-            track_config_status "Monitor Setup" "$CIRCLE (Skipped by user)"
+            print_message "Monitor setup skipped by user; using Hyprland and hyprpaper defaults."
+            apply_default_monitor_configuration
+            track_config_status "Monitor Setup" "$CHECK_MARK (Default automatic configuration)"
             return 0
         fi
     fi
@@ -3036,6 +3004,15 @@ run_reliability_test_scenario() {
         yay-bootstrap)
             hss_begin_run "reliability yay-bootstrap" || return $?
             bootstrap_yay
+            ;;
+        monitor-defaults)
+            hss_begin_run "reliability monitor-defaults" || return $?
+            ensure_monitors_conf "${HSS_MONITORS_FILE:?HSS_MONITORS_FILE is required}"
+            ensure_wallpaper_monitors "${HSS_WALLPAPER_FILE:?HSS_WALLPAPER_FILE is required}"
+            ;;
+        filepicker)
+            hss_begin_run "reliability filepicker" || return $?
+            configure_filepicker
             ;;
         atomic)
             hss_begin_run "reliability atomic" || return $?

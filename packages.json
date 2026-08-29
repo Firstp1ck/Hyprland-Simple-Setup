@@ -493,7 +493,8 @@
             "--ozone-platform=wayland",
             "--enable-features=UseOzonePlatform"
           ],
-          "editor_bin": "code"
+          "editor_bin": "code",
+          "desktop_file": "visual-studio-code.desktop"
         },
         {
           "package": "cursor-bin",
@@ -503,14 +504,16 @@
             "--ozone-platform=wayland",
             "--enable-features=UseOzonePlatform"
           ],
-          "editor_bin": "cursor"
+          "editor_bin": "cursor",
+          "desktop_file": "cursor.desktop"
         },
         {
           "package": "zed",
           "source": "pacman",
           "executable": "zed",
           "args": [],
-          "editor_bin": "zed"
+          "editor_bin": "zed",
+          "desktop_file": "dev.zed.Zed.desktop"
         }
       ]
     },
