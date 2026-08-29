@@ -18,3 +18,6 @@ dotfiles/.config/hypr/sources
 
 dev/COMMIT
 dev/PR/*
+
+# Completed implementation plans
+/plans/archive/
