@@ -1082,12 +1082,16 @@ EOF
 
 prepare_makepkg_config() {
     local output_var=$1 auth_wrapper=$2
-    local config fragment user_config
-    [[ -r /etc/makepkg.conf ]] || return 1
+    local config fragment user_config etc_root
+    etc_root=$(setup_etc_root)
+    [[ -f "$etc_root/makepkg.conf" && -r "$etc_root/makepkg.conf" ]] || {
+        print_error "Missing or unreadable makepkg configuration: $etc_root/makepkg.conf"
+        return 1
+    }
     make_tmp config makepkg-conf.XXXXXX || return 1
     {
-        printf 'source %q\n' /etc/makepkg.conf
-        for fragment in /etc/makepkg.conf.d/*.conf; do
+        printf 'source %q\n' "$etc_root/makepkg.conf"
+        for fragment in "$etc_root"/makepkg.conf.d/*.conf; do
             [[ -r $fragment ]] && printf 'source %q\n' "$fragment"
         done
         user_config="${XDG_CONFIG_HOME:-$HOME/.config}/pacman/makepkg.conf"

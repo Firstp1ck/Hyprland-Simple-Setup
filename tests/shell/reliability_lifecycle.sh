@@ -5,6 +5,13 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+report_lifecycle_failure() {
+  local status=$1 line=$2
+  if [[ $- == *e* ]]; then
+    printf 'not ok - lifecycle assertion at line %s (exit %s)\n' "$line" "$status" >&2
+  fi
+}
+trap 'report_lifecycle_failure "$?" "$LINENO"' ERR
 setup_role_fixture "$fixture"
 set_role_defaults
 
@@ -106,14 +113,25 @@ git -C "$yay_checkout" commit -qm initial
 git -C "$yay_checkout" remote add origin https://aur.archlinux.org/yay.git
 yay_bootstrap_out="$fixture/yay-bootstrap.out"
 yay_sudo_cache="$fixture/yay-sudo-cache"
+makepkg_etc="$fixture/makepkg-etc"
+mkdir -p "$makepkg_etc/makepkg.conf.d" "$XDG_CONFIG_HOME/pacman"
+printf '%s\n' 'HSS_TEST_MAKEPKG_CONFIG=system' > "$makepkg_etc/makepkg.conf"
+printf '%s\n' 'HSS_TEST_MAKEPKG_CONFIG+=:fragment' > "$makepkg_etc/makepkg.conf.d/fixture.conf"
+printf '%s\n' 'HSS_TEST_MAKEPKG_CONFIG+=:user' > "$XDG_CONFIG_HOME/pacman/makepkg.conf"
 : > "$STUB_LOG"
-SUDO_PASSWORD='tui-provided-password' \
+if ! SUDO_PASSWORD='tui-provided-password' \
 STUB_SUDO_REQUIRE_PASSWORD=1 \
 STUB_SUDO_EXPECTED_PASSWORD='tui-provided-password' \
 STUB_SUDO_CACHE_FILE="$yay_sudo_cache" \
+STUB_MAKEPKG_EXPECTED_CONFIG='system:fragment:user' \
+HSS_TEST_ETC_ROOT="$makepkg_etc" \
 HSS_YAY_DIR="$yay_checkout" \
 HSS_RELIABILITY_ACTION=yay-bootstrap \
-  "$repo_root/setup.sh" --test-scenario reliability >"$yay_bootstrap_out" 2>&1
+  "$repo_root/setup.sh" --test-scenario reliability >"$yay_bootstrap_out" 2>&1; then
+  printf 'not ok - yay bootstrap failed\n' >&2
+  cat "$yay_bootstrap_out" >&2
+  exit 1
+fi
 grep -Fq "Reusing existing yay checkout: $yay_checkout" "$yay_bootstrap_out"
 grep -Fq "makepkg cwd=$yay_checkout" "$STUB_LOG"
 grep -Fq -- '--config' "$STUB_LOG"
@@ -123,7 +141,17 @@ if grep -Fq 'tui-provided-password' "$STUB_LOG"; then
   printf 'not ok - yay bootstrap leaked the password into the command log\n'
   exit 1
 fi
-printf 'ok - yay bootstrap reuses checkout and supplies explicit makepkg authentication\n'
+printf 'ok - yay bootstrap uses isolated layered makepkg config and explicit authentication\n'
+
+set +e
+missing_makepkg_out=$(HSS_TEST_ETC_ROOT="$fixture/missing-makepkg-etc" \
+  HSS_YAY_DIR="$yay_checkout" HSS_RELIABILITY_ACTION=yay-bootstrap \
+  "$repo_root/setup.sh" --test-scenario reliability 2>&1)
+missing_makepkg_status=$?
+set -e
+[[ $missing_makepkg_status -ne 0 ]]
+grep -Fq "Missing or unreadable makepkg configuration: $fixture/missing-makepkg-etc/makepkg.conf" <<< "$missing_makepkg_out"
+printf 'ok - missing fixture makepkg config fails instead of falling back to host configuration\n'
 
 filepicker_config_dir="$HOME/.config/xdg-desktop-portal"
 filepicker_desktop_dir="$HOME/.local/share/applications"

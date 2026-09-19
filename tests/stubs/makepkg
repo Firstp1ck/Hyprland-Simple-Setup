@@ -15,6 +15,10 @@ done
 [[ -n $config && -r $config ]]
 # shellcheck disable=SC1090
 source "$config"
+if [[ -n ${STUB_MAKEPKG_EXPECTED_CONFIG:-} && ${HSS_TEST_MAKEPKG_CONFIG:-} != "$STUB_MAKEPKG_EXPECTED_CONFIG" ]]; then
+  printf 'makepkg stub did not load the expected fixture configuration layers\n' >&2
+  exit 1
+fi
 auth_wrapper=${PACMAN_AUTH[0]:-}
 [[ -n $auth_wrapper && -x $auth_wrapper ]]
 printf 'makepkg-auth=%q\n' "$auth_wrapper" >> "$STUB_LOG"
