@@ -52,3 +52,23 @@ if contains zen-browser-bin "${SELECTED_PACMAN_LIST[@]}" \
   exit 1
 fi
 printf 'ok - explicit and user-added lists retain unrelated packages and re-add only selected roles by source\n'
+
+multi_source_dump=$(ROLE_BROWSER=vivaldi \
+  ROLE_BROWSER_PACKAGES='vivaldi brave-bin' \
+  bash -c '
+    set -e
+    source "$1/setup.sh"
+    resolve_package_registry
+    load_role_selections
+    prepare_package_selections
+    printf "pacman=%s\n" "${SELECTED_PACMAN_LIST[*]}"
+    printf "aur=%s\n" "${SELECTED_AUR_LIST[*]}"
+  ' bash "$repo_root")
+pacman_line=$(grep '^pacman=' <<<"$multi_source_dump")
+aur_line=$(grep '^aur=' <<<"$multi_source_dump")
+[[ $pacman_line == *' vivaldi '* || $pacman_line == *'=vivaldi '* ]]
+[[ $pacman_line == *' vivaldi-ffmpeg-codecs'* ]]
+[[ $aur_line == *' brave-bin'* ]]
+[[ $pacman_line != *' brave-bin'* ]]
+[[ $aur_line != *' vivaldi '* ]]
+printf 'ok - multi-selection preserves per-option source and selected-only extras\n'

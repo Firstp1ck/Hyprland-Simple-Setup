@@ -71,8 +71,13 @@ case "${1:-}" in
     if [[ ${STUB_WINDOW_MISSING:-0} == 1 ]]; then
       printf '[]\n'
     else
-      printf '[{"class":"hss-clipboard","pid":%s,"floating":%s}]\n' \
-        "$(<"$STUB_EXEC_PID_FILE")" "${STUB_WINDOW_FLOATING:-false}"
+      if [[ $(jq -r '.roles.terminal.package' "$HSS_ROLES_FILE") == konsole ]]; then
+        printf '[{"class":"org.kde.konsole","title":"hss-clipboard — Konsole","pid":%s,"floating":%s}]\n' \
+          "$(<"$STUB_EXEC_PID_FILE")" "${STUB_WINDOW_FLOATING:-false}"
+      else
+        printf '[{"class":"hss-clipboard","pid":%s,"floating":%s}]\n' \
+          "$(<"$STUB_EXEC_PID_FILE")" "${STUB_WINDOW_FLOATING:-false}"
+      fi
     fi
     ;;
   *)
@@ -108,9 +113,15 @@ assert_generated_metadata() {
     | select(.package == $package)
     | walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
   ' "$repo_root/packages.json")
-  jq -e --arg role "$role" --argjson expected "$expected" '
-    .schema_version == 1 and .roles[$role] == $expected
-  ' "$roles_file" >/dev/null || fail "roles.json metadata mismatch for $role=$package"
+  if ! jq -e --arg role "$role" --argjson expected "$expected" '
+    .schema_version == 2
+    and .roles[$role] == $expected
+    and (.selected[$role] | any(. == $expected))
+  ' "$roles_file" >/dev/null; then
+    jq --arg role "$role" '{schema_version, primary: .roles[$role], selected: .selected[$role]}' "$roles_file" >&2
+    printf 'expected: %s\n' "$expected" >&2
+    fail "roles.json metadata mismatch for $role=$package"
+  fi
 }
 
 assert_wrapper_argv() {
@@ -127,11 +138,13 @@ assert_wrapper_argv() {
     --app-id hss-matrix --title 'Matrix title' -- payload-command 'argument with spaces'
   expected=("$terminal" "${terminal_args[@]}")
   case "$terminal_package" in
-    kitty|alacritty) expected+=(--class hss-matrix --title 'Matrix title') ;;
-    ghostty) expected+=(--class=hss-matrix --title='Matrix title') ;;
+    kitty|alacritty) expected+=(--class hss-matrix --title 'Matrix title' -e) ;;
+    ghostty) expected+=(--class=hss-matrix --title='Matrix title' -e) ;;
+    foot) expected+=(--app-id=hss-matrix --title='Matrix title') ;;
+    konsole) expected+=(--separate -p 'tabtitle=hss-matrix' -e) ;;
     *) fail "unexpected terminal package in wrapper test: $terminal_package"; return ;;
   esac
-  expected+=(-e payload-command 'argument with spaces')
+  expected+=(payload-command 'argument with spaces')
   assert_argv "$wrapper_log" "terminal wrapper for $package" "${expected[@]}"
 
   launcher=$(jq -er '.roles.launcher.executable' "$roles_file")
@@ -171,11 +184,13 @@ assert_clipboard_behavior() {
   terminal_pid=$(<"$fixture_root/terminal.pid")
   expected=("$executable" "${args[@]}")
   case "$terminal_package" in
-    kitty|alacritty) expected+=(--class hss-clipboard --title Clipboard) ;;
-    ghostty) expected+=(--class=hss-clipboard --title=Clipboard) ;;
+    kitty|alacritty) expected+=(--class hss-clipboard --title Clipboard -e) ;;
+    ghostty) expected+=(--class=hss-clipboard --title=Clipboard -e) ;;
+    foot) expected+=(--app-id=hss-clipboard --title=Clipboard) ;;
+    konsole) expected+=(--separate -p tabtitle=hss-clipboard -e) ;;
     *) fail "unexpected terminal package in clipboard test: $terminal_package"; return ;;
   esac
-  expected+=(-e sh -c "$clipboard_command")
+  expected+=(sh -c "$clipboard_command")
   assert_argv "$wrapper_log" "clipboard terminal argv for $package" "${expected[@]}"
   assert_contains "dispatch focuswindow pid:$terminal_pid" "$fixture_root/hyprctl.log" 'clipboard focuses its stable-class window'
   assert_contains 'resizeactive\ exact\ 50%\ 55%' "$fixture_root/hyprctl.log" 'clipboard window is resized'
@@ -247,7 +262,9 @@ assert_common_consumers() {
   local pypr="$HOME/dotfiles/.config/pypr/config.toml"
 
   assert_contains 'term_exec.sh -- ' "$hypr_root/keybindings.lua" 'Lua terminal keybinding uses wrapper'
-  assert_contains 'hl.exec_cmd(apps.editor, { workspace = "1 silent" })' "$hypr_root/autostart.lua" 'Lua autostart uses selected editor'
+  assert_contains 'hl.exec_cmd(apps.editor, { workspace = "1 silent" }) -- hss-role:gui-editor-autostart' "$hypr_root/autostart.lua" 'Lua autostart uses selected GUI editor'
+  assert_contains 'role_exec.sh notifications' "$hypr_root/autostart.lua" 'Lua autostart uses selected notifications'
+  assert_contains 'role_exec.sh bar' "$hypr_root/autostart.lua" 'Lua autostart uses selected bar'
   assert_contains 'hl.exec_cmd(apps.browser, { workspace = "2 silent" })' "$hypr_root/autostart.lua" 'Lua autostart uses selected browser'
   for app_id in hss-scratchpad hss-notes hss-clipboard; do
     assert_contains "window_rule(\"$app_id\"" "$hypr_root/windows_and_workspaces.lua" "Lua stable window rule $app_id"
@@ -261,7 +278,14 @@ assert_common_consumers() {
   assert_contains '"hss-clipboard"' "$waybar" 'Waybar ignores stable clipboard app ID'
 
   assert_line 'command = "~/.config/hypr/scripts/term_exec.sh --app-id hss-scratchpad --title Scratchpad -- bash"' "$pypr" 'Pyprland uses terminal wrapper'
-  assert_line 'class = "hss-scratchpad"' "$pypr" 'Pyprland uses stable scratchpad class'
+  assert_line 'command = "~/.config/hypr/scripts/role_exec.sh audio"' "$pypr" 'Pyprland uses selected audio role'
+  if [[ $(jq -r '.roles.terminal.package' "$roles_file") == konsole ]]; then
+    assert_line 'class = "org.kde.konsole"' "$pypr" 'Pyprland uses native Konsole class'
+    assert_line 'match_by = "title"' "$pypr" 'Pyprland uses stable Konsole title'
+    assert_line 'title = "re:^hss-scratchpad($| )"' "$pypr" 'Konsole scratchpad title contract'
+  else
+    assert_line 'class = "hss-scratchpad"' "$pypr" 'Pyprland uses stable scratchpad class'
+  fi
 
   assert_contains 'term_exec.sh' "$HOME/dotfiles/.config/hypr/scripts/notes.sh" 'notes use terminal wrapper'
   assert_contains '.roles.tui_editor.editor_bin' "$HOME/dotfiles/.config/hypr/scripts/notes.sh" 'notes resolve selected editor'
@@ -274,7 +298,7 @@ assert_common_consumers() {
   assert_contains 'roles.json' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather uses role metadata'
   assert_contains '.roles.browser.executable' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather resolves selected browser'
 
-  jq -e '.schema_version == 1 and (.roles | length == 6)' "$roles_file" >/dev/null
+  jq -e '.schema_version == 2 and (.roles | length == 13) and (.selected | length == 13)' "$roles_file" >/dev/null
 }
 
 assert_role_consumers() {
@@ -306,8 +330,8 @@ assert_role_consumers() {
       grep -Fq "chsh -s $shell_path -- $(id -un)" "$STUB_LOG" || fail "chsh argv mismatch for $package"
       ;;
     gui_editor)
-      command_json=$(jq -r '[.roles.gui_editor.executable] + .roles.gui_editor.args | @sh | @json' "$roles_file")
-      assert_line "    editor = $command_json," "$app_variables" 'Lua GUI editor command'
+      assert_contains 'role_exec.sh' "$app_variables" 'Lua GUI editor wrapper executable'
+      assert_contains 'gui_editor' "$app_variables" 'Lua GUI editor wrapper role'
       ;;
     tui_editor)
       editor=$(jq -er '.roles.tui_editor.editor_bin' "$roles_file")
@@ -329,7 +353,10 @@ assert_role_consumers() {
       assert_line "    menu = $command_json," "$app_variables" 'Lua launcher command'
       assert_contains "pkill $process || " "$hypr_root/keybindings.lua" 'Lua launcher process'
       assert_contains "namespace = \"$namespace\"" "$hypr_root/windows_and_workspaces.lua" 'Lua launcher namespace'
-      assert_line "set -gx MENU_DMENU \"$dmenu\"" "$fish_env" 'Fish dmenu command'
+      assert_line "set -gx MENU_DMENU \"$HOME/.config/hypr/scripts/menu_exec.sh --dmenu\"" "$fish_env" 'Fish dmenu wrapper'
+      ;;
+    notifications|bar|dock|calendar|bluetooth|network|audio)
+      :
       ;;
     *) fail "unknown role in matrix: $role" ;;
   esac
@@ -370,5 +397,5 @@ while IFS=$'\t' read -r role package; do
   fixture=""
 done < <(jq -r '.roles | to_entries[] | .key as $role | .value.options[] | [$role, .package] | @tsv' "$repo_root/packages.json")
 
-[[ $count -eq 22 ]] || fail "expected 22 role cases, got $count"
-printf 'ok - 22 role options passed behavioral assertions\n'
+[[ $count -eq 54 ]] || fail "expected 54 role cases, got $count"
+printf 'ok - 54 role options passed metadata and behavioral assertions\n'

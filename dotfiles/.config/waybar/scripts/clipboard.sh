@@ -10,7 +10,10 @@ terminal_pid=$!
 clipboard_window=""
 for ((attempt = 0; attempt < 50; attempt++)); do
   clipboard_window=$(hyprctl clients -j | jq -cer --argjson pid "$terminal_pid" \
-    '.[] | select(.class == "hss-clipboard" and .pid == $pid)' || true)
+    '.[] | select(.pid == $pid and (
+      .class == "hss-clipboard" or
+      (.class == "org.kde.konsole" and ((.title // "") | test("^hss-clipboard( |$)")))
+    ))' || true)
   [[ -z $clipboard_window ]] || break
   sleep 0.1
 done

@@ -42,8 +42,8 @@
     "ignore-list": [
       "hss-scratchpad",
       "hss-clipboard",
-      "xwaylandvideobridge",
-      "org.pulseaudio.pavucontrol"
+      "hss-audio",
+      "xwaylandvideobridge"
     ],
     "app_ids-mapping": {
       "firefoxdeveloperedition": "firefox-developer-edition"
@@ -72,7 +72,7 @@
   "clock": {
     "timezone": "Europe/Zurich",
     "format": "{:%a %d %b %Y | %H:%M}",
-    "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>\n<small>Left click: open Merkuro Calendar</small>",
+    "tooltip-format": "<big><tt><small>{calendar}</small></tt></big>\n<small>Left click: open selected calendar</small>",
     "on-click": "$HOME/.config/hypr/scripts/float_calendar.sh"
   },
   "custom/temperature": {
@@ -116,7 +116,7 @@
   "pulseaudio": {
     "on-click": "$HOME/.config/waybar/scripts/audio_control.sh",
     "on-click-right": "$HOME/.config/waybar/scripts/alsamixer.sh",
-    "tooltip-format": "Output: {desc}\nVolume: {volume}%\nMicrophone: {source_volume}%\nScroll: volume • Left click: volume control • Right click: ALSA mixer",
+    "tooltip-format": "Output: {desc}\nVolume: {volume}%\nMicrophone: {source_volume}%\nLeft or right click: selected audio control",
     "format": "{volume}% {icon} {format_source}",
     "format-bluetooth": "{volume}% {icon}\uf294 {format_source}",
     "format-bluetooth-muted": "\uf6a9 {icon}\uf294 {format_source}",
@@ -220,10 +220,9 @@
       "dnd-inhibited-none": "\uf1f7"
     },
     "return-type": "json",
-    "exec-if": "which swaync-client",
     "exec": "$HOME/.config/waybar/scripts/notification_status.sh",
-    "on-click": "sleep 0.1 && swaync-client -t -sw",
-    "on-click-right": "sleep 0.1 && swaync-client -d -sw",
+    "on-click": "$HOME/.config/hypr/scripts/notification_control.sh toggle",
+    "on-click-right": "$HOME/.config/hypr/scripts/notification_control.sh dnd",
     "escape": true
   },
   "custom/power": {

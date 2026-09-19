@@ -4,7 +4,9 @@ local function window_rule(class, effects)
 end
 
 window_rule("hss-scratchpad", { float = true })
-window_rule("org.pulseaudio.pavucontrol", { float = true })
+window_rule("hss-audio", { float = true })
+window_rule("^(org.pulseaudio.pavucontrol|pavucontrol|pavucontrol-qt|qasmixer)$", { float = true }) -- hss-role:gui-audio-float
+hl.window_rule({ match = { class = "org.kde.konsole", title = "^hss-(scratchpad|audio|calendar|notes|clipboard|keybinds|repos)( .*)?$" }, float = true }) -- hss-role:konsole-float
 
 window_rule("zen", { workspace = "2 silent" }) -- hss-role:browser-workspace
 
@@ -51,7 +53,8 @@ window_rule("org.clipgrab.clipgrab", { float = true, center = true })
 window_rule("libreoffice-calc", { tile = true })
 window_rule("libreoffice-writer", { tile = true })
 window_rule("wshowkeys", { float = true })
-window_rule("org.kde.merkuro.calendar", { float = true })
+window_rule("hss-calendar", { float = true })
+window_rule("^(org.kde.merkuro.calendar|org.gnome.Calendar|org.kde.korganizer|korganizer)$", { float = true }) -- hss-role:gui-calendar-float
 window_rule("psensor", { float = true, center = true })
 window_rule("showmethekey-gtk", { float = true, move = { 100, 100 } })
 window_rule("^(conky)$", { float = true, no_focus = true, pin = true, move = { 20, 40 } })

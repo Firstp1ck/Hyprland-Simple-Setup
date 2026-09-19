@@ -25,7 +25,7 @@ use ratatui::widgets::{
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use packages::{
-    PackageSource, PackagesRoot, ROLE_ORDER, RoleSelection, enforce_required,
+    PackageSource, PackagesRoot, ROLE_ORDER, RoleSelection, SelectionKind, enforce_required,
     set_all_with_required, toggle_with_required,
 };
 use std::fs;
@@ -100,10 +100,17 @@ enum PreflightField {
     EnvPromptDefaultYn,
     EnvFishLanguageChoiceOverride,
     RoleBrowser,
-    RoleTerminal,
     RoleShell,
-    RoleGuiEditor,
+    RoleTerminal,
+    RoleNotifications,
     RoleTuiEditor,
+    RoleGuiEditor,
+    RoleBar,
+    RoleDock,
+    RoleCalendar,
+    RoleBluetooth,
+    RoleNetwork,
+    RoleAudio,
     RoleLauncher,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
@@ -127,6 +134,7 @@ enum EditKind {
     ConfirmReboot,
     ConfirmEnableMonitorSetup,
     ConfirmStartInstall,
+    SelectRole,
     SelectPacman,
     SelectAur,
 }
@@ -137,9 +145,84 @@ struct MonitorInfo {
     modes: Vec<String>,
 }
 
+const OUTPUT_HISTORY_LIMIT: usize = 5000;
+
+#[derive(Default)]
+struct OutputLog {
+    detailed: Vec<String>,
+    compact: Vec<String>,
+    show_details: bool,
+    in_summary: bool,
+}
+
+impl OutputLog {
+    fn lines(&self) -> &[String] {
+        if self.show_details {
+            &self.detailed
+        } else {
+            &self.compact
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.lines().len()
+    }
+
+    fn clear(&mut self) {
+        self.detailed.clear();
+        self.compact.clear();
+    }
+
+    // Keep separate histories so build chatter cannot evict compact status messages.
+    fn push(&mut self, stored: String, raw: &str) -> usize {
+        if raw == "Install started" {
+            self.in_summary = false;
+        }
+        if raw.contains("========= Installation Summary =========")
+            || raw.contains("Final Setup Report")
+            || raw.starts_with("[DRY-RUN SUMMARY]")
+        {
+            self.in_summary = true;
+        }
+        let compact = self.in_summary || is_compact_output(raw);
+        self.detailed.push(stored.clone());
+        if compact {
+            self.compact.push(stored);
+        }
+        let detailed_drop = self.detailed.len().saturating_sub(OUTPUT_HISTORY_LIMIT);
+        let compact_drop = self.compact.len().saturating_sub(OUTPUT_HISTORY_LIMIT);
+        self.detailed.drain(..detailed_drop);
+        self.compact.drain(..compact_drop);
+        if self.show_details {
+            detailed_drop
+        } else {
+            compact_drop
+        }
+    }
+}
+
+fn is_compact_output(raw: &str) -> bool {
+    let message = raw.trim();
+    output_line_severity(message) != StepSeverity::None
+        || (message.starts_with("===") && message.ends_with("==="))
+        || [
+            "[*]",
+            "[DRY-RUN]",
+            "$ ",
+            "Install started",
+            "Install aborted",
+            "setup.sh ",
+            "Hyprland Setup TUI",
+            "Keys:",
+            "Use Arrow",
+        ]
+        .iter()
+        .any(|prefix| message.starts_with(prefix))
+}
+
 struct AppState {
     list_state: ListState,
-    logs: Vec<String>,
+    logs: OutputLog,
     last_tick: Instant,
     scroll: u16,
     follow_tail: bool,
@@ -192,6 +275,7 @@ struct AppState {
     package_registry: Option<PackagesRoot>,
     package_load_error: Option<String>,
     role_selection: Option<RoleSelection>,
+    role_cursor: usize,
     required_pacman: BTreeSet<String>,
     required_aur: BTreeSet<String>,
     // Package descriptions loaded from packages.json
@@ -238,7 +322,7 @@ impl AppState {
 
         let mut s = Self {
             list_state,
-            logs: Vec::new(),
+            logs: OutputLog::default(),
             last_tick: Instant::now(),
             scroll: 0,
             follow_tail: true,
@@ -290,6 +374,7 @@ impl AppState {
             package_registry: None,
             package_load_error: None,
             role_selection: None,
+            role_cursor: 0,
             required_pacman: BTreeSet::new(),
             required_aur: BTreeSet::new(),
             pkg_descs: HashMap::new(),
@@ -357,7 +442,7 @@ impl AppState {
     }
 
     fn push_log_line(&mut self, line: impl Into<String>) {
-        let raw: String = line.into();
+        let raw = strip_ansi_sequences(&line.into());
         if raw.trim().is_empty() {
             return;
         }
@@ -365,8 +450,8 @@ impl AppState {
         update_sections_from_line(self, &raw);
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let s = format!("[{}] {}", ts, raw);
-        self.logs.push(s.clone());
-        // Append to file
+        let dropped = self.logs.push(s.clone(), &raw);
+        // Append all output, independent of the selected display mode.
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
             .append(true)
@@ -374,12 +459,8 @@ impl AppState {
         {
             let _ = writeln!(f, "{}", s);
         }
-        if self.logs.len() > 5000 {
-            let drop = self.logs.len() - 5000;
-            self.logs.drain(0..drop);
-            if !self.follow_tail {
-                self.scroll = self.scroll.saturating_sub(drop as u16);
-            }
+        if !self.follow_tail {
+            self.scroll = self.scroll.saturating_sub(dropped as u16);
         }
         sync_output_scroll_after_append(
             &mut self.scroll,
@@ -453,7 +534,7 @@ fn main() -> Result<()> {
     app.push_log_line("Hyprland Setup TUI - ratatui + crossterm");
     app.push_log_line("Use Arrow Up/Down to select, Enter to run");
     app.push_log_line(
-        "Keys: q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll, Home/End=follow",
+        "Keys: v=compact/details, q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll, Home/End=follow",
     );
     if app.setup_script.is_none() {
         app.push_log_line(
@@ -565,6 +646,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
         UiMode::Menu => draw_menu_ui(f, app, area),
         UiMode::Preflight => draw_preflight_ui(f, app, area),
     }
+    draw_completion_popup(f, app, area);
 }
 
 const SPINNER_FRAME_MS: u128 = 150;
@@ -681,6 +763,10 @@ fn output_line_severity(line: &str) -> StepSeverity {
 
     if lower.contains("[error]")
         || lower.contains("error:")
+        || lower.contains("fehler:")
+        || lower.starts_with("failed ")
+        || lower.starts_with("failed:")
+        || lower.contains("fehlgeschlagen")
         || lower.starts_with("fatal:")
         || lower.starts_with("x [")
         || lower.starts_with("✗ [")
@@ -691,6 +777,7 @@ fn output_line_severity(line: &str) -> StepSeverity {
     } else if lower.contains("[!]")
         || lower.contains("[warning]")
         || lower.contains("warning:")
+        || lower.contains("warnung:")
         || lower.starts_with("! [")
         || lower.starts_with("○ [")
         || lower.starts_with("o [")
@@ -703,7 +790,7 @@ fn output_line_severity(line: &str) -> StepSeverity {
     }
 }
 
-fn live_output_line(theme: Theme, stored_line: &str) -> Line<'static> {
+fn live_output_line(theme: Theme, stored_line: &str, show_details: bool) -> Line<'static> {
     let clean = strip_ansi_sequences(stored_line);
     let severity = output_line_severity(&clean);
     let message_style = match severity {
@@ -715,6 +802,15 @@ fn live_output_line(theme: Theme, stored_line: &str) -> Line<'static> {
     };
 
     if let Some(end) = timestamp_prefix_end(&clean) {
+        if !show_details {
+            let message = clean[end..].trim();
+            let message = if message.starts_with("===") && message.ends_with("===") {
+                message.trim_matches('=').trim()
+            } else {
+                message
+            };
+            return Line::from(Span::styled(message.to_string(), message_style));
+        }
         Line::from(vec![
             Span::styled(
                 clean[..end].to_string(),
@@ -801,7 +897,6 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .style(Style::default().fg(app.theme.subtext0));
     f.render_widget(legend, left_chunks[1]);
 
-    let desc = "Execute setup.sh with full flow";
     let install_running = app.child.is_some();
     let right_constraints = if install_running {
         vec![
@@ -817,23 +912,10 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .constraints(right_constraints)
         .split(chunks[1]);
 
-    let script_path_text = app
-        .setup_script
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "<not found>".to_string());
-
-    let header = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Selected: ", Style::default().fg(app.theme.yellow)),
-            Span::raw(desc),
-        ]),
-        Line::from(vec![
-            Span::styled("Script: ", Style::default().fg(app.theme.yellow)),
-            Span::raw(script_path_text),
-        ]),
-        Line::from("q quit  Enter run  ↑↓ navigate  PgUp/PgDn scroll  Home/End follow"),
-    ])
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("Full log: ", Style::default().fg(app.theme.yellow)),
+        Span::raw(app.logfile_path.display().to_string()),
+    ]))
     .block(
         Block::default()
             .title("Info")
@@ -855,15 +937,19 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         (app.scroll as usize).min(max_scroll)
     };
     let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
-    let log_text: Vec<Line> = app.logs[start_idx..end_idx]
+    let log_text: Vec<Line> = app.logs.lines()[start_idx..end_idx]
         .iter()
-        .map(|line| live_output_line(app.theme, line))
+        .map(|line| live_output_line(app.theme, line, app.logs.show_details))
         .collect();
 
     let logs = Paragraph::new(log_text)
         .block(
             Block::default()
-                .title("Output")
+                .title(if app.logs.show_details {
+                    "Output: detailed | v: compact"
+                } else {
+                    "Output: compact | v: details"
+                })
                 .borders(Borders::ALL)
                 .style(
                     Style::default()
@@ -924,7 +1010,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 
     // Footer with keybind help
     let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Enter: preflight   PgUp/PgDn: scroll   Home/End: resume follow   c: clear   k: kill   q: quit",
+        "Enter: preflight   v: compact/details   PgUp/PgDn: scroll   Home/End: follow   c: clear   k: kill   q: quit",
     )]))
     .block(
         Block::default()
@@ -949,6 +1035,30 @@ fn preflight_row_style(theme: Theme, selected: bool) -> Style {
     } else {
         Style::default().fg(theme.text)
     }
+}
+
+fn role_selection_summary(app: &AppState, role_name: &str) -> String {
+    let Some(selection) = app.role_selection.as_ref() else {
+        return "[!] unavailable".to_string();
+    };
+    let Some(members) = selection.selected_packages(role_name) else {
+        return "[!] unavailable".to_string();
+    };
+    if members.is_empty() {
+        return "<none>".to_string();
+    }
+    let primary = selection.selected_package(role_name);
+    members
+        .iter()
+        .map(|package| {
+            if primary == Some(package.as_str()) {
+                format!("{package} (primary)")
+            } else {
+                package.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
@@ -1005,10 +1115,17 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     let role_fields = [
         (PreflightField::RoleBrowser, "browser"),
-        (PreflightField::RoleTerminal, "terminal"),
         (PreflightField::RoleShell, "shell"),
-        (PreflightField::RoleGuiEditor, "gui_editor"),
+        (PreflightField::RoleTerminal, "terminal"),
+        (PreflightField::RoleNotifications, "notifications"),
         (PreflightField::RoleTuiEditor, "tui_editor"),
+        (PreflightField::RoleGuiEditor, "gui_editor"),
+        (PreflightField::RoleBar, "bar"),
+        (PreflightField::RoleDock, "dock"),
+        (PreflightField::RoleCalendar, "calendar"),
+        (PreflightField::RoleBluetooth, "bluetooth"),
+        (PreflightField::RoleNetwork, "network"),
+        (PreflightField::RoleAudio, "audio"),
         (PreflightField::RoleLauncher, "launcher"),
     ];
     for (field, role_name) in role_fields {
@@ -1018,13 +1135,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .and_then(|registry| registry.roles.get(role_name))
             .map(|role| role.label.as_str())
             .unwrap_or(role_name);
-        let value = app
-            .role_selection
-            .as_ref()
-            .and_then(|selection| selection.selected_package(role_name))
-            .map(str::to_string)
-            .unwrap_or_else(|| "[!] <none>".to_string());
-        rows.push(mk("←/→", label, value, sel(field)));
+        rows.push(mk(
+            "Enter",
+            label,
+            role_selection_summary(app, role_name),
+            sel(field),
+        ));
     }
     rows.push(mk(
         "Edit",
@@ -1427,6 +1543,114 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         );
         f.render_widget(bottom_help, rows[3]);
     }
+    if app.editing && app.edit_kind == EditKind::SelectRole {
+        let Some(role_name) = preflight_role_name(app.preflight_focus) else {
+            return;
+        };
+        let Some(registry) = app.package_registry.as_ref() else {
+            return;
+        };
+        let role = &registry.roles[role_name];
+        let selected = app
+            .role_selection
+            .as_ref()
+            .and_then(|selection| selection.selected_packages(role_name));
+        let primary = app
+            .role_selection
+            .as_ref()
+            .and_then(|selection| selection.selected_package(role_name));
+        let popup_w = ((area.width as u32 * 3 / 4) as u16).max(50).min(area.width);
+        let popup_h = (role.options.len() as u16 + 6).max(10).min(area.height);
+        let popup_rect = Rect {
+            x: area.x + area.width.saturating_sub(popup_w) / 2,
+            y: area.y + area.height.saturating_sub(popup_h) / 2,
+            width: popup_w,
+            height: popup_h,
+        };
+        f.render_widget(Clear, popup_rect);
+        let cardinality = match role.selection {
+            SelectionKind::Single => "single choice",
+            SelectionKind::Multiple => "multiple choices",
+        };
+        let optional = if role.required {
+            "required"
+        } else {
+            "optional"
+        };
+        let block = Block::default()
+            .title(format!("{} — {cardinality}, {optional}", role.label))
+            .borders(Borders::ALL)
+            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+            .border_style(Style::default().fg(app.theme.mauve));
+        f.render_widget(block, popup_rect);
+        let inner = Rect {
+            x: popup_rect.x + 1,
+            y: popup_rect.y + 1,
+            width: popup_rect.width.saturating_sub(2),
+            height: popup_rect.height.saturating_sub(2),
+        };
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Min(2),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+        let help = match role.selection {
+            SelectionKind::Single => {
+                "Space: choose/clear   Enter: done   Esc: close   required choices may be empty only while editing"
+            }
+            SelectionKind::Multiple => {
+                "Space: membership   p: make primary   Enter: done   Esc: close"
+            }
+        };
+        f.render_widget(
+            Paragraph::new(help).style(Style::default().fg(app.theme.subtext0)),
+            rows[0],
+        );
+        let mut items: Vec<ListItem> = Vec::new();
+        if !role.required {
+            let marker = if selected.is_some_and(BTreeSet::is_empty) {
+                "[*]"
+            } else {
+                "[ ]"
+            };
+            items.push(ListItem::new(format!("{marker} None")));
+        }
+        items.extend(role.options.iter().map(|option| {
+            let is_selected = selected.is_some_and(|members| members.contains(&option.package));
+            let marker = if primary == Some(option.package.as_str()) {
+                "[*]"
+            } else if is_selected {
+                "[x]"
+            } else {
+                "[ ]"
+            };
+            let terminal = if option.terminal { " (terminal)" } else { "" };
+            ListItem::new(format!("{marker} {}{terminal}", option.package))
+        }));
+        let mut state = ListState::default();
+        state.select(Some(app.role_cursor.min(items.len().saturating_sub(1))));
+        let list = List::new(items)
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ")
+            .block(Block::default().borders(Borders::ALL));
+        f.render_stateful_widget(list, rows[1], &mut state);
+        f.render_widget(
+            Paragraph::new(format!(
+                "Selected: {}",
+                role_selection_summary(app, role_name)
+            ))
+            .style(Style::default().fg(app.theme.subtext0)),
+            rows[2],
+        );
+    }
+
     // Package multiselect popups (categorized)
     if app.editing
         && (app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur)
@@ -1871,7 +2095,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
-    // Confirm reboot popup
+}
+
+fn draw_completion_popup(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
     if app.editing && app.edit_kind == EditKind::ConfirmReboot {
         let area_w = area.width as i32;
         let popup_w = (area_w * 3 / 5).max(40) as u16;
@@ -1922,6 +2148,10 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 // removed: old line-based preflight rendering helper; replaced by Table-based layout
 
 fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
+    // Completion is modal over either screen, including the live output view.
+    if app.editing && app.edit_kind == EditKind::ConfirmReboot {
+        return handle_preflight_keys(app, key);
+    }
     match app.ui_mode {
         UiMode::Menu => match key.code {
             KeyCode::Char('q') => return Ok(true),
@@ -1943,6 +2173,15 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 app.logs.len(),
                 app.log_viewport_lines,
             ),
+            KeyCode::Char('v') => {
+                app.logs.show_details = !app.logs.show_details;
+                resume_output_follow(
+                    &mut app.scroll,
+                    &mut app.follow_tail,
+                    app.logs.len(),
+                    app.log_viewport_lines,
+                );
+            }
             KeyCode::Char('c') => {
                 app.logs.clear();
                 app.scroll = 0;
@@ -2255,10 +2494,17 @@ fn load_package_registry(setup_script: Option<&Path>) -> Result<PackagesRoot> {
 fn preflight_role_name(field: PreflightField) -> Option<&'static str> {
     match field {
         PreflightField::RoleBrowser => Some("browser"),
-        PreflightField::RoleTerminal => Some("terminal"),
         PreflightField::RoleShell => Some("shell"),
-        PreflightField::RoleGuiEditor => Some("gui_editor"),
+        PreflightField::RoleTerminal => Some("terminal"),
+        PreflightField::RoleNotifications => Some("notifications"),
         PreflightField::RoleTuiEditor => Some("tui_editor"),
+        PreflightField::RoleGuiEditor => Some("gui_editor"),
+        PreflightField::RoleBar => Some("bar"),
+        PreflightField::RoleDock => Some("dock"),
+        PreflightField::RoleCalendar => Some("calendar"),
+        PreflightField::RoleBluetooth => Some("bluetooth"),
+        PreflightField::RoleNetwork => Some("network"),
+        PreflightField::RoleAudio => Some("audio"),
         PreflightField::RoleLauncher => Some("launcher"),
         _ => None,
     }
@@ -2271,17 +2517,19 @@ fn sync_role_package_selection(app: &mut AppState) {
     let Some(selection) = app.role_selection.as_ref() else {
         return;
     };
-    let updates: Vec<(PackageSource, String, bool)> = ROLE_ORDER
+    let selected_pacman = selection.selected_install_packages(registry, PackageSource::Pacman);
+    let selected_aur = selection.selected_install_packages(registry, PackageSource::Aur);
+    let updates: Vec<(PackageSource, String, bool)> = [PackageSource::Pacman, PackageSource::Aur]
         .into_iter()
-        .flat_map(|role_name| {
-            let selected = selection.selected_package(role_name);
-            registry.roles[role_name].options.iter().map(move |option| {
-                (
-                    option.source,
-                    option.package.clone(),
-                    selected == Some(option.package.as_str()),
-                )
-            })
+        .flat_map(|source| {
+            let selected = match source {
+                PackageSource::Pacman => &selected_pacman,
+                PackageSource::Aur => &selected_aur,
+            };
+            registry
+                .role_controlled_packages(source)
+                .into_iter()
+                .map(move |package| (source, package.to_string(), selected.contains(package)))
         })
         .collect();
     for (source, package, selected) in updates {
@@ -2301,6 +2549,12 @@ fn force_required_selected(app: &mut AppState) {
     enforce_required(&app.required_aur, &mut app.aur_sel_map);
 }
 
+fn is_role_controlled_package(app: &AppState, package: &str) -> bool {
+    app.package_registry
+        .as_ref()
+        .is_some_and(|registry| registry.is_role_controlled_package(package))
+}
+
 fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: &str) {
     let required = match source {
         PackageSource::Pacman => app.required_pacman.contains(package),
@@ -2310,26 +2564,12 @@ fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: 
         return;
     }
 
-    let is_role_option = app
-        .package_registry
-        .as_ref()
-        .and_then(|registry| registry.role_for_package(package))
-        .is_some();
-    if is_role_option {
-        if let (Some(registry), Some(selection)) =
-            (app.package_registry.as_ref(), app.role_selection.as_mut())
-        {
-            let _ = selection.toggle_package(registry, package);
+    match source {
+        PackageSource::Pacman => {
+            toggle_with_required(&app.required_pacman, &mut app.pacman_sel_map, package)
         }
-        sync_role_package_selection(app);
-    } else {
-        match source {
-            PackageSource::Pacman => {
-                toggle_with_required(&app.required_pacman, &mut app.pacman_sel_map, package)
-            }
-            PackageSource::Aur => {
-                toggle_with_required(&app.required_aur, &mut app.aur_sel_map, package)
-            }
+        PackageSource::Aur => {
+            toggle_with_required(&app.required_aur, &mut app.aur_sel_map, package)
         }
     }
     force_required_selected(app);
@@ -2343,12 +2583,6 @@ fn set_all_package_selections(app: &mut AppState, source: PackageSource, selecte
         PackageSource::Aur => {
             set_all_with_required(&app.required_aur, &mut app.aur_sel_map, selected)
         }
-    }
-    if !selected
-        && let (Some(registry), Some(role_selection)) =
-            (app.package_registry.as_ref(), app.role_selection.as_mut())
-    {
-        role_selection.clear_source(registry, source);
     }
     sync_role_package_selection(app);
     force_required_selected(app);
@@ -2375,10 +2609,17 @@ fn package_start_blocker(app: &AppState) -> Option<String> {
         return Some(format!("Package registry error: {error}"));
     }
     match (&app.package_registry, &app.role_selection) {
-        (Some(registry), Some(selection)) => selection
-            .missing_roles(registry)
-            .first()
-            .map(|label| format!("Select exactly one {label}")),
+        (Some(registry), Some(selection)) => ROLE_ORDER.into_iter().find_map(|role_name| {
+            let role = &registry.roles[role_name];
+            let missing = role.required
+                && selection
+                    .selected_packages(role_name)
+                    .is_none_or(BTreeSet::is_empty);
+            missing.then(|| match role.selection {
+                SelectionKind::Single => format!("Select exactly one {}", role.label),
+                SelectionKind::Multiple => format!("Select at least one {}", role.label),
+            })
+        }),
         _ => Some("Package registry is unavailable".to_string()),
     }
 }
@@ -2583,6 +2824,72 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 _ => {}
             }
             return Ok(false);
+        } else if app.edit_kind == EditKind::SelectRole {
+            let Some(role_name) = preflight_role_name(app.preflight_focus) else {
+                app.editing = false;
+                app.edit_kind = EditKind::None;
+                return Ok(false);
+            };
+            let option_count = app
+                .package_registry
+                .as_ref()
+                .map(|registry| {
+                    let role = &registry.roles[role_name];
+                    role.options.len() + usize::from(!role.required)
+                })
+                .unwrap_or(0);
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if option_count > 0 {
+                        app.role_cursor = (app.role_cursor + 1) % option_count;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if option_count > 0 {
+                        app.role_cursor = if app.role_cursor == 0 {
+                            option_count - 1
+                        } else {
+                            app.role_cursor - 1
+                        };
+                    }
+                }
+                KeyCode::Char(' ') | KeyCode::Char('p') => {
+                    let choice = app.package_registry.as_ref().and_then(|registry| {
+                        let role = &registry.roles[role_name];
+                        if !role.required && app.role_cursor == 0 {
+                            Some(None)
+                        } else {
+                            let offset = usize::from(!role.required);
+                            role.options
+                                .get(app.role_cursor.saturating_sub(offset))
+                                .map(|option| Some(option.package.clone()))
+                        }
+                    });
+                    if let (Some(registry), Some(selection), Some(choice)) = (
+                        app.package_registry.as_ref(),
+                        app.role_selection.as_mut(),
+                        choice,
+                    ) {
+                        if let Some(package) = choice {
+                            if key.code == KeyCode::Char('p') {
+                                let _ = selection.set_primary(registry, role_name, &package);
+                            } else {
+                                selection.toggle_member(registry, role_name, &package)?;
+                            }
+                        } else {
+                            selection.clear(registry, role_name)?;
+                        }
+                    }
+                    sync_role_package_selection(app);
+                    force_required_selected(app);
+                }
+                _ => {}
+            }
+            return Ok(false);
         } else if app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur {
             // Multiselect handling (categorized) — headers are not selectable
             let is_pacman = app.edit_kind == EditKind::SelectPacman;
@@ -2773,11 +3080,17 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     names.dedup();
                     let mut warnings: Vec<String> = Vec::new();
                     for name in &names {
+                        if is_role_controlled_package(app, name) {
+                            warnings.push(format!(
+                                "Managed by its application role; use the role selector: {name}"
+                            ));
+                            continue;
+                        }
                         if app.pacman_sel_map.contains_key(name)
                             || app.aur_sel_map.contains_key(name)
                             || app.user_added.contains(name)
                         {
-                            warnings.push(format!("Already selected: {}", name));
+                            warnings.push(format!("Already selected: {name}"));
                             continue;
                         }
                         if classify_package(name).is_none() {
@@ -2857,6 +3170,11 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.edit_kind = EditKind::ConfirmStartInstall;
                     return Ok(false);
                 }
+                field if preflight_role_name(field).is_some() => {
+                    app.editing = true;
+                    app.edit_kind = EditKind::SelectRole;
+                    app.role_cursor = 0;
+                }
                 PreflightField::EnvWallpaperDirOverride => begin_editing(app),
                 PreflightField::EnvMonitorConfig => begin_editing(app),
                 PreflightField::Password => begin_editing(app),
@@ -2892,11 +3210,18 @@ fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::RoleBrowser,
-        PreflightField::RoleBrowser => PreflightField::RoleTerminal,
-        PreflightField::RoleTerminal => PreflightField::RoleShell,
-        PreflightField::RoleShell => PreflightField::RoleGuiEditor,
-        PreflightField::RoleGuiEditor => PreflightField::RoleTuiEditor,
-        PreflightField::RoleTuiEditor => PreflightField::RoleLauncher,
+        PreflightField::RoleBrowser => PreflightField::RoleShell,
+        PreflightField::RoleShell => PreflightField::RoleTerminal,
+        PreflightField::RoleTerminal => PreflightField::RoleNotifications,
+        PreflightField::RoleNotifications => PreflightField::RoleTuiEditor,
+        PreflightField::RoleTuiEditor => PreflightField::RoleGuiEditor,
+        PreflightField::RoleGuiEditor => PreflightField::RoleBar,
+        PreflightField::RoleBar => PreflightField::RoleDock,
+        PreflightField::RoleDock => PreflightField::RoleCalendar,
+        PreflightField::RoleCalendar => PreflightField::RoleBluetooth,
+        PreflightField::RoleBluetooth => PreflightField::RoleNetwork,
+        PreflightField::RoleNetwork => PreflightField::RoleAudio,
+        PreflightField::RoleAudio => PreflightField::RoleLauncher,
         PreflightField::RoleLauncher => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
@@ -2916,11 +3241,18 @@ fn preflight_focus_prev(app: &mut AppState) {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
         PreflightField::RoleBrowser => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::RoleTerminal => PreflightField::RoleBrowser,
-        PreflightField::RoleShell => PreflightField::RoleTerminal,
-        PreflightField::RoleGuiEditor => PreflightField::RoleShell,
-        PreflightField::RoleTuiEditor => PreflightField::RoleGuiEditor,
-        PreflightField::RoleLauncher => PreflightField::RoleTuiEditor,
+        PreflightField::RoleShell => PreflightField::RoleBrowser,
+        PreflightField::RoleTerminal => PreflightField::RoleShell,
+        PreflightField::RoleNotifications => PreflightField::RoleTerminal,
+        PreflightField::RoleTuiEditor => PreflightField::RoleNotifications,
+        PreflightField::RoleGuiEditor => PreflightField::RoleTuiEditor,
+        PreflightField::RoleBar => PreflightField::RoleGuiEditor,
+        PreflightField::RoleDock => PreflightField::RoleBar,
+        PreflightField::RoleCalendar => PreflightField::RoleDock,
+        PreflightField::RoleBluetooth => PreflightField::RoleCalendar,
+        PreflightField::RoleNetwork => PreflightField::RoleBluetooth,
+        PreflightField::RoleAudio => PreflightField::RoleNetwork,
+        PreflightField::RoleLauncher => PreflightField::RoleAudio,
         PreflightField::EnvWallpaperDirOverride => PreflightField::RoleLauncher,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
@@ -2946,16 +3278,7 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
             }
             app.preflight.fish_language_choice = v as u8;
         }
-        field if preflight_role_name(field).is_some() => {
-            let role_name = preflight_role_name(field).expect("role field checked");
-            if let (Some(registry), Some(selection)) =
-                (app.package_registry.as_ref(), app.role_selection.as_mut())
-            {
-                let _ = selection.cycle(registry, role_name, delta);
-                sync_role_package_selection(app);
-                force_required_selected(app);
-            }
-        }
+        field if preflight_role_name(field).is_some() => {}
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
         }
@@ -3073,6 +3396,12 @@ fn apply_edit_buffer(app: &mut AppState) {
                     if app.user_added.contains(&name) {
                         continue;
                     }
+                    if is_role_controlled_package(app, &name) {
+                        app.push_log_line(format!(
+                            "Package '{name}' is managed by its application role; ignored"
+                        ));
+                        continue;
+                    }
                     if app.pacman_sel_map.contains_key(&name) {
                         if let Some(v) = app.pacman_sel_map.get_mut(&name) {
                             *v = true;
@@ -3109,6 +3438,12 @@ fn apply_edit_buffer(app: &mut AppState) {
                 let mut new_user_added: Vec<String> = Vec::new();
                 let mut new_user_added_src: HashMap<String, String> = HashMap::new();
                 for name in names {
+                    if is_role_controlled_package(app, &name) {
+                        app.push_log_line(format!(
+                            "Package '{name}' is managed by its application role; ignored"
+                        ));
+                        continue;
+                    }
                     if app.pacman_sel_map.contains_key(&name) {
                         if let Some(v) = app.pacman_sel_map.get_mut(&name) {
                             *v = true;
@@ -3525,25 +3860,43 @@ fn ratio_priority(r: &str) -> u32 {
     }
 }
 
-// Very small ANSI/CSI escape stripper to keep logs readable while respecting carriage returns
 fn strip_ansi_sequences(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let mut iter = s.chars();
+    let mut iter = s.chars().peekable();
     while let Some(ch) = iter.next() {
         if ch == '\u{1b}' {
-            // ESC
-            if let Some('[') = iter.next() {
-                // consume until final byte (0x40-0x7E)
-                for c in iter.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
+            match iter.next() {
+                Some('[') => {
+                    for c in iter.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
                     }
                 }
-                continue;
+                // OSC includes sudo/systemd session metadata, not printable output.
+                Some(']' | 'P' | '^' | '_') => {
+                    while let Some(c) = iter.next() {
+                        if c == '\u{7}' {
+                            break;
+                        }
+                        if c == '\u{1b}' && iter.peek() == Some(&'\\') {
+                            iter.next();
+                            break;
+                        }
+                    }
+                }
+                Some(' '..='/') => {
+                    for c in iter.by_ref() {
+                        if ('0'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
             }
-            continue;
+        } else if !ch.is_control() || matches!(ch, '\t' | '\n' | '\r') {
+            out.push(ch);
         }
-        out.push(ch);
     }
     out
 }
@@ -3729,6 +4082,299 @@ mod tests {
     use super::*;
 
     #[test]
+    fn completion_prompt_renders_without_input_and_handles_keys_over_either_screen() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+
+        for mode in [UiMode::Menu, UiMode::Preflight] {
+            for cancel in [KeyCode::Char('n'), KeyCode::Esc, KeyCode::Char('q')] {
+                app.ui_mode = mode;
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmReboot;
+                terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+                let screen: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(screen.contains("Setup Complete"));
+                assert!(screen.contains("Do you want to Reboot to finish the Setup?"));
+                assert!(screen.contains("Enter/Y: reboot   N/Esc: cancel"));
+
+                // An unrelated key must not reach the underlying installer screen.
+                let key = KeyEvent::new(KeyCode::Char('v'), event::KeyModifiers::NONE);
+                assert!(!handle_key_event(&mut app, key).unwrap());
+                assert!(!app.logs.show_details);
+                assert_eq!(app.edit_kind, EditKind::ConfirmReboot);
+
+                let key = KeyEvent::new(cancel, event::KeyModifiers::NONE);
+                assert!(!handle_key_event(&mut app, key).unwrap());
+                assert!(!app.editing);
+                assert_eq!(app.edit_kind, EditKind::None);
+                assert_eq!(app.ui_mode, mode);
+                terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+                let screen: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(!screen.contains("Setup Complete"));
+            }
+        }
+    }
+
+    #[test]
+    fn role_popup_edits_membership_primary_and_single_choice_independently() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+
+        app.preflight_focus = PreflightField::RoleTerminal;
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.edit_kind, EditKind::SelectRole);
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char('p'))).unwrap();
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("terminal"), Some("alacritty"));
+        assert_eq!(
+            selection.selected_packages("terminal").unwrap(),
+            &BTreeSet::from(["alacritty".to_string(), "kitty".to_string()])
+        );
+        assert!(app.pacman_sel_map["alacritty"]);
+        assert!(app.pacman_sel_map["kitty"]);
+
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        app.preflight_focus = PreflightField::RoleLauncher;
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("launcher"), Some("rofi"));
+        assert_eq!(
+            selection.selected_packages("launcher").unwrap(),
+            &BTreeSet::from(["rofi".to_string()])
+        );
+        assert!(!app.pacman_sel_map["wofi"]);
+        assert!(app.pacman_sel_map["rofi"]);
+    }
+
+    #[test]
+    fn optional_role_popup_exposes_none_and_required_empty_blocks_launch() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        app.preflight_focus = PreflightField::RoleDock;
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(screen.contains("Dock — single choice, optional"));
+        assert!(screen.contains("[*] None"));
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        app.preflight_focus = PreflightField::RoleNotifications;
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert_eq!(
+            package_start_blocker(&app).as_deref(),
+            Some("Select exactly one Notifications")
+        );
+    }
+
+    #[test]
+    fn generic_bulk_changes_preserve_role_membership_and_shared_package_union() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        {
+            let registry = app.package_registry.as_ref().unwrap();
+            let selection = app.role_selection.as_mut().unwrap();
+            selection
+                .toggle_member(registry, "bar", "nwg-panel")
+                .unwrap();
+            selection
+                .toggle_member(registry, "dock", "nwg-panel")
+                .unwrap();
+        }
+        sync_role_package_selection(&mut app);
+        set_all_package_selections(&mut app, PackageSource::Pacman, false);
+        set_all_package_selections(&mut app, PackageSource::Aur, true);
+
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("bar"), Some("nwg-panel"));
+        assert_eq!(selection.selected_package("dock"), Some("nwg-panel"));
+        assert_eq!(
+            selection.selected_packages("browser").unwrap(),
+            &BTreeSet::from(["zen-browser-bin".to_string()])
+        );
+        assert_eq!(
+            selection.selected_packages("gui_editor").unwrap(),
+            &BTreeSet::from(["visual-studio-code-bin".to_string()])
+        );
+        assert!(app.pacman_sel_map["nwg-panel"]);
+        assert!(!app.aur_sel_map["brave-bin"]);
+        assert!(!app.aur_sel_map["cursor-bin"]);
+    }
+
+    #[test]
+    fn compact_output_hides_package_chatter_but_retains_detailed_history() {
+        let lines = [
+            "Install started",
+            "========= Install AUR extras =========",
+            "[*] Installing selected AUR packages",
+            "(4/8) Installiert wird meson [########] 100%",
+            "Optionale Abhängigkeiten für python-mako",
+            "    python-beaker: for caching support",
+            "==> Erstelle Paket: wlogout 1.2.2-0",
+            "[!] Optional package skipped",
+            "==> FEHLER: Ein Fehler ist aufgetreten",
+            "Warnung: package is out of date",
+            "error: could not build package",
+        ];
+        let mut log = OutputLog::default();
+        for line in lines {
+            log.push(format!("[2026-09-19 13:08:42] {line}"), line);
+        }
+        assert!(!log.show_details);
+        assert_eq!(log.len(), 7);
+        assert!(!log.lines().iter().any(|line| line.contains("100%")));
+        assert!(log.lines().iter().any(|line| line.contains("FEHLER")));
+        assert!(log.lines().iter().any(|line| line.contains("Warnung")));
+        log.show_details = true;
+        assert_eq!(log.len(), lines.len());
+        assert!(log.lines()[3].ends_with("100%"));
+    }
+
+    #[test]
+    fn compact_output_preserves_summary_details_and_resets_for_next_run() {
+        let mut log = OutputLog::default();
+        for line in [
+            "========= Installation Summary =========",
+            "Failed packages:",
+            "  - example-package",
+            "Configuration Status:",
+            "NetworkManager: configured",
+            "Recommendations:",
+            "  1. Re-run failed installs",
+        ] {
+            log.push(line.to_string(), line);
+        }
+        assert_eq!(log.len(), 7);
+        log.clear();
+        log.push("summary continues".into(), "summary continues");
+        assert_eq!(log.len(), 1);
+        log.push("Install started".into(), "Install started");
+        log.push("build chatter".into(), "build chatter");
+        assert_eq!(log.len(), 2);
+        log.show_details = true;
+        assert_eq!(log.len(), 3);
+        log.clear();
+        assert_eq!(log.len(), 0);
+        log.show_details = false;
+        assert_eq!(log.len(), 0);
+    }
+
+    #[test]
+    fn detailed_chatter_cannot_evict_compact_status_and_histories_are_bounded() {
+        let mut log = OutputLog::default();
+        log.push("[*] Starting".into(), "[*] Starting");
+        for _ in 0..=OUTPUT_HISTORY_LIMIT {
+            assert_eq!(log.push("build output".into(), "build output"), 0);
+        }
+        assert_eq!(log.lines(), &["[*] Starting"]);
+        log.show_details = true;
+        assert_eq!(log.len(), OUTPUT_HISTORY_LIMIT);
+        assert_eq!(log.push("more output".into(), "more output"), 1);
+        log.show_details = false;
+        for _ in 1..OUTPUT_HISTORY_LIMIT {
+            assert_eq!(log.push("[*] Status".into(), "[*] Status"), 0);
+        }
+        assert_eq!(log.push("[!] Warning".into(), "[!] Warning"), 1);
+        assert_eq!(log.len(), OUTPUT_HISTORY_LIMIT);
+    }
+
+    #[test]
+    fn compact_rendering_omits_timestamps_and_heading_decoration() {
+        let theme = Theme::catppuccin_mocha();
+        let heading = "[2026-09-19 13:08:42] ========= Install AUR extras =========";
+        assert_eq!(
+            live_output_line(theme, heading, false).to_string(),
+            "Install AUR extras"
+        );
+        assert_eq!(live_output_line(theme, heading, true).to_string(), heading);
+        let warning = live_output_line(theme, "[2026-09-19 13:08:42] [!] skipped", false);
+        assert_eq!(warning.to_string(), "[!] skipped");
+        assert_eq!(warning.spans[0].style.fg, Some(Color::Yellow));
+
+        let backend = ratatui::backend::TestBackend::new(40, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let output = Paragraph::new(vec![
+                    live_output_line(theme, heading, false),
+                    warning.clone(),
+                ]);
+                frame.render_widget(output, frame.area());
+            })
+            .unwrap();
+        let mut expected = ratatui::buffer::Buffer::with_lines([
+            "Install AUR extras                      ",
+            "[!] skipped                             ",
+            "                                        ",
+            "                                        ",
+        ]);
+        expected.set_style(Rect::new(0, 0, 18, 1), Style::default().fg(theme.subtext0));
+        expected.set_style(
+            Rect::new(0, 1, 11, 1),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn terminal_metadata_is_removed_without_losing_neighboring_output() {
+        for terminator in ["\u{7}", "\u{1b}\\"] {
+            let raw = format!(
+                "before\u{1b}]3008;start=session;user=test{terminator}\u{1b}[31m[ERROR] failed\u{1b}[0m"
+            );
+            assert_eq!(strip_ansi_sequences(&raw), "before[ERROR] failed");
+        }
+        assert_eq!(
+            strip_ansi_sequences("\u{1b}]8;;https://example.org\u{1b}\\link\u{1b}]8;;\u{1b}\\"),
+            "link"
+        );
+        assert_eq!(strip_ansi_sequences("safe\u{1b}]3008;unterminated"), "safe");
+        assert_eq!(strip_ansi_sequences("\u{1b}(Bplain text"), "plain text");
+        assert_eq!(
+            strip_ansi_sequences("hello\u{7}\u{8}\tworld"),
+            "hello\tworld"
+        );
+        assert_eq!(
+            strip_ansi_sequences("before\u{1b}Ppayload\u{1b}\\after"),
+            "beforeafter"
+        );
+    }
+
+    #[test]
     fn selected_preflight_row_has_color_independent_highlight() {
         let theme = Theme::catppuccin_mocha();
         let selected = preflight_row_style(theme, true);
@@ -3902,8 +4548,9 @@ mod tests {
         let error = live_output_line(
             theme,
             "[2026-08-29 10:59:08] \u{1b}[31m[ERROR] package failed\u{1b}[0m",
+            true,
         );
-        let warning = live_output_line(theme, "\u{1b}[33m[!] skipped optional step\u{1b}[0m");
+        let warning = live_output_line(theme, "\u{1b}[33m[!] skipped optional step\u{1b}[0m", true);
 
         assert_eq!(error.spans.len(), 2);
         assert_eq!(error.spans[0].style.fg, Some(Color::DarkGray));

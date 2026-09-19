@@ -1,0 +1,11 @@
+position = "top"
+height = 32
+
+[[start]]
+type = "workspaces"
+
+[[center]]
+type = "clock"
+
+[[end]]
+type = "tray"

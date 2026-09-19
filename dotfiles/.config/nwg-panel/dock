@@ -1,0 +1,13 @@
+[
+  {
+    "name": "dock",
+    "output": "",
+    "position": "bottom",
+    "layer": "top",
+    "height": 56,
+    "controls": "off",
+    "modules-left": [],
+    "modules-center": ["hyprland-taskbar"],
+    "modules-right": []
+  }
+]

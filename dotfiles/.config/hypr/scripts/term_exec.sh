@@ -60,6 +60,18 @@ case "$package" in
     [[ -z "$title" ]] || terminal_args+=("--title=$title")
     exec "$terminal" "${terminal_args[@]}" -e "$@"
     ;;
+  foot)
+    [[ -z "$app_id" ]] || terminal_args+=("--app-id=$app_id")
+    [[ -z "$title" ]] || terminal_args+=("--title=$title")
+    exec "$terminal" "${terminal_args[@]}" "$@"
+    ;;
+  konsole)
+    # Konsole has no app-ID flag. Consumers match a fixed tab title instead.
+    [[ -z "$app_id" ]] || title=$app_id
+    terminal_args+=(--separate)
+    [[ -z "$title" ]] || terminal_args+=(-p "tabtitle=$title")
+    exec "$terminal" "${terminal_args[@]}" -e "$@"
+    ;;
   *)
     printf 'Unsupported terminal role package: %s\n' "$package" >&2
     exit 1

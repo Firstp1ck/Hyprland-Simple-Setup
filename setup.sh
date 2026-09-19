@@ -58,7 +58,7 @@ ROLE_DATA_FILE=""
 ROLE_SELECTIONS_LOADED=false
 PACKAGE_SELECTIONS_PREPARED=false
 SELECTED_PACKAGES_VERIFIED=false
-ROLE_NAMES=(browser terminal shell gui_editor tui_editor launcher)
+ROLE_NAMES=(browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher)
 declare -a SELECTED_PACMAN_LIST=()
 declare -a SELECTED_AUR_LIST=()
 declare -a SELECTED_ALL_PACKAGES=()
@@ -83,15 +83,15 @@ get_fish_language_choice() {
 }
 
 role_env_name() {
-    case "$1" in
-        browser) printf '%s' ROLE_BROWSER ;;
-        terminal) printf '%s' ROLE_TERMINAL ;;
-        shell) printf '%s' ROLE_SHELL ;;
-        gui_editor) printf '%s' ROLE_GUI_EDITOR ;;
-        tui_editor) printf '%s' ROLE_TUI_EDITOR ;;
-        launcher) printf '%s' ROLE_LAUNCHER ;;
-        *) return 1 ;;
-    esac
+    local role=$1
+    [[ $role =~ ^[a-z][a-z0-9_]*$ ]] || return 1
+    printf 'ROLE_%s' "${role^^}"
+}
+
+role_packages_env_name() {
+    local env_name
+    env_name=$(role_env_name "$1") || return 1
+    printf '%s_PACKAGES' "$env_name"
 }
 
 validate_package_name() {
@@ -111,44 +111,163 @@ resolve_package_registry() {
     fi
 }
 
+prompt_role_selection() {
+    local role=$1 label=$2 selection=$3 required=$4 default=$5
+    local input token package default_index= option_index primary_input primary_index=1
+    local -a options=() selected=() selection_numbers=()
+    mapfile -t options < <(jq -r --arg role "$role" '.roles[$role].options[].package' "$PACKAGE_REGISTRY") || return 1
+
+    printf 'Select %s:\n' "$label"
+    for option_index in "${!options[@]}"; do
+        printf '%d) %s\n' "$((option_index + 1))" "${options[$option_index]}"
+        [ "${options[$option_index]}" != "$default" ] || default_index=$((option_index + 1))
+    done
+    [ "$required" = true ] || printf '0) None\n'
+
+    if [ "$selection" = single ]; then
+        read -rp "Enter selection number (default: ${default_index:-None}): " input
+        if [ -z "$input" ]; then
+            package=$default
+        elif [ "$input" = 0 ] && [ "$required" = false ]; then
+            package=""
+        elif [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 1 ] && [ "$input" -le "${#options[@]}" ]; then
+            package=${options[$((input - 1))]}
+        else
+            print_error "Invalid selection for $label"
+            return 1
+        fi
+        PROMPT_ROLE_PRIMARY=$package
+        PROMPT_ROLE_PACKAGES=$package
+        return 0
+    fi
+
+    read -rp "Enter one or more selection numbers separated by spaces (default: ${default_index:-None}): " input
+    if [ -z "$input" ]; then
+        [ -z "$default" ] || selected=("$default")
+    elif [ "$input" = 0 ] && [ "$required" = false ]; then
+        selected=()
+    else
+        read -r -a selection_numbers <<< "$input"
+        for token in "${selection_numbers[@]}"; do
+            if ! [[ "$token" =~ ^[0-9]+$ ]] || [ "$token" -lt 1 ] || [ "$token" -gt "${#options[@]}" ]; then
+                print_error "Invalid selection for $label"
+                return 1
+            fi
+            selected+=("${options[$((token - 1))]}")
+        done
+    fi
+
+    if [ ${#selected[@]} -eq 0 ]; then
+        PROMPT_ROLE_PRIMARY=""
+        PROMPT_ROLE_PACKAGES=""
+        return 0
+    fi
+    if [ ${#selected[@]} -gt 1 ]; then
+        printf 'Choose the primary %s:\n' "$label"
+        for option_index in "${!selected[@]}"; do
+            printf '%d) %s\n' "$((option_index + 1))" "${selected[$option_index]}"
+            if [ "${selected[$option_index]}" = "$default" ]; then
+                primary_index=$((option_index + 1))
+            fi
+        done
+        read -rp "Enter primary selection number (default: $primary_index): " primary_input
+        primary_input=${primary_input:-$primary_index}
+        if ! [[ "$primary_input" =~ ^[0-9]+$ ]] || [ "$primary_input" -lt 1 ] || [ "$primary_input" -gt "${#selected[@]}" ]; then
+            print_error "Invalid primary selection for $label"
+            return 1
+        fi
+        primary_index=$primary_input
+    fi
+    PROMPT_ROLE_PRIMARY=${selected[$((primary_index - 1))]}
+    PROMPT_ROLE_PACKAGES=${selected[*]}
+}
+
 load_role_selections() {
     [ "$ROLE_SELECTIONS_LOADED" = true ] && return 0
     [ -n "$PACKAGE_REGISTRY" ] || resolve_package_registry || return 1
 
-    local role env_name value default label count choice
+    local role env_name list_env value packages default label selection required package
+    local scalar_set list_set
+    local -a members=()
+    local -A seen=()
     for role in "${ROLE_NAMES[@]}"; do
         env_name=$(role_env_name "$role") || return 1
-        value=${!env_name:-}
-        default=$(jq -er --arg role "$role" '.roles[$role].default' "$PACKAGE_REGISTRY") || return 1
+        list_env=$(role_packages_env_name "$role") || return 1
+        scalar_set=false
+        list_set=false
+        [[ -v $env_name ]] && scalar_set=true
+        [[ -v $list_env ]] && list_set=true
+        value=${!env_name-}
+        packages=${!list_env-}
+        default=$(jq -r --arg role "$role" '.roles[$role].default // ""' "$PACKAGE_REGISTRY") || return 1
         label=$(jq -er --arg role "$role" '.roles[$role].label' "$PACKAGE_REGISTRY") || return 1
+        selection=$(jq -er --arg role "$role" '.roles[$role].selection' "$PACKAGE_REGISTRY") || return 1
+        required=$(jq -r --arg role "$role" '.roles[$role].required' "$PACKAGE_REGISTRY") || return 1
 
-        if [ -z "$value" ]; then
+        if [ "$scalar_set" = false ] && [ "$list_set" = false ]; then
             if [ "${NON_INTERACTIVE:-false}" = true ]; then
                 value=$default
-                print_message "$env_name was not set; using registry default '$value'"
+                packages=$default
+                print_message "$env_name was not set; using registry default '${default:-None}'"
             else
-                echo "Select $label:"
-                jq -r --arg role "$role" '.roles[$role].options | to_entries[] | "\(.key + 1)) \(.value.package)"' "$PACKAGE_REGISTRY"
-                count=$(jq -r --arg role "$role" '.roles[$role].options | length' "$PACKAGE_REGISTRY")
-                read -rp "Enter selection number (default: $default): " choice
-                if [ -z "$choice" ]; then
-                    value=$default
-                elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-                    value=$(jq -er --arg role "$role" --argjson index "$((choice - 1))" '.roles[$role].options[$index].package' "$PACKAGE_REGISTRY") || return 1
-                else
-                    print_error "Invalid selection for $env_name"
-                    return 1
-                fi
+                prompt_role_selection "$role" "$label" "$selection" "$required" "$default" || return 1
+                value=$PROMPT_ROLE_PRIMARY
+                packages=$PROMPT_ROLE_PACKAGES
             fi
+        elif [ "$list_set" = false ]; then
+            packages=$value
+        elif [ "$scalar_set" = false ]; then
+            if [ -n "$packages" ]; then
+                print_error "$env_name must be set when $list_env is nonempty"
+                return 1
+            fi
+            value=""
         fi
 
-        if ! validate_package_name "$value" || ! jq -e --arg role "$role" --arg package "$value" '.roles[$role].options | any(.package == $package)' "$PACKAGE_REGISTRY" >/dev/null; then
-            print_error "$env_name has unknown package value '$value'"
+        members=()
+        packages=${packages//$'\n'/ }
+        [ -z "$packages" ] || read -r -a members <<< "$packages"
+        seen=()
+        for package in "${members[@]}"; do
+            if ! validate_package_name "$package"; then
+                print_error "$list_env contains invalid package token '$package'"
+                return 1
+            fi
+            if [[ -n ${seen[$package]+x} ]]; then
+                print_error "$list_env contains duplicate package '$package'"
+                return 1
+            fi
+            seen[$package]=1
+            if ! jq -e --arg role "$role" --arg package "$package" '.roles[$role].options | any(.package == $package)' "$PACKAGE_REGISTRY" >/dev/null; then
+                print_error "$list_env has unknown package value '$package'"
+                return 1
+            fi
+        done
+
+        if [ "$required" = true ] && [ ${#members[@]} -eq 0 ]; then
+            print_error "$env_name is required and cannot be empty"
             return 1
         fi
+        if [ "$selection" = single ] && [ ${#members[@]} -gt 1 ]; then
+            print_error "$list_env accepts at most one package"
+            return 1
+        fi
+        if [ -n "$value" ]; then
+            if ! validate_package_name "$value" || [[ -z ${seen[$value]+x} ]]; then
+                print_error "$env_name primary '$value' is not in $list_env"
+                return 1
+            fi
+        elif [ ${#members[@]} -gt 0 ]; then
+            print_error "$env_name must name a primary package from $list_env"
+            return 1
+        fi
+
+        packages=${members[*]}
         printf -v "$env_name" '%s' "$value"
-        export "${env_name?}"
+        printf -v "$list_env" '%s' "$packages"
+        export "$env_name" "$list_env"
         hss_meta_set "$env_name" "$value" || return 1
+        hss_meta_set "$list_env" "$packages" || return 1
     done
     ROLE_SELECTIONS_LOADED=true
 }
@@ -157,6 +276,7 @@ role_option_json() {
     local role=$1 env_name package
     env_name=$(role_env_name "$role") || return 1
     package=${!env_name:-}
+    [ -n "$package" ] || return 1
     jq -ce --arg role "$role" --arg package "$package" '.roles[$role].options[] | select(.package == $package)' "$PACKAGE_REGISTRY"
 }
 
@@ -212,7 +332,7 @@ prepare_package_selections() {
     [ "$PACKAGE_SELECTIONS_PREPARED" = true ] && return 0
     load_role_selections || return 1
 
-    local pacman_present=false aur_present=false package role option source
+    local pacman_present=false aur_present=false package role option source list_env selected_packages
     [[ -v SELECTED_PACMAN_PACKAGES ]] && pacman_present=true
     [[ -v SELECTED_AUR_PACKAGES ]] && aur_present=true
     if [ "$pacman_present" != "$aur_present" ]; then
@@ -238,17 +358,23 @@ prepare_package_selections() {
     remove_role_managed_packages SELECTED_PACMAN_LIST || return 1
     remove_role_managed_packages SELECTED_AUR_LIST || return 1
 
+    while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.required.pacman[]' "$PACKAGE_REGISTRY")
+    while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.required.aur[]' "$PACKAGE_REGISTRY")
+
     for role in "${ROLE_NAMES[@]}"; do
-        option=$(role_option_json "$role") || return 1
-        source=$(jq -er '.source' <<<"$option") || return 1
-        package=$(jq -er '.package' <<<"$option") || return 1
-        if [ "$source" = pacman ]; then
-            append_unique SELECTED_PACMAN_LIST "$package"
-            while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
-        else
-            append_unique SELECTED_AUR_LIST "$package"
-            while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
-        fi
+        list_env=$(role_packages_env_name "$role") || return 1
+        selected_packages=${!list_env-}
+        for package in $selected_packages; do
+            option=$(jq -ce --arg role "$role" --arg package "$package" '.roles[$role].options[] | select(.package == $package)' "$PACKAGE_REGISTRY") || return 1
+            source=$(jq -er '.source' <<<"$option") || return 1
+            if [ "$source" = pacman ]; then
+                append_unique SELECTED_PACMAN_LIST "$package"
+                while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+            else
+                append_unique SELECTED_AUR_LIST "$package"
+                while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+            fi
+        done
     done
 
     for package in "${SELECTED_PACMAN_LIST[@]}" "${SELECTED_AUR_LIST[@]}"; do append_unique SELECTED_ALL_PACKAGES "$package"; done
@@ -1507,6 +1633,22 @@ sync_installer_managed_runtime_files() {
         ".config/hypr/scripts/Startup_check.sh"
         ".config/hypr/scripts/run_once.sh"
         ".config/hypr/scripts/float_calendar.sh"
+        ".config/hypr/scripts/notification_control.sh"
+        ".config/hypr/scripts/role_exec.sh"
+        ".config/hypr/scripts/role_window.sh"
+        ".config/waybar/scripts/clipboard.sh"
+        ".config/hypr/scripts/term_exec.sh"
+        ".config/hypr/scripts/toggle_waybar.sh"
+        ".config/waybar/scripts/alsamixer.sh"
+        ".config/waybar/scripts/audio_control.sh"
+        ".config/waybar/scripts/bluetooth_manager.sh"
+        ".config/waybar/scripts/nmtui-connect.sh"
+        ".config/waybar/scripts/nmtui.sh"
+        ".config/waybar/scripts/notification_status.sh"
+        ".config/ironbar/config.toml"
+        ".config/nwg-panel/bar"
+        ".config/nwg-panel/dock"
+        ".local/share/dbus-1/services/org.freedesktop.Notifications.service"
     )
 
     for relative in "${managed_files[@]}"; do
@@ -1515,6 +1657,9 @@ sync_installer_managed_runtime_files() {
         [ -f "$source" ] || continue
         if [ -f "$destination" ] && cmp -s -- "$source" "$destination"; then
             continue
+        fi
+        if ! is_dry_run; then
+            mkdir -p -- "$(dirname -- "$destination")" || return 1
         fi
         copy_file_atomic "$destination" "$source" "Update installer-managed ${relative##*/}" || return 1
         if ! is_dry_run && [ -x "$source" ]; then
@@ -1765,23 +1910,90 @@ remove_config_matching() {
     awk -v pattern="$pattern" '$0 !~ pattern { print }' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
 }
 
+replace_or_insert_lua_autostart() {
+    local file=$1 pattern=$2 replacement=$3 reason=$4 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        write_file_atomic "$file" /dev/null "$reason"
+        return 0
+    fi
+    make_tmp tmp role-edit.XXXXXX || return 1
+    HSS_REPLACEMENT=$replacement awk -v pattern="$pattern" '
+        BEGIN { replacement = ENVIRON["HSS_REPLACEMENT"] }
+        $0 ~ pattern {
+            if (!replaced) print replacement
+            replaced = 1
+            next
+        }
+        !replaced && /^end\)[[:space:]]*$/ {
+            print replacement
+            replaced = 1
+        }
+        { print }
+    ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
+update_waybar_role_config() {
+    local file=$1 tmp
+    [ "$ROLE_BAR" = waybar ] || return 0
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        write_file_atomic "$file" /dev/null "selected Waybar role actions"
+        return 0
+    fi
+    make_tmp tmp role-edit.XXXXXX || return 1
+    python "$SETUP_SCRIPT_ROOT/scripts/lib/update-waybar-roles.py" "$file" > "$tmp" \
+        && role_write_file "$file" "$tmp" "selected Waybar role actions"
+}
+
+replace_toml_section_key() {
+    local file=$1 section=$2 key=$3 replacement=$4 reason=$5 tmp
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        write_file_atomic "$file" /dev/null "$reason"
+        return 0
+    fi
+    make_tmp tmp role-edit.XXXXXX || return 1
+    HSS_REPLACEMENT=$replacement awk -v section="[$section]" -v key="$key" '
+        BEGIN { replacement = ENVIRON["HSS_REPLACEMENT"] }
+        /^\[/ {
+            if (active && !replaced) { print replacement; replaced = 1 }
+            active = ($0 == section)
+        }
+        active && index($0, key) == 1 && substr($0, length(key) + 1) ~ /^[[:space:]]*=/ {
+            if (!replaced) print replacement
+            replaced = 1
+            next
+        }
+        { print }
+        END { if (active && !replaced) print replacement }
+    ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
+}
+
 generate_roles_json() {
     load_role_selections || return 1
     local generated source_file runtime_file source_tmp runtime_tmp
     source_file="$HOME/dotfiles/.config/hypr/roles.json"
     runtime_file="$HOME/.config/hypr/roles.json"
-    generated=$(jq -ce \
-        --arg browser "$ROLE_BROWSER" \
-        --arg terminal "$ROLE_TERMINAL" \
-        --arg shell "$ROLE_SHELL" \
-        --arg gui_editor "$ROLE_GUI_EDITOR" \
-        --arg tui_editor "$ROLE_TUI_EDITOR" \
-        --arg launcher "$ROLE_LAUNCHER" \
-        --arg home "$HOME" '
-        . as $registry |
-        {browser: $browser, terminal: $terminal, shell: $shell, gui_editor: $gui_editor, tui_editor: $tui_editor, launcher: $launcher} as $selected |
-        {schema_version: 1, roles: ($selected | to_entries | map(.key as $role | .value as $package | {key: $role, value: ($registry.roles[$role].options[] | select(.package == $package))}) | from_entries)} |
-        walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
+    generated=$(jq -ce --arg home "$HOME" '
+        . as $registry
+        | reduce (.roles | keys_unsorted[]) as $role (
+            {schema_version: 2, roles: {}, selected: {}};
+            ("ROLE_" + ($role | ascii_upcase)) as $primary_name
+            | ($primary_name + "_PACKAGES") as $packages_name
+            | (env[$primary_name] // "") as $primary
+            | ((env[$packages_name] // "") | if . == "" then [] else split(" ") end) as $packages
+            | .selected[$role] = [
+                $registry.roles[$role].options[]
+                | select(.package as $package | $packages | index($package))
+              ]
+            | .roles[$role] = (
+                if $primary == "" then null
+                else $registry.roles[$role].options[] | select(.package == $primary)
+                end
+              )
+          )
+        | walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
     ' "$PACKAGE_REGISTRY") || return 1
 
     ROLE_DATA_FILE=$runtime_file
@@ -1825,55 +2037,78 @@ runtime_role_command() {
 configure_roles() {
     announce_step "Configuring selected application roles"
     generate_roles_json || return 1
-    if is_dry_run; then
-        # The remaining paths are still reported even though roles.json is not written in WS-3 dry-run mode.
-        ROLE_DATA_FILE="$HOME/.config/hypr/roles.json"
-    fi
 
-    local terminal_command browser_command editor_command launcher_command
-    local browser_exec browser_class terminal_exec editor_bin menu_dmenu launcher_process launcher_namespace
-    if is_dry_run; then
-        terminal_command=$(role_option_json terminal | role_command_json) || return 1
-        browser_command=$(role_option_json browser | role_command_json) || return 1
-        editor_command=$(role_option_json gui_editor | role_command_json) || return 1
-        launcher_command=$(role_option_json launcher | role_command_json) || return 1
-        browser_exec=$(role_field browser executable) || return 1
-        browser_class=$(role_field browser class) || return 1
-        terminal_exec=$(role_field terminal executable) || return 1
-        editor_bin=$(role_field tui_editor editor_bin) || return 1
-        menu_dmenu=$(role_option_json launcher | jq -r '[.dmenu_executable] + .dmenu_args | join(" ")') || return 1
-        launcher_process=$(role_field launcher process) || return 1
-        launcher_namespace=$(role_field launcher namespace) || return 1
-    else
-        terminal_command=$(runtime_role_command terminal) || return 1
-        browser_command=$(runtime_role_command browser) || return 1
-        editor_command=$(runtime_role_command gui_editor) || return 1
-        launcher_command=$(runtime_role_command launcher) || return 1
-        browser_exec=$(jq -er '.roles.browser.executable' "$ROLE_DATA_FILE") || return 1
-        browser_class=$(jq -er '.roles.browser.class' "$ROLE_DATA_FILE") || return 1
-        terminal_exec=$(jq -er '.roles.terminal.executable' "$ROLE_DATA_FILE") || return 1
-        editor_bin=$(jq -er '.roles.tui_editor.editor_bin' "$ROLE_DATA_FILE") || return 1
-        menu_dmenu=$(jq -er '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$ROLE_DATA_FILE") || return 1
-        launcher_process=$(jq -er '.roles.launcher.process' "$ROLE_DATA_FILE") || return 1
-        launcher_namespace=$(jq -er '.roles.launcher.namespace' "$ROLE_DATA_FILE") || return 1
-    fi
+    local terminal_command browser_command launcher_command editor_command calendar_command
+    local browser_exec browser_class terminal_exec editor_bin launcher_process launcher_namespace
+    terminal_command=$(role_option_json terminal | role_command_json) || return 1
+    browser_command=$(role_option_json browser | role_command_json) || return 1
+    launcher_command=$(role_option_json launcher | role_command_json) || return 1
+    editor_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" --arg role gui_editor '[$executable, $role] | @sh | @json') || return 1
+    calendar_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" --arg role calendar '[$executable, $role] | @sh | @json') || return 1
+    browser_exec=$(role_field browser executable) || return 1
+    browser_class=$(role_field browser class) || return 1
+    terminal_exec=$(role_field terminal executable) || return 1
+    editor_bin=$(role_field tui_editor editor_bin) || return 1
+    launcher_process=$(role_field launcher process) || return 1
+    launcher_namespace=$(role_field launcher namespace) || return 1
 
-    local root file browser_exec_lua
+    local root file browser_exec_lua gui_autostart dock_autostart audio_class
+    local term_match=class audio_match=class term_class=hss-scratchpad marker rule template
+    template="$SETUP_SCRIPT_ROOT/dotfiles/.config/hypr/sources_example/windows_and_workspaces.lua"
     browser_exec_lua=$(jq -n --arg value "$browser_exec" '$value') || return 1
+    if [ -n "$ROLE_GUI_EDITOR" ]; then
+        gui_autostart='    hl.exec_cmd(apps.editor, { workspace = "1 silent" }) -- hss-role:gui-editor-autostart'
+    else
+        gui_autostart='    -- hl.exec_cmd(apps.editor, { workspace = "1 silent" }) -- hss-role:gui-editor-autostart'
+    fi
+    if [ -n "$ROLE_DOCK" ]; then
+        dock_autostart='    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/role_exec.sh dock") -- hss-role:dock-autostart'
+    else
+        dock_autostart='    -- hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/role_exec.sh dock") -- hss-role:dock-autostart'
+    fi
+    case "$ROLE_AUDIO" in
+        pavucontrol) audio_class=org.pulseaudio.pavucontrol ;;
+        pavucontrol-qt) audio_class=pavucontrol-qt ;;
+        qastools) audio_class=qasmixer ;;
+        alsa-utils|ncpamixer) audio_class=hss-audio ;;
+        *) return 1 ;;
+    esac
+    if [ "$ROLE_TERMINAL" = konsole ]; then
+        term_class=org.kde.konsole
+        term_match=title
+        if [ "$ROLE_AUDIO" = alsa-utils ] || [ "$ROLE_AUDIO" = ncpamixer ]; then
+            audio_class=org.kde.konsole
+            audio_match=title
+        fi
+    fi
+
     for root in "$HOME/dotfiles/.config/hypr/sources" "$HOME/dotfiles/.config/hypr/sources_example"; do
         file="$root/app_variables.lua"
         replace_config_line "$file" '^[[:space:]]*terminal[[:space:]]*=' "    terminal = $terminal_command," "selected terminal" || return 1
         replace_config_line "$file" '^[[:space:]]*menu[[:space:]]*=' "    menu = $launcher_command," "selected launcher" || return 1
         replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser" || return 1
-        replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected GUI editor" || return 1
+        replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected editor action" || return 1
+        replace_config_line "$file" '^[[:space:]]*calendar[[:space:]]*=' "    calendar = $calendar_command," "selected calendar action" || return 1
 
         file="$root/environment_variables.lua"
         replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment" || return 1
 
         file="$root/keybindings.lua"
         replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd(\"pkill $launcher_process || \" .. apps.menu))" "selected launcher process" || return 1
+        replace_literal_prefix "$file" 'bind(main_mod .. " + " .. less,' 'bind(main_mod .. " + " .. less, "Notification action", hl.dsp.exec_cmd(apps.hyprscripts .. "/notification_control.sh toggle"))' "selected notification control" || return 1
+        replace_literal_prefix "$file" 'bind(main_mod .. " + H",' 'bind(main_mod .. " + H", "Toggle Selected Bar", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_waybar.sh"))' "selected bar toggle" || return 1
+
+        file="$root/autostart.lua"
+        replace_or_insert_lua_autostart "$file" 'hss-role:gui-editor-autostart$|^[[:space:]]*hl[.]exec_cmd[(]apps[.]editor,' "$gui_autostart" "selected GUI editor autostart" || return 1
+        replace_or_insert_lua_autostart "$file" 'hss-role:notification-autostart$|^[[:space:]]*--[[:space:]]*hl[.]exec_cmd[(]"swaync"' '    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/role_exec.sh notifications") -- hss-role:notification-autostart' "selected notification autostart" || return 1
+        replace_or_insert_lua_autostart "$file" 'hss-role:bar-autostart$|waybar_launch[.]sh' '    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/role_exec.sh bar") -- hss-role:bar-autostart' "selected bar autostart" || return 1
+        replace_or_insert_lua_autostart "$file" 'hss-role:dock-autostart$' "$dock_autostart" "selected dock autostart" || return 1
 
         file="$root/windows_and_workspaces.lua"
+        for marker in gui-audio-float gui-calendar-float konsole-float; do
+            rule=$(grep -F " -- hss-role:$marker" "$template") || return 1
+            replace_config_line "$file" "hss-role:$marker$" "$rule" "selected app floating rules" || return 1
+        done
         replace_config_line "$file" 'hss-role:browser-workspace$' "window_rule(\"$browser_class\", { workspace = \"2 silent\" }) -- hss-role:browser-workspace" "selected browser workspace rule" || return 1
         replace_config_line "$file" 'hss-role:launcher-layer$' "hl.layer_rule({ match = { namespace = \"$launcher_namespace\" }, dim_around = true }) -- hss-role:launcher-layer" "selected launcher namespace" || return 1
     done
@@ -1889,7 +2124,31 @@ configure_roles() {
         replace_config_line "$file" '^set -x TERMINAL |^set -gx TERMINAL ' "set -gx TERMINAL $terminal_exec" "selected terminal" || return 1
         replace_config_line "$file" '^set -x BROWSER |^set -gx BROWSER ' "set -gx BROWSER $browser_exec" "selected browser" || return 1
         replace_config_line "$file" '^set -gx MANPAGER ' "set -gx MANPAGER '$editor_bin'" "selected TUI editor pager" || return 1
-        replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$menu_dmenu\"" "selected launcher dmenu command" || return 1
+        replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$HOME/.config/hypr/scripts/menu_exec.sh --dmenu\"" "selected launcher dmenu wrapper" || return 1
+    done
+
+    local waybar_files=(
+        "$HOME/dotfiles/.config/waybar/config.jsonc"
+        "$HOME/.config/waybar/config.jsonc"
+    )
+    for file in "${waybar_files[@]}"; do
+        [ -L "$file" ] && [ "$file" != "${waybar_files[0]}" ] && continue
+        update_waybar_role_config "$file" || return 1
+    done
+
+    local pypr_files=(
+        "$HOME/dotfiles/.config/pypr/config.toml"
+        "$HOME/.config/pypr/config.toml"
+    )
+    for file in "${pypr_files[@]}"; do
+        [ -L "$file" ] && [ "$file" != "${pypr_files[0]}" ] && continue
+        replace_toml_section_key "$file" 'scratchpads.volume' command 'command = "~/.config/hypr/scripts/role_exec.sh audio"' "selected Pyprland audio command" || return 1
+        replace_toml_section_key "$file" 'scratchpads.volume' class "class = \"$audio_class\"" "selected Pyprland audio class" || return 1
+        replace_toml_section_key "$file" 'scratchpads.volume' match_by "match_by = \"$audio_match\"" "selected audio matcher" || return 1
+        replace_toml_section_key "$file" 'scratchpads.volume' title 'title = "re:^hss-audio($| )"' "stable Konsole audio title" || return 1
+        replace_toml_section_key "$file" 'scratchpads.term' class "class = \"$term_class\"" "selected scratchpad class" || return 1
+        replace_toml_section_key "$file" 'scratchpads.term' match_by "match_by = \"$term_match\"" "selected scratchpad matcher" || return 1
+        replace_toml_section_key "$file" 'scratchpads.term' title 'title = "re:^hss-scratchpad($| )"' "stable Konsole scratchpad title" || return 1
     done
 
     local aliases="$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
@@ -1900,7 +2159,7 @@ configure_roles() {
         remove_config_matching "$aliases" '# hss-role:editor-aliases' "remove Neovim-only aliases" || return 1
     fi
 
-    print_message "Configured roles: browser=$ROLE_BROWSER terminal=$ROLE_TERMINAL shell=$ROLE_SHELL gui_editor=$ROLE_GUI_EDITOR tui_editor=$ROLE_TUI_EDITOR launcher=$ROLE_LAUNCHER"
+    print_message "Configured ${#ROLE_NAMES[@]} application roles"
 }
 
 configure_hypr_autostart_optional_extras() {
@@ -1961,14 +2220,14 @@ configure_hypr_autostart_optional_extras() {
         [ -f "$lua_file" ] || continue
 
         reconcile_wallpaper_autostart "$lua_file"
-        uncomment_lua_line_if_cmd_exists "$lua_file" "swaync" 'hl.exec_cmd("swaync")'
-        uncomment_lua_line_if_cmd_exists "$lua_file" "nm-applet" 'hl.exec_cmd("nm-applet --indicator")'
+        comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("swaync")'
+        comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("nm-applet --indicator")'
+        comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("blueman-applet")'
+        comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("blueman-tray")'
         uncomment_lua_line_if_cmd_exists "$lua_file" "pypr" 'hl.exec_cmd("pypr")'
         uncomment_lua_line_if_file_exists "$lua_file" "$HOME/dotfiles/.config/hypr/scripts/fix-dolphin.sh" 'hl.exec_cmd(apps.hyprscripts .. "/fix-dolphin.sh")'
         uncomment_lua_line_if_cmd_exists "$lua_file" "input-remapper-control" 'hl.exec_cmd("input-remapper-control --command autoload --device " .. apps.mouse)'
         uncomment_lua_line_if_cmd_exists "$lua_file" "hyprsunset" 'hl.exec_cmd("hyprsunset")'
-        uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-applet" 'hl.exec_cmd("blueman-applet")'
-        uncomment_lua_line_if_cmd_exists "$lua_file" "blueman-tray" 'hl.exec_cmd("blueman-tray")'
 
         # Exactly one terminal layout may be active. This also repairs prior runs
         # that enabled both the Kitty session and the separate Kitty/Zellij layout.
@@ -3081,7 +3340,7 @@ run_role_test_scenario() {
         print_error "--test-scenario is available only when HSS_TEST_MODE=1"
         return 2
     }
-    NON_INTERACTIVE=true
+    NON_INTERACTIVE=${NON_INTERACTIVE:-true}
     DISTRO=${DISTRO:-arch}
     hss_begin_run "--test-scenario roles" || return $?
     bootstrap_jq || return 1

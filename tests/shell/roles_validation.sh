@@ -15,7 +15,7 @@ if output=$("$repo_root/setup.sh" --test-scenario roles 2>&1); then
   printf 'not ok - unknown ROLE_BROWSER was accepted\n'
   exit 1
 fi
-grep -Fq "ROLE_BROWSER has unknown package value" <<< "$output"
+grep -Fq "ROLE_BROWSER_PACKAGES has unknown package value" <<< "$output"
 printf 'ok - unknown ROLE_BROWSER rejected\n'
 
 set_role_defaults
@@ -109,7 +109,7 @@ for root in sources sources_example; do
   assert_count 1 '^[[:space:]]*menu[[:space:]]*=' "$app_variables" "$root launcher assignment"
   assert_count 1 '^[[:space:]]*browser[[:space:]]*=' "$app_variables" "$root browser assignment"
   assert_count 1 '^[[:space:]]*editor[[:space:]]*=' "$app_variables" "$root editor assignment"
-  assert_count 1 "^[[:space:]]*editor[[:space:]]*=[[:space:]]*\"'zeditor'\",$" "$app_variables" "$root Zed executable"
+  assert_count 1 '^[[:space:]]*editor[[:space:]]*=.*role_exec\.sh.*gui_editor' "$app_variables" "$root selected editor wrapper"
   assert_count 1 '^bind\(main_mod \.\. " \+ SPACE",' "$keybindings" "$root Open Menu binding"
   assert_count 1 '^window_rule\("vivaldi-stable", \{ workspace = "2 silent" \}\) -- hss-role:browser-workspace$' "$windows" "$root selected browser rule"
   assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"
@@ -130,14 +130,14 @@ for root in sources sources_example; do
   for class in hss-scratchpad hss-notes hss-clipboard; do
     assert_count 1 "^window_rule\\(\"${class}\"," "$windows" "$root stable $class rule"
   done
-  assert_count 1 '^window_rule\("org\.kde\.merkuro\.calendar",' "$windows" "$root Merkuro calendar rule"
+  assert_count 0 '^window_rule\("org\.kde\.merkuro\.calendar",' "$windows" "$root stale Merkuro-only calendar rule"
 done
 
-jq -e '.roles.gui_editor.executable == "zeditor" and .roles.gui_editor.editor_bin == "zeditor"' \
+jq -e '.schema_version == 2 and .roles.gui_editor.executable == "zeditor" and (.selected.gui_editor | length == 1)' \
   "$HOME/dotfiles/.config/hypr/roles.json" >/dev/null
 
 fish_config="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
-assert_count 1 '^set -gx MENU_DMENU "rofi -dmenu"$' "$fish_config" "valid Fish MENU_DMENU mirror"
+assert_count 1 '^set -gx MENU_DMENU ".*/.config/hypr/scripts/menu_exec.sh --dmenu"$' "$fish_config" "valid Fish MENU_DMENU wrapper"
 fish --no-execute "$fish_config"
 
 waybar="$HOME/dotfiles/.config/waybar/config.jsonc"
@@ -145,16 +145,16 @@ assert_count 1 "\"on-click\": \"\\\$HOME/.config/hypr/scripts/menu_exec.sh --tog
 assert_count 1 "\"drun\": \"\\\$HOME/.config/hypr/scripts/menu_exec.sh\"" "$waybar" "Waybar dmenu wrapper"
 assert_count 1 '"hss-scratchpad"' "$waybar" "Waybar scratchpad ignore"
 assert_count 1 '"hss-clipboard"' "$waybar" "Waybar clipboard ignore"
-assert_count 1 'Left click: open Merkuro Calendar' "$waybar" "Waybar calendar tooltip"
+assert_count 1 'Left click: open selected calendar' "$waybar" "Waybar calendar tooltip"
 assert_count 1 "\"on-click\": \"\\\$HOME/.config/hypr/scripts/float_calendar.sh\"" "$waybar" "Waybar calendar launcher"
 
 calendar="$HOME/dotfiles/.config/hypr/scripts/float_calendar.sh"
-assert_count 1 'org\\\.kde\\\.merkuro\\\.calendar' "$calendar" "Merkuro window class"
-assert_count 1 '^    -- merkuro-calendar$' "$calendar" "Merkuro executable"
-assert_count 0 'calcurse' "$calendar" "removed Calcurse launcher"
+assert_count 1 'role_window\.sh.*calendar' "$calendar" "selected calendar window wrapper"
+assert_count 0 'merkuro-calendar' "$calendar" "removed hard-coded Merkuro launcher"
 
 pypr="$HOME/dotfiles/.config/pypr/config.toml"
 assert_count 1 '^command = "~/.config/hypr/scripts/term_exec.sh --app-id hss-scratchpad --title Scratchpad -- bash"$' "$pypr" "Pyprland terminal wrapper"
+assert_count 1 '^command = "~/.config/hypr/scripts/role_exec.sh audio"$' "$pypr" "Pyprland selected audio wrapper"
 assert_count 1 '^class = "hss-scratchpad"$' "$pypr" "Pyprland stable class"
 
 hyprlock="$HOME/dotfiles/.config/hypr/hyprlock.conf"
@@ -178,6 +178,8 @@ role_dependent_paths=(
   "$HOME/dotfiles/.config/hypr/sources_example/windows_and_workspaces.lua"
   "$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
   "$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
+  "$HOME/dotfiles/.config/pypr/config.toml"
+  "$HOME/dotfiles/.config/waybar/config.jsonc"
 )
 for path in "${role_dependent_paths[@]}"; do
   grep -Fq "$path" <<< "$dry_output" || {
@@ -185,10 +187,6 @@ for path in "${role_dependent_paths[@]}"; do
     exit 1
   }
 done
-if grep -Fq "$waybar" <<< "$dry_output" || grep -Fq "$pypr" <<< "$dry_output"; then
-  printf 'not ok - dry-run reported role-independent Waybar or Pyprland config\n'
-  exit 1
-fi
 printf 'ok - repeated non-default role configuration is idempotent\n'
 printf 'ok - Fish MENU_DMENU is valid and wrapper configs remain unique\n'
-printf 'ok - dry-run reports only truly role-dependent consumer paths\n'
+printf 'ok - dry-run reports all role-dependent consumer paths\n'

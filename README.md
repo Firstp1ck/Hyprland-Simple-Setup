@@ -99,7 +99,7 @@ It sets up the following Components/Apps:
 - Screenshot Tool (Hyprshot with Satty)
 - Calculator (Qalculate-gtk)
 - Firewall (Firewalld)
-- Browser (User-selectable: zen-browser or Vivaldi)
+- Browser choices: Firefox, Chromium, Vivaldi, Zen Browser, and Brave
 
 **CLI Applications**
 - Custom Stow (Stow - Custom Script for easy Config Management)
@@ -229,7 +229,7 @@ Usage (Preflight screen):
 
 Notes:
 - The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
-- It also passes one package selection for each application role. See [Application roles](#application-roles).
+- It also passes the selected packages and primary app for each application role. See [Application roles](#application-roles).
 - The installer will still use `sudo` for privileged operations when needed.
 
 ## Environment Setup
@@ -286,20 +286,20 @@ cd ~/Hyprland-Simple-Setup
 
 ### Application roles
 
-The package selector requires one browser, terminal, shell, GUI editor, TUI editor, and launcher. `packages.json` defines the available packages and their commands. The TUI exports these choices to the installer:
+Choose applications independently in 13 groups:
 
-- `ROLE_BROWSER`
-- `ROLE_TERMINAL`
-- `ROLE_SHELL`
-- `ROLE_GUI_EDITOR`
-- `ROLE_TUI_EDITOR`
-- `ROLE_LAUNCHER`
+| Selection | Groups |
+| --- | --- |
+| One or more | Browser, shell, terminal, terminal text editor, Bluetooth interface |
+| Zero or more | GUI text editor |
+| Exactly one | App launcher, notifications, audio interface, network interface, calendar, bar |
+| Zero or one | Dock |
 
-Each value is a package name from the matching role in `packages.json`, not a command string. For example, `ROLE_BROWSER=firefox` and `ROLE_TERMINAL=alacritty` select those registered options. Direct non-interactive runs may set all six variables. If a variable is absent, the installer uses the role's registry default and reports that choice.
+Open a group with Enter. Use Space to change selections and `p` to choose the primary app in a multi-select group. GUI editor and dock offer None. Installation is blocked when a required group is empty.
 
-Explicit `SELECTED_*` and `USER_ADDED_*` lists remain authoritative for non-role packages. The installer removes role alternatives from those lists and adds only the selected role packages and their extras under the registry's package source.
+Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
 
-The installer writes the selected command metadata to `~/.config/hypr/roles.json`. Hyprland's Lua modules, Fish, Waybar, and Pyprland helpers read this file or the generated values derived from it.
+See [Application selections](Documents/app-selections.md) for direct-installer environment variables, compatibility, and runtime details.
 
 ### Run history, logs, and rollback
 

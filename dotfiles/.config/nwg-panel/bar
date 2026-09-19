@@ -1,0 +1,13 @@
+[
+  {
+    "name": "bar",
+    "output": "",
+    "position": "top",
+    "layer": "top",
+    "height": 32,
+    "controls": "off",
+    "modules-left": ["hyprland-workspaces"],
+    "modules-center": ["clock"],
+    "modules-right": ["tray"]
+  }
+]

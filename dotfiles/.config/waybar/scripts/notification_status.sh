@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Preserve SwayNC status while documenting the module's two click actions.
-
 set -euo pipefail
 
-readonly HINT="Left click: notifications • Right click: do not disturb"
+roles_file=${HSS_ROLES_FILE:-$HOME/.config/hypr/roles.json}
+[[ -r $roles_file ]] || { printf 'Missing role data: %s\n' "$roles_file" >&2; exit 1; }
+provider=$(jq -er '.roles.notifications.package' "$roles_file")
 
-swaync-client -swb \
-    | jq --unbuffered --compact-output --arg hint "$HINT" '
-        (.tooltip // "" | tostring) as $current
-        | .tooltip = (
-            if ($current | length) == 0 then
-                $hint
-            else
-                $current + "\n\n" + $hint
-            end
-        )
-    '
+if [[ $provider == swaync ]]; then
+  exec swaync-client -swb
+fi
+
+while true; do
+  jq -cn --arg provider "$provider" '{
+    text: "",
+    class: $provider,
+    tooltip: ("Notifications: " + $provider + "\nLeft click: notification action • Right click: do not disturb")
+  }'
+  sleep 5
+done

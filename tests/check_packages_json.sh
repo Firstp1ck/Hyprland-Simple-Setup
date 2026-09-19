@@ -32,7 +32,7 @@ if ! jq -e '
     | to_entries
     | map(.value[] as $package | {package: $package, source: $source});
   def option_keys($role):
-    ["package", "source", "executable", "args", "extra_packages"]
+    ["package", "source", "executable", "args", "extra_packages", "terminal"]
     + if $role == "browser" or $role == "terminal" then ["class"]
       elif $role == "shell" then ["shell_path"]
       elif $role == "gui_editor" then ["editor_bin", "desktop_file"]
@@ -47,6 +47,7 @@ if ! jq -e '
     and (.executable | executable_or_path)
     and (.args | valid_args)
     and ((.extra_packages // []) | type == "array" and all(.[]; package_name))
+    and ((.terminal // false) | type == "boolean")
     and if $role == "browser" or $role == "terminal" then (.class | restricted_token)
         elif $role == "shell" then (.shell_path | executable_or_path and startswith("/"))
         elif $role == "gui_editor" then (.editor_bin | restricted_token) and (.desktop_file | restricted_token)
@@ -56,9 +57,42 @@ if ! jq -e '
           and (.dmenu_args | valid_args)
           and (.process | restricted_token)
           and (.namespace | restricted_token)
-        else false end;
+        else true end;
+  def role_policy:
+    {
+      browser: ["multiple", true, "zen-browser-bin"],
+      shell: ["multiple", true, "fish"],
+      terminal: ["multiple", true, "kitty"],
+      notifications: ["single", true, "swaync"],
+      tui_editor: ["multiple", true, "neovim"],
+      gui_editor: ["multiple", false, "visual-studio-code-bin"],
+      bar: ["single", true, "waybar"],
+      dock: ["single", false, null],
+      calendar: ["single", true, "merkuro"],
+      bluetooth: ["multiple", true, "bluedevil"],
+      network: ["single", true, "plasma-nm"],
+      audio: ["single", true, "pavucontrol-qt"],
+      launcher: ["single", true, "wofi"]
+    };
+  def expected_options:
+    {
+      browser: ["brave-bin", "chromium", "firefox", "vivaldi", "zen-browser-bin"],
+      shell: ["bash", "fish", "zsh"],
+      terminal: ["alacritty", "foot", "ghostty", "kitty", "konsole"],
+      notifications: ["dunst", "fnott", "mako", "swaync"],
+      tui_editor: ["helix", "nano", "neovim", "vim"],
+      gui_editor: ["cursor-bin", "kate", "mousepad", "visual-studio-code-bin", "zed"],
+      bar: ["ironbar", "nwg-panel", "waybar"],
+      dock: ["nwg-dock-hyprland", "nwg-panel"],
+      calendar: ["calcurse", "gnome-calendar", "khal", "korganizer", "merkuro"],
+      bluetooth: ["bluedevil", "blueman", "bluetui", "bluetuith"],
+      network: ["network-manager-applet", "networkmanager", "nm-connection-editor", "plasma-nm"],
+      audio: ["alsa-utils", "ncpamixer", "pavucontrol", "pavucontrol-qt", "qastools"],
+      launcher: ["bemenu", "fuzzel", "rofi", "tofi", "wofi"]
+    };
 
-  type == "object"
+  . as $root
+  | type == "object"
   and keys_exact(["aur_packages", "hyprland_packages", "package_descriptions", "required", "roles"])
   and no_controls
   and (.hyprland_packages | type == "object" and length > 0
@@ -69,20 +103,27 @@ if ! jq -e '
   and (.required | type == "object" and keys_exact(["aur", "pacman"])
        and (.pacman | type == "array" and all(.[]; package_name) and (length == (unique | length)))
        and (.aur | type == "array" and all(.[]; package_name) and (length == (unique | length))))
-  and (.roles | type == "object" and keys_exact(["browser", "gui_editor", "launcher", "shell", "terminal", "tui_editor"]))
+  and (.roles | type == "object" and keys_exact(role_policy | keys))
   and all(.roles | to_entries[];
     .key as $role
     | .value as $definition
-    | ($definition | type == "object" and keys_exact(["default", "label", "options"]))
+    | (role_policy[$role]) as $policy
+    | (expected_options[$role]) as $expected
+    | ($definition | type == "object" and keys_exact(["default", "label", "options", "required", "selection"]))
       and ($definition.label | type == "string" and length > 0)
+      and ([$definition.selection, $definition.required, $definition.default] == $policy)
       and ($definition.options | type == "array" and length > 0 and all(.[]; valid_option($role)))
-      and ([ $definition.options[].package ] | index($definition.default) != null))
+      and ([$definition.options[].package] | length == (unique | length))
+      and ([$definition.options[].package] | sort == $expected)
+      and (($definition.default == null) or ([ $definition.options[].package ] | index($definition.default) != null))
+      and (($definition.required | not) or ($definition.default != null)))
   and (
     (registry_entries("hyprland_packages"; "pacman") + registry_entries("aur_packages"; "aur")) as $registry
     | ([.roles | to_entries[] | .key as $role | .value.options[] | . + {role: $role}]) as $options
     | ([.required.pacman[]] + [.required.aur[]]) as $required
     | (($registry | map(.package) | length) == ($registry | map(.package) | unique | length))
-      and (($options | map(.package) | length) == ($options | map(.package) | unique | length))
+      and (($options | group_by(.package) | map(select(length > 1) | {package: .[0].package, roles: map(.role) | sort}))
+           == [{package: "nwg-panel", roles: ["bar", "dock"]}])
       and all($options[];
         . as $option
         | any($registry[]; .package == $option.package and .source == $option.source)
@@ -92,7 +133,15 @@ if ! jq -e '
         . as $package | any($registry[]; .package == $package and .source == "pacman"))
       and all(.required.aur[];
         . as $package | any($registry[]; .package == $package and .source == "aur"))
-      and all($required[]; . as $package | all($options[]; .package != $package))
+      and all($required[];
+        . as $package | ($package == "networkmanager") or all($options[]; .package != $package))
+      and ([.required.pacman[]] | index("networkmanager") != null)
+      and ([.required.pacman[]] | index("bluez") != null)
+      and ([.required.pacman[]] | index("bluez-utils") != null)
+      and (.roles.launcher.options[] | select(.package == "tofi") | .source == "aur")
+      and (.roles.bluetooth.options[] | select(.package == "bluetuith") | .source == "aur")
+      and (.roles.audio.options[] | select(.package == "ncpamixer") | .source == "aur")
+      and all($options[]; .package as $package | $root.package_descriptions[$package] | type == "string" and length > 0)
   )
 ' "$registry" >/dev/null; then
   printf 'not ok - package registry failed offline schema checks: %s\n' "$registry" >&2

@@ -25,7 +25,7 @@ bind(main_mod .. " + J", "Open Preferred Color Picker", hl.dsp.exec_cmd(apps.col
 bind(main_mod .. " + K", "Open Preferred Calendar", hl.dsp.exec_cmd(apps.calendar))
 bind(main_mod .. " + " .. enter, "Open Calculator", hl.dsp.exec_cmd(apps.calculator))
 bind(main_mod .. " + CTRL + W", "Open Waypaper", hl.dsp.exec_cmd("waypaper"))
-bind(main_mod .. " + " .. less, "Open Notification Center", hl.dsp.exec_cmd("sleep 0.1 && swaync-client -t -sw"))
+bind(main_mod .. " + " .. less, "Notification action", hl.dsp.exec_cmd(apps.hyprscripts .. "/notification_control.sh toggle"))
 bind(main_mod .. " + SHIFT + W", "Open ArchWiki Locally", hl.dsp.exec_cmd(apps.browser .. " /usr/share/doc/arch-wiki/html/en/Table_of_contents.html"))
 
 bind(main_mod .. " + X", "Close Active Window", hl.dsp.window.close())
@@ -47,7 +47,7 @@ bind(main_mod .. " + Y", "Take Screenshot of Window", hl.dsp.exec_cmd(apps.scree
 bind(main_mod .. " + " .. home_key, "Take Screenshot of Monitor", hl.dsp.exec_cmd(apps.screenshot .. " output --raw | satty --filename -"))
 bind(home_key, "Take Screenshot of Region", hl.dsp.exec_cmd(apps.screenshot .. " region --raw | satty --filename -"))
 
-bind(main_mod .. " + H", "Toggle Waybar", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_waybar.sh"))
+bind(main_mod .. " + H", "Toggle Selected Bar", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_waybar.sh"))
 bind(main_mod .. " + V", "Toggle Floating", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_floating.sh"))
 bind(main_mod .. " + W", "Change Wallpaper", hl.dsp.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh"))
 bind(main_mod .. " + CTRL + S", "Start Hyprsunset", hl.dsp.exec_cmd(apps.hyprscripts .. "/hyprsunset.sh"))

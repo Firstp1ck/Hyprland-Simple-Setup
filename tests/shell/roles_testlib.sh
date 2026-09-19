@@ -35,21 +35,40 @@ setup_role_fixture() {
 
 set_role_defaults() {
   export ROLE_BROWSER=zen-browser-bin
-  export ROLE_TERMINAL=kitty
   export ROLE_SHELL=fish
-  export ROLE_GUI_EDITOR=visual-studio-code-bin
+  export ROLE_TERMINAL=kitty
+  export ROLE_NOTIFICATIONS=swaync
   export ROLE_TUI_EDITOR=neovim
+  export ROLE_GUI_EDITOR=visual-studio-code-bin
+  export ROLE_BAR=waybar
+  export ROLE_DOCK=
+  export ROLE_CALENDAR=merkuro
+  export ROLE_BLUETOOTH=bluedevil
+  export ROLE_NETWORK=plasma-nm
+  export ROLE_AUDIO=pavucontrol-qt
   export ROLE_LAUNCHER=wofi
+  local role list_env
+  for role in browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher; do
+    list_env="ROLE_${role^^}_PACKAGES"
+    unset "$list_env"
+  done
 }
 
 set_role_value() {
   local role=$1 package=$2
   case "$role" in
     browser) export ROLE_BROWSER=$package ;;
-    terminal) export ROLE_TERMINAL=$package ;;
     shell) export ROLE_SHELL=$package ;;
-    gui_editor) export ROLE_GUI_EDITOR=$package ;;
+    terminal) export ROLE_TERMINAL=$package ;;
+    notifications) export ROLE_NOTIFICATIONS=$package ;;
     tui_editor) export ROLE_TUI_EDITOR=$package ;;
+    gui_editor) export ROLE_GUI_EDITOR=$package ;;
+    bar) export ROLE_BAR=$package ;;
+    dock) export ROLE_DOCK=$package ;;
+    calendar) export ROLE_CALENDAR=$package ;;
+    bluetooth) export ROLE_BLUETOOTH=$package ;;
+    network) export ROLE_NETWORK=$package ;;
+    audio) export ROLE_AUDIO=$package ;;
     launcher) export ROLE_LAUNCHER=$package ;;
     *) return 1 ;;
   esac

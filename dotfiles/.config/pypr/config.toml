@@ -17,8 +17,8 @@ unfocus = "hide"
 
 [scratchpads.volume]
 animation = "fromRight"
-command = "pavucontrol"
-class = "org.pulseaudio.pavucontrol"
+command = "~/.config/hypr/scripts/role_exec.sh audio"
+class = "hss-audio"
 size = "40% 30%"
 position = "59% 4%"
 unfocus = "hide"
