@@ -109,7 +109,7 @@ for root in sources sources_example; do
   assert_count 1 '^[[:space:]]*menu[[:space:]]*=' "$app_variables" "$root launcher assignment"
   assert_count 1 '^[[:space:]]*browser[[:space:]]*=' "$app_variables" "$root browser assignment"
   assert_count 1 '^[[:space:]]*editor[[:space:]]*=' "$app_variables" "$root editor assignment"
-  assert_count 1 '^[[:space:]]*editor[[:space:]]*=[[:space:]]*"zeditor",$' "$app_variables" "$root Zed executable"
+  assert_count 1 "^[[:space:]]*editor[[:space:]]*=[[:space:]]*\"'zeditor'\",$" "$app_variables" "$root Zed executable"
   assert_count 1 '^bind\(main_mod \.\. " \+ SPACE",' "$keybindings" "$root Open Menu binding"
   assert_count 1 '^window_rule\("vivaldi-stable", \{ workspace = "2 silent" \}\) -- hss-role:browser-workspace$' "$windows" "$root selected browser rule"
   assert_count 1 'hss-role:browser-workspace$' "$windows" "$root browser role rule total"

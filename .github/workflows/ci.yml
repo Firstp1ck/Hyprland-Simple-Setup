@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shell test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes fish jq lua5.4 shellcheck desktop-file-utils
+      - name: Check shell scripts and run guarded scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' shell_files < <(find scripts/lib tests -type f -name '*.sh' -print0 | sort -z)
+          role_scripts=(
+            dotfiles/.config/hypr/scripts/float_calendar.sh
+            dotfiles/.config/hypr/scripts/menu_exec.sh
+            dotfiles/.config/hypr/scripts/notes.sh
+            dotfiles/.config/hypr/scripts/repos_wofi.sh
+            dotfiles/.config/hypr/scripts/term_exec.sh
+            dotfiles/.config/hypr/scripts/toggle_floating.sh
+            dotfiles/.config/waybar/scripts/clipboard.sh
+            dotfiles/.config/waybar/scripts/weather.sh
+          )
+          bash_files=(setup.sh install.sh "${shell_files[@]}" "${role_scripts[@]}")
+          for file in "${bash_files[@]}"; do
+            bash -n "$file"
+          done
+          shellcheck -x "${bash_files[@]}"
+          tests/run.sh
+
+  json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate package registry
+        run: |
+          jq -e . packages.json >/dev/null
+          tests/check_packages_json.sh

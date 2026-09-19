@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Package selection and setup reliability: implementation complete</title>
+<style>
+:root { color-scheme:dark; --bg:#0b1220; --panel:#121c2d; --panel-2:#18253a; --text:#e8eef8; --muted:#a9b7cb; --line:#2b3b55; --green:#50d890; --yellow:#f7c65c; --red:#ff7373; --blue:#65b5ff; --code:#07101c; --radius-lg:16px; --radius-md:12px; --shadow:0 14px 36px rgb(0 0 0 / 22%); }
+* { box-sizing:border-box; }
+body { margin:0; background:radial-gradient(circle at 15% 0%,#142848 0,transparent 35rem),var(--bg); color:var(--text); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { width:min(1120px,calc(100% - 32px)); margin:36px auto 64px; }
+header,section { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:24px; margin-bottom:18px; }
+header { padding:30px; }
+h1,h2,h3 { line-height:1.25; margin-top:0; }
+h1 { font-size:clamp(1.9rem,5vw,3rem); }
+h2 { font-size:1.45rem; border-bottom:1px solid var(--line); padding-bottom:10px; }
+h3 { font-size:1.08rem; }
+a { color:var(--blue); }
+a:focus-visible,summary:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
+.lead,.muted { color:var(--muted); }
+.badge { display:inline-block; padding:4px 10px; border:1px solid var(--yellow); border-radius:20px; color:var(--yellow); }
+.callout { border-left:4px solid var(--yellow); background:var(--panel-2); padding:14px 16px; border-radius:8px; }
+code,pre { background:var(--code); border-radius:5px; overflow-wrap:anywhere; }
+code { padding:.1em .3em; }
+pre { padding:16px; white-space:pre-wrap; }
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+th,td { text-align:left; vertical-align:top; padding:11px 9px; border-bottom:1px solid var(--line); }
+th { color:var(--muted); }
+.pass { color:var(--green); }
+.blocked { color:var(--yellow); }
+figure { margin:18px 0; }
+svg { display:block; width:100%; height:auto; }
+figcaption { color:var(--muted); margin-top:8px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; }
+.card { padding:16px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius-md); }
+ul,ol { padding-left:1.4rem; }
+.skip { position:absolute; left:-9999px; }
+.skip:focus { left:12px; top:12px; background:var(--panel); padding:10px; }
+@media(max-width:620px) { main { width:calc(100% - 20px); margin-top:18px; } header,section { padding:18px; } th,td { padding:8px 6px; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; } }
+@media print { :root { color-scheme:light; } body { background:white; color:#172033; } main { width:100%; margin:0; } header,section,.card,.callout { background:white; color:#172033; box-shadow:none; border-color:#9aa8bc; } .muted,.lead,th,figcaption { color:#46546a; } code,pre { background:#eef2f7; } .pass,.blocked,a { color:#172033; } .table-wrap { overflow:visible; } table { font-size:10pt; } tr,figure,.card { break-inside:avoid; } .skip { display:none; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#report">Skip to report</a>
+<main id="report">
+<header>
+<span class="badge">Implementation complete · release checks remain</span>
+<h1>Package selection and setup reliability</h1>
+<p class="lead">Status on 2026-09-19. Branch <code>feat/package-selection-reliability</code>, HEAD <code>13f0746</code> plus uncommitted WS-5 changes.</p>
+<p class="callout"><strong>Local implementation acceptance passed.</strong> WS-5 is complete, all nine independent-review findings are fixed, and both focused reviewer rechecks found no new issues. The completed plan is archived. Changes remain uncommitted; nothing was pushed, merged, or released.</p>
+<p><a href="../plans/archive/package-selection-reliability-improvements.md">Archived canonical plan and full evidence ledger</a></p>
+</header>
+<section aria-labelledby="overview">
+<h2 id="overview">Overview and implementation map</h2>
+<div class="table-wrap"><table data-overview>
+<thead><tr><th>Area</th><th>Result</th><th>Evidence or next gate</th></tr></thead>
+<tbody>
+<tr><td>Lua configuration</td><td class="pass">Preserved and verified locally</td><td>User confirmed migration was intended. Hyprland 0.56.2 loaded the Lua manager and reported <code>config ok</code>.</td></tr>
+<tr><td>Role behavior</td><td class="pass">22 options pass</td><td>Metadata, generated consumers, terminal/menu argv, weather browser, clipboard states, and dry-run assertions.</td></tr>
+<tr><td>Test and CI infrastructure</td><td class="pass">Local checks pass</td><td>11 shell programs, 17 Rust tests, offline registry checker, and rust/shell/json CI jobs. Hosted CI not run.</td></tr>
+<tr><td>Independent review</td><td class="pass">Two completed assessments and rechecks</td><td>All nine findings accepted, corrected and verified. Roles: OK. Reliability: OK with manual-release notes.</td></tr>
+<tr><td>Completion and release</td><td>Implementation complete; release unverified</td><td>Report finalized and plan archived. Live package, privileged-system and interactive checks remain.</td></tr>
+</tbody></table></div>
+<p>WS-5 added <code>tests/run.sh</code>, the offline registry checker, regression programs, and <code>.github/workflows/ci.yml</code>. It strengthened the role matrix and two-run test, updated README/changelog guidance, and repaired two role consumers. Review corrections added safe generated-command quoting, exclusive-package normalization, and rollback/write failure handling. The release workflow and intended later desktop changes remain unchanged.</p>
+</section>
+<section aria-labelledby="design">
+<h2 id="design">Design and preserved decisions</h2>
+<figure data-visual-kind="diagram" data-purpose="Explain how one registry supplies installer role choices and runtime consumers" data-source="packages.json, src/packages.rs, setup.sh and runtime wrappers">
+<svg viewBox="0 0 850 220" role="img" aria-labelledby="flow-title flow-desc">
+<title id="flow-title">Package registry to selected application behavior</title>
+<desc id="flow-desc">The package registry is read by the Rust TUI and installer. The TUI exports role package names. Setup validates those names and generates role metadata and configuration consumed by Lua, Fish, Waybar and Pyprland.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#65b5ff"/></marker></defs>
+<g fill="#18253a" stroke="#65b5ff"><rect x="12" y="65" width="174" height="90" rx="12"/><rect x="231" y="65" width="174" height="90" rx="12"/><rect x="450" y="65" width="174" height="90" rx="12"/><rect x="669" y="65" width="169" height="90" rx="12"/></g>
+<g stroke="#65b5ff" stroke-width="2" marker-end="url(#arrow)"><path d="M186 110 H223"/><path d="M405 110 H442"/><path d="M624 110 H661"/></g>
+<g fill="#e8eef8" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18"><text x="99" y="102">packages.json</text><text x="99" y="130" font-size="14">single registry</text><text x="318" y="102">TUI selections</text><text x="318" y="130" font-size="14">ROLE_* package names</text><text x="537" y="102">setup.sh</text><text x="537" y="130" font-size="14">validate and generate</text><text x="753" y="102">Desktop consumers</text><text x="753" y="130" font-size="14">metadata and argv</text></g>
+<path d="M99 65 V30 H537 V57" fill="none" stroke="#a9b7cb" stroke-width="2" marker-end="url(#arrow)"/><text x="318" y="21" text-anchor="middle" fill="#a9b7cb" font-family="system-ui,sans-serif" font-size="14">Installer also reads the same registry</text>
+</svg>
+<figcaption>Registry values are shared, not inferred from installed-package priority. Generated role data and config values connect the installer to desktop consumers.</figcaption>
+</figure>
+<div class="grid"><article class="card"><h3>Lua remains active</h3><p><code>hyprland.lua</code> loads the Lua modules. Retained <code>.conf</code> files are backups. The old plan's format restriction was superseded with explicit user approval.</p></article><article class="card"><h3>Scoped recovery</h3><p>Run manifests describe setup-managed file changes. Rollback does not reverse package installs, service changes, Stow links, or copied directory trees. The pre-run whole-config backup remains a separate fallback.</p></article></div>
+</section>
+<section aria-labelledby="validation">
+<h2 id="validation">Executed validation</h2>
+<p>The parent independently inspected the correction diff and reran the full validation set after all nine fixes. All commands below exited zero.</p>
+<div class="table-wrap"><table><thead><tr><th>Check</th><th>Observed result</th></tr></thead><tbody>
+<tr><td><code>cargo build --locked</code>, <code>cargo fmt --check</code>, <code>cargo check --locked</code>, <code>cargo clippy --locked --all-targets -- -D warnings</code></td><td>Pass</td></tr>
+<tr><td><code>cargo test --locked</code></td><td>17 passed, zero failed</td></tr>
+<tr><td><code>tests/run.sh</code></td><td>11 programs passed, zero failed; all 22 behavioral role cases passed</td></tr>
+<tr><td>Per-file <code>bash -n</code> and <code>shellcheck -x</code></td><td>27 planned shell files checked</td></tr>
+<tr><td><code>jq -e . packages.json</code> and offline package checker</td><td>Pass; network lookup disabled</td></tr>
+<tr><td><code>tests/verify_hypr_config.sh</code></td><td>Hyprland 0.56.2, Lua configuration, <code>config ok</code></td></tr>
+<tr><td>CI YAML and diff checks</td><td>YAML parsed with rust/shell/json jobs; <code>git diff --check</code> passed</td></tr>
+</tbody></table></div>
+<p>Reproduce the core local checks with <code>tests/run.sh</code>, <code>tests/check_packages_json.sh</code>, and <code>tests/verify_hypr_config.sh</code>. The latter returns exit 3 when Hyprland is missing; a skip is not a release pass. Coverage percentage was not measured.</p>
+</section>
+<section aria-labelledby="findings">
+<h2 id="findings">Findings, corrections and independent rechecks</h2>
+<div class="table-wrap"><table><thead><tr><th>Finding</th><th>Parent disposition</th><th>Verification</th></tr></thead><tbody>
+<tr><td>WS5-001: clipboard hardcoded Kitty</td><td>Accepted and fixed</td><td>Terminal wrapper and stable <code>hss-clipboard</code> ID; all three terminals tested</td></tr>
+<tr><td>WS5-002: weather hardcoded Zen</td><td>Accepted and fixed</td><td>Selected browser executable/args; all five browser options tested</td></tr>
+<tr><td>WS5-003: clipboard fix toggled an already-floating window to tiled</td><td>Accepted and fixed before review</td><td>Both floating states tested for each terminal; timeout test included</td></tr>
+</tbody></table></div>
+<p>The table above records worker/parent findings. Two separate independent reviews then identified the following nine issues. The parent verified and accepted every finding; all were fixed and revalidated.</p>
+<div class="table-wrap"><table><thead><tr><th>Review findings</th><th>Correction and regression evidence</th><th>Final disposition</th></tr></thead><tbody>
+<tr><td>RL-001: generated Lua lost argv boundaries</td><td>Shell-quote each argument before Lua encoding; preserve replacement bytes. Test loads actual Lua and executes its commands with spaces, quotes, backslashes and literal metacharacters.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+<tr><td>RL-002: explicit lists installed unselected role alternatives</td><td>Normalize explicit and user-added lists against registry role membership, then add selected roles by source. Conflicting and wrong-source inputs tested.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+<tr><td>RL-003: checker allowed slashes rejected by Rust</td><td>Separate executable paths from restricted tokens; matching negative Rust/shell fixtures.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+<tr><td>RC-01 and RC-02: dry rollback deletion and privileged deletion</td><td>Dry-run only reports proposed deletes; validated privileged removal uses sudo. Mixed manifests and synthetic-etc tests pass.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+<tr><td>RC-03 and RC-04: false rollback success and state rewrite failures</td><td>Fail immediately on write/delete errors; preserve old state after failed generation/rename. Tests use real failing command shims, not production test switches.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+<tr><td>RC-05 and RC-06: swallowed role-write errors and skipped final rows</td><td>Required writes propagate failure through setup; newline-free final manifest rows are processed. Fault injection and restoration regressions pass.</td><td class="pass">Accepted, fixed, recheck passed</td></tr>
+</tbody></table></div>
+<p>Final roles/Lua reviewer <code>fb93510f-37df-4ad8-acd9-c7e32b9b6f62</code> returned <strong>OK</strong>. Reliability reviewer <code>0ebf967c-ed11-4d36-91a5-8955e51bd082</code> returned <strong>OK with notes</strong>, solely for unrun manual release gates. Both confirmed their original findings resolved and found no new issues within the correction scope. Reviews used separate read-only contexts on <code>openai-codex/gpt-6-astra</code>; execution evidence came from parent validation.</p>
+<p>Earlier review attempts failed because one provider model was batch-only and saved-diff requests went unanswered during a blocking retry call. The user approved retrying, the parent supplied diffs up front, and asynchronous supervision completed the reviews. The failed attempts were not counted. The archived plan preserves full identities, provider fallback rationale and evidence.</p>
+<p class="callout"><strong>Disclosed host side effect.</strong> The worker mistakenly invoked <code>setup.sh --help</code>, which has no help-only path. Run <code>20260919T092358Z-cb2de4</code> initialized state, then exited 1 at sudo credential validation. Parent inspection found an empty manifest and a log ending <code>Unable to validate sudo credentials.</code> No package/config work is evidenced. The run-state directory was left untouched.</p>
+</section>
+<section aria-labelledby="next">
+<h2 id="next">Release limits and next actions</h2>
+<ol><li>Inspect the uncommitted changes before committing or opening a pull request. This continuation did not publish anything.</li><li>Run hosted CI and the live package-availability check before a release. It remains opt-in through <code>HSS_LIVE_PACKAGE_CHECK=1 tests/check_packages_json.sh</code>.</li><li>Perform the manual installation, desktop and recovery checks in an approved test environment. Passing stubbed tests does not authorize changes to the live machine.</li></ol>
+<p>Release still needs live pacman/AUR availability, hosted CI execution, interactive TUI/TTY behavior, remaining real window-class checks, live sudo and approved <code>/etc</code> writes, installation/service integration, and interactive rollback confirmation. Stubbed tests cannot establish those host behaviors.</p>
+<p>Run history is available through <code>./setup.sh --list-runs</code>; per-run logs live below <code>${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/</code>. Explicit <code>--rollback &lt;run-id&gt;</code> restores only the validated manifest scope and can overwrite later edits after confirmation.</p>
+<p>Sources: <a href="../plans/archive/package-selection-reliability-improvements.md">archived canonical plan</a>, <a href="../tests/shell/roles_matrix.sh">role matrix</a>, <a href="../tests/shell/roles_lua_argv.sh">Lua argv test</a>, <a href="../tests/shell/reliability_failures.sh">failure regressions</a>, <a href="../.github/workflows/ci.yml">CI definition</a>, and <a href="../README.md">usage and recovery</a>. The plan archive is intentionally Git-ignored and preserved locally. Browser/mobile/print rendering has not been visually checked.</p>
+</section>
+</main>
+</body>
+</html>

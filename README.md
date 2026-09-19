@@ -47,6 +47,9 @@
 - [Environment Setup](#environment-setup)
 - [Prerequisites](#prerequisites)
 - [Setup Script Execution](#setup-script-execution)
+  - [Application roles](#application-roles)
+  - [Run history, logs, and rollback](#run-history-logs-and-rollback)
+  - [Testing](#testing)
 - [Package Installations](#package-installations)
   - [Pacman Packages](#pacman-packages)
   - [AUR Packages](#aur-packages)
@@ -225,7 +228,8 @@ Usage (Preflight screen):
 - Start: focus “Start unattended install (Enter)” and press Enter
 
 Notes:
-- The TUI sets environment variables for a non-interactive run (e.g., `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, `AUTO_CONTINUE_ON_WARNINGS`).
+- The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
+- It also passes one package selection for each application role. See [Application roles](#application-roles).
 - The installer will still use `sudo` for privileged operations when needed.
 
 ## Environment Setup
@@ -246,7 +250,7 @@ Notes:
 - **Supported:** Arch Linux, EndeavourOS (other distros may require manual adaptation)
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
-- **Logging:** All actions logged to `~/Hyprland-Simple-Setup.log`
+- **Logging:** Each run writes its own log under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The installer no longer writes `~/Hyprland-Simple-Setup.log`.
 - **Release notes:** See `Documents/RELEASE_v*.md` and `CHANGELOG.md`
 
 ## Project Structure
@@ -279,6 +283,68 @@ Advanced/legacy: To run the shell installer directly:
 cd ~/Hyprland-Simple-Setup
 ./setup.sh
 ```
+
+### Application roles
+
+The package selector requires one browser, terminal, shell, GUI editor, TUI editor, and launcher. `packages.json` defines the available packages and their commands. The TUI exports these choices to the installer:
+
+- `ROLE_BROWSER`
+- `ROLE_TERMINAL`
+- `ROLE_SHELL`
+- `ROLE_GUI_EDITOR`
+- `ROLE_TUI_EDITOR`
+- `ROLE_LAUNCHER`
+
+Each value is a package name from the matching role in `packages.json`, not a command string. For example, `ROLE_BROWSER=firefox` and `ROLE_TERMINAL=alacritty` select those registered options. Direct non-interactive runs may set all six variables. If a variable is absent, the installer uses the role's registry default and reports that choice.
+
+Explicit `SELECTED_*` and `USER_ADDED_*` lists remain authoritative for non-role packages. The installer removes role alternatives from those lists and adds only the selected role packages and their extras under the registry's package source.
+
+The installer writes the selected command metadata to `~/.config/hypr/roles.json`. Hyprland's Lua modules, Fish, Waybar, and Pyprland helpers read this file or the generated values derived from it.
+
+### Run history, logs, and rollback
+
+Run state lives in:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/
+```
+
+Each directory under `runs/` contains a `meta` file, `manifest.tsv`, backups for changed files, and that run's `log`. `latest-run` contains the most recently finalized run ID. To inspect recent runs and the latest log:
+
+```bash
+./setup.sh --list-runs
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup"
+latest_run=$(cat "$state_root/latest-run")
+less "$state_root/runs/$latest_run/log"
+```
+
+Restore the setup-managed files recorded for one run with:
+
+```bash
+./setup.sh --rollback <run-id>
+```
+
+Rollback validates the run ID, manifest, backups, paths, and file digests before writing. A non-interactive rollback stops if a file changed after the recorded run. Rollback covers only files in that run's manifest. It does not uninstall packages, reverse service changes, remove Stow links, restore copied directory trees, or replace `~/.config` or `~/dotfiles` as a whole.
+
+### Testing
+
+The shell suite uses disposable homes and command stubs. It exercises guarded `HSS_TEST_MODE=1` scenarios and source-safe functions, never the unrestricted installer. Its dependencies include Bash, jq, Fish, a Lua interpreter, Python 3, and the usual GNU utilities. CI also provisions ShellCheck and desktop-file utilities:
+
+Run these checks from the repository root; they do not install packages:
+
+```bash
+tests/run.sh
+tests/check_packages_json.sh
+tests/verify_hypr_config.sh
+```
+
+`tests/check_packages_json.sh` performs offline structural and schema checks by default. The release-only lookup checks pacman and AUR availability with bounded requests:
+
+```bash
+HSS_LIVE_PACKAGE_CHECK=1 tests/check_packages_json.sh
+```
+
+The live package lookup needs network access and is intentionally excluded from CI. `tests/verify_hypr_config.sh` exits `3` with a `SKIPPED` message when Hyprland is unavailable. A skip is not a release pass.
 
 ## Package Installations
 
@@ -562,7 +628,7 @@ For more customization options, refer to:
 
 ## Troubleshooting
 
-- **Logs:** See `~/Hyprland-Simple-Setup.log`
+- **Logs:** Run `./setup.sh --list-runs`, then inspect the selected run's `log` under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The `latest-run` file points to the most recently finalized run.
 - **Package verification:** The setup script checks and reports missing packages
 - **Configuration issues:** Modular config makes it easy to isolate and fix problems
 - **Scripts:** Helper scripts for common issues (e.g., fix dolphin etc.)

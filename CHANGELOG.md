@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- Added exclusive browser, terminal, shell, GUI editor, TUI editor, and launcher roles backed by `packages.json`.
+- Added per-run state, logs, manifests, scoped rollback with `--rollback`, and run discovery with `--list-runs`.
+- Added deterministic shell integration tests, offline package-registry checks, and separate Rust, shell, and JSON CI jobs.
+
+### Changed
+- Hyprland now uses the Lua configuration rooted at `hyprland.lua`; retained `.conf` files are backups.
+- Role-aware Lua, Fish, Waybar, and Pyprland consumers now use generated `~/.config/hypr/roles.json` metadata and safe argument arrays.
+- Installer logs moved from `~/Hyprland-Simple-Setup.log` to `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/<run-id>/log`.
+- The Waybar clipboard and weather actions now honor the selected terminal and browser.
+
+### Fixed
+- Preserved argument boundaries and literal characters in generated Lua commands.
+- Removed unselected role alternatives from explicit and user-added package lists, and aligned registry token checks with Rust.
+- Prevented dry-run rollback from deleting files and used sudo for validated privileged deletions.
+- Propagated rollback, manifest, metadata, and required role-write failures instead of reporting false success; handled final manifest rows without a newline.
+
+### Verification status
+- Local build, lint, 17 Rust tests, 11 shell test programs, all 22 role options, and Hyprland 0.56.2 Lua verification passed.
+- Two independent reviews and focused rechecks confirmed all nine accepted findings resolved.
+- Hosted CI, live pacman/AUR availability, and interactive or privileged-system release checks remain unrun.
+
+---
+
 ## [0.6.0] - 2026-04-01
 
 # Release v0.6.0

@@ -187,6 +187,27 @@ append_package_words() {
     done
 }
 
+remove_role_managed_packages() {
+    local array_name=$1 package status
+    local -n packages=$array_name
+    local -a retained=()
+    for package in "${packages[@]}"; do
+        if jq -e --arg package "$package" \
+            '[.roles[].options[] | (.package, .extra_packages[]?)] | index($package) != null' \
+            "$PACKAGE_REGISTRY" >/dev/null; then
+            continue
+        else
+            status=$?
+        fi
+        if [[ $status -ne 1 ]]; then
+            print_error "Failed to query role-managed package metadata for '$package'"
+            return "$status"
+        fi
+        retained+=("$package")
+    done
+    packages=("${retained[@]}")
+}
+
 prepare_package_selections() {
     [ "$PACKAGE_SELECTIONS_PREPARED" = true ] && return 0
     load_role_selections || return 1
@@ -212,6 +233,11 @@ prepare_package_selections() {
         print_message "No SELECTED_* package variables were supplied; using non-role registry packages and role defaults"
     fi
 
+    append_package_words SELECTED_PACMAN_LIST "${USER_ADDED_PACMAN_PACKAGES:-}" || return 1
+    append_package_words SELECTED_AUR_LIST "${USER_ADDED_AUR_PACKAGES:-}" || return 1
+    remove_role_managed_packages SELECTED_PACMAN_LIST || return 1
+    remove_role_managed_packages SELECTED_AUR_LIST || return 1
+
     for role in "${ROLE_NAMES[@]}"; do
         option=$(role_option_json "$role") || return 1
         source=$(jq -er '.source' <<<"$option") || return 1
@@ -225,8 +251,6 @@ prepare_package_selections() {
         fi
     done
 
-    append_package_words SELECTED_PACMAN_LIST "${USER_ADDED_PACMAN_PACKAGES:-}" || return 1
-    append_package_words SELECTED_AUR_LIST "${USER_ADDED_AUR_PACKAGES:-}" || return 1
     for package in "${SELECTED_PACMAN_LIST[@]}" "${SELECTED_AUR_LIST[@]}"; do append_unique SELECTED_ALL_PACKAGES "$package"; done
     PACKAGE_SELECTIONS_PREPARED=true
 }
@@ -1674,7 +1698,8 @@ replace_config_line() {
         return 0
     fi
     make_tmp tmp role-edit.XXXXXX || return 1
-    awk -v pattern="$pattern" -v replacement="$replacement" '
+    HSS_REPLACEMENT=$replacement awk -v pattern="$pattern" '
+        BEGIN { replacement = ENVIRON["HSS_REPLACEMENT"] }
         $0 ~ pattern {
             if (!replaced) print replacement
             replaced = 1
@@ -1693,7 +1718,8 @@ replace_literal_assignment() {
         return 0
     fi
     make_tmp tmp role-edit.XXXXXX || return 1
-    awk -v name="$name" -v replacement="$replacement" '
+    HSS_REPLACEMENT=$replacement awk -v name="$name" '
+        BEGIN { replacement = ENVIRON["HSS_REPLACEMENT"] }
         index($0, name) == 1 && substr($0, length(name) + 1) ~ /^[[:space:]]*=/ {
             if (!replaced) print replacement
             replaced = 1
@@ -1712,7 +1738,8 @@ replace_literal_prefix() {
         return 0
     fi
     make_tmp tmp role-edit.XXXXXX || return 1
-    awk -v prefix="$prefix" -v replacement="$replacement" '
+    HSS_REPLACEMENT=$replacement awk -v prefix="$prefix" '
+        BEGIN { replacement = ENVIRON["HSS_REPLACEMENT"] }
         index($0, prefix) == 1 {
             if (!replaced) print replacement
             replaced = 1
@@ -1762,19 +1789,33 @@ generate_roles_json() {
 
     mkdir -p "$(dirname "$source_file")" "$(dirname "$runtime_file")"
     make_tmp source_tmp roles-json.XXXXXX || return 1
-    printf '%s\n' "$generated" | jq . > "$source_tmp"
-    role_write_file "$source_file" "$source_tmp" "selected runtime role metadata"
+    printf '%s\n' "$generated" | jq . > "$source_tmp" || return 1
+    role_write_file "$source_file" "$source_tmp" "selected runtime role metadata" || return 1
 
     if [ "$(readlink -f "$source_file")" != "$(readlink -f "$runtime_file" 2>/dev/null || printf '%s' "$runtime_file")" ]; then
         make_tmp runtime_tmp roles-json.XXXXXX || return 1
-        printf '%s\n' "$generated" | jq . > "$runtime_tmp"
-        role_write_file "$runtime_file" "$runtime_tmp" "selected runtime role metadata"
+        printf '%s\n' "$generated" | jq . > "$runtime_tmp" || return 1
+        role_write_file "$runtime_file" "$runtime_tmp" "selected runtime role metadata" || return 1
     fi
+}
+
+role_command_json() {
+    jq -er --arg home "$HOME" '
+        walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
+        | [.executable] + (.args // [])
+        | @sh
+        | @json
+    '
 }
 
 runtime_role_command() {
     local role=$1 field=${2:-args}
-    jq -er --arg role "$role" --arg field "$field" '[.roles[$role].executable] + (.roles[$role][$field] // []) | join(" ") | @json' "$ROLE_DATA_FILE"
+    jq -er --arg role "$role" --arg field "$field" '
+        .roles[$role]
+        | [.executable] + (.[$field] // [])
+        | @sh
+        | @json
+    ' "$ROLE_DATA_FILE"
 }
 
 configure_roles() {
@@ -1788,49 +1829,49 @@ configure_roles() {
     local terminal_command browser_command editor_command launcher_command
     local browser_exec browser_class terminal_exec editor_bin menu_dmenu launcher_process launcher_namespace
     if is_dry_run; then
-        terminal_command=$(role_option_json terminal | jq -r '[.executable] + .args | join(" ") | @json')
-        browser_command=$(role_option_json browser | jq -r '[.executable] + .args | join(" ") | @json')
-        editor_command=$(role_option_json gui_editor | jq -r '[.executable] + .args | join(" ") | @json')
-        launcher_command=$(role_option_json launcher | jq -r '[.executable] + .args | join(" ") | @json')
-        browser_exec=$(role_field browser executable)
-        browser_class=$(role_field browser class)
-        terminal_exec=$(role_field terminal executable)
-        editor_bin=$(role_field tui_editor editor_bin)
-        menu_dmenu=$(role_option_json launcher | jq -r '[.dmenu_executable] + .dmenu_args | join(" ")')
-        launcher_process=$(role_field launcher process)
-        launcher_namespace=$(role_field launcher namespace)
+        terminal_command=$(role_option_json terminal | role_command_json) || return 1
+        browser_command=$(role_option_json browser | role_command_json) || return 1
+        editor_command=$(role_option_json gui_editor | role_command_json) || return 1
+        launcher_command=$(role_option_json launcher | role_command_json) || return 1
+        browser_exec=$(role_field browser executable) || return 1
+        browser_class=$(role_field browser class) || return 1
+        terminal_exec=$(role_field terminal executable) || return 1
+        editor_bin=$(role_field tui_editor editor_bin) || return 1
+        menu_dmenu=$(role_option_json launcher | jq -r '[.dmenu_executable] + .dmenu_args | join(" ")') || return 1
+        launcher_process=$(role_field launcher process) || return 1
+        launcher_namespace=$(role_field launcher namespace) || return 1
     else
-        terminal_command=$(runtime_role_command terminal)
-        browser_command=$(runtime_role_command browser)
-        editor_command=$(runtime_role_command gui_editor)
-        launcher_command=$(runtime_role_command launcher)
-        browser_exec=$(jq -er '.roles.browser.executable' "$ROLE_DATA_FILE")
-        browser_class=$(jq -er '.roles.browser.class' "$ROLE_DATA_FILE")
-        terminal_exec=$(jq -er '.roles.terminal.executable' "$ROLE_DATA_FILE")
-        editor_bin=$(jq -er '.roles.tui_editor.editor_bin' "$ROLE_DATA_FILE")
-        menu_dmenu=$(jq -er '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$ROLE_DATA_FILE")
-        launcher_process=$(jq -er '.roles.launcher.process' "$ROLE_DATA_FILE")
-        launcher_namespace=$(jq -er '.roles.launcher.namespace' "$ROLE_DATA_FILE")
+        terminal_command=$(runtime_role_command terminal) || return 1
+        browser_command=$(runtime_role_command browser) || return 1
+        editor_command=$(runtime_role_command gui_editor) || return 1
+        launcher_command=$(runtime_role_command launcher) || return 1
+        browser_exec=$(jq -er '.roles.browser.executable' "$ROLE_DATA_FILE") || return 1
+        browser_class=$(jq -er '.roles.browser.class' "$ROLE_DATA_FILE") || return 1
+        terminal_exec=$(jq -er '.roles.terminal.executable' "$ROLE_DATA_FILE") || return 1
+        editor_bin=$(jq -er '.roles.tui_editor.editor_bin' "$ROLE_DATA_FILE") || return 1
+        menu_dmenu=$(jq -er '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$ROLE_DATA_FILE") || return 1
+        launcher_process=$(jq -er '.roles.launcher.process' "$ROLE_DATA_FILE") || return 1
+        launcher_namespace=$(jq -er '.roles.launcher.namespace' "$ROLE_DATA_FILE") || return 1
     fi
 
     local root file browser_exec_lua
-    browser_exec_lua=$(jq -n --arg value "$browser_exec" '$value')
+    browser_exec_lua=$(jq -n --arg value "$browser_exec" '$value') || return 1
     for root in "$HOME/dotfiles/.config/hypr/sources" "$HOME/dotfiles/.config/hypr/sources_example"; do
         file="$root/app_variables.lua"
-        replace_config_line "$file" '^[[:space:]]*terminal[[:space:]]*=' "    terminal = $terminal_command," "selected terminal"
-        replace_config_line "$file" '^[[:space:]]*menu[[:space:]]*=' "    menu = $launcher_command," "selected launcher"
-        replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser"
-        replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected GUI editor"
+        replace_config_line "$file" '^[[:space:]]*terminal[[:space:]]*=' "    terminal = $terminal_command," "selected terminal" || return 1
+        replace_config_line "$file" '^[[:space:]]*menu[[:space:]]*=' "    menu = $launcher_command," "selected launcher" || return 1
+        replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser" || return 1
+        replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected GUI editor" || return 1
 
         file="$root/environment_variables.lua"
-        replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment"
+        replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment" || return 1
 
         file="$root/keybindings.lua"
-        replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd(\"pkill $launcher_process || \" .. apps.menu))" "selected launcher process"
+        replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd(\"pkill $launcher_process || \" .. apps.menu))" "selected launcher process" || return 1
 
         file="$root/windows_and_workspaces.lua"
-        replace_config_line "$file" 'hss-role:browser-workspace$' "window_rule(\"$browser_class\", { workspace = \"2 silent\" }) -- hss-role:browser-workspace" "selected browser workspace rule"
-        replace_config_line "$file" 'hss-role:launcher-layer$' "hl.layer_rule({ match = { namespace = \"$launcher_namespace\" }, dim_around = true }) -- hss-role:launcher-layer" "selected launcher namespace"
+        replace_config_line "$file" 'hss-role:browser-workspace$' "window_rule(\"$browser_class\", { workspace = \"2 silent\" }) -- hss-role:browser-workspace" "selected browser workspace rule" || return 1
+        replace_config_line "$file" 'hss-role:launcher-layer$' "hl.layer_rule({ match = { namespace = \"$launcher_namespace\" }, dim_around = true }) -- hss-role:launcher-layer" "selected launcher namespace" || return 1
     done
 
     local fish_files=(
@@ -1839,24 +1880,25 @@ configure_roles() {
     )
     for file in "${fish_files[@]}"; do
         [ -L "$file" ] && [ "$file" != "${fish_files[0]}" ] && continue
-        replace_config_line "$file" '^set -gx EDITOR ' "set -gx EDITOR $editor_bin" "selected TUI editor"
-        replace_config_line "$file" '^set -gx VISUAL ' "set -gx VISUAL $editor_bin" "selected TUI editor"
-        replace_config_line "$file" '^set -x TERMINAL |^set -gx TERMINAL ' "set -gx TERMINAL $terminal_exec" "selected terminal"
-        replace_config_line "$file" '^set -x BROWSER |^set -gx BROWSER ' "set -gx BROWSER $browser_exec" "selected browser"
-        replace_config_line "$file" '^set -gx MANPAGER ' "set -gx MANPAGER '$editor_bin'" "selected TUI editor pager"
-        replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$menu_dmenu\"" "selected launcher dmenu command"
+        replace_config_line "$file" '^set -gx EDITOR ' "set -gx EDITOR $editor_bin" "selected TUI editor" || return 1
+        replace_config_line "$file" '^set -gx VISUAL ' "set -gx VISUAL $editor_bin" "selected TUI editor" || return 1
+        replace_config_line "$file" '^set -x TERMINAL |^set -gx TERMINAL ' "set -gx TERMINAL $terminal_exec" "selected terminal" || return 1
+        replace_config_line "$file" '^set -x BROWSER |^set -gx BROWSER ' "set -gx BROWSER $browser_exec" "selected browser" || return 1
+        replace_config_line "$file" '^set -gx MANPAGER ' "set -gx MANPAGER '$editor_bin'" "selected TUI editor pager" || return 1
+        replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$menu_dmenu\"" "selected launcher dmenu command" || return 1
     done
 
     local aliases="$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
-    remove_config_matching "$aliases" '^alias (vi|vim)=' "remove stale editor aliases"
+    remove_config_matching "$aliases" '^alias (vi|vim)=' "remove stale editor aliases" || return 1
     if [ "$ROLE_TUI_EDITOR" = neovim ]; then
-        replace_config_line "$aliases" '^# hss-role:editor-aliases$' "alias vi='nvim'; alias vim='nvim' # hss-role:editor-aliases" "Neovim aliases"
+        replace_config_line "$aliases" '^# hss-role:editor-aliases$' "alias vi='nvim'; alias vim='nvim' # hss-role:editor-aliases" "Neovim aliases" || return 1
     else
-        remove_config_matching "$aliases" '# hss-role:editor-aliases' "remove Neovim-only aliases"
+        remove_config_matching "$aliases" '# hss-role:editor-aliases' "remove Neovim-only aliases" || return 1
     fi
 
     print_message "Configured roles: browser=$ROLE_BROWSER terminal=$ROLE_TERMINAL shell=$ROLE_SHELL gui_editor=$ROLE_GUI_EDITOR tui_editor=$ROLE_TUI_EDITOR launcher=$ROLE_LAUNCHER"
 }
+
 configure_hypr_autostart_optional_extras() {
     uncomment_lua_line_if_cmd_exists() {
         local lua_file="$1"
@@ -3000,7 +3042,11 @@ main() {
     if [ "$ROLE_SHELL" = fish ]; then
         set_fish_language_config
     fi
-    configure_roles
+    configure_roles || {
+        print_error "Failed to configure selected application roles"
+        record_hard_failure "configure_roles" "Required role configuration write failed"
+        return 1
+    }
     configure_hypr_autostart_optional_extras
     configure_shell
     configure_environment
@@ -3107,6 +3153,25 @@ run_reliability_test_scenario() {
         rollback)
             hss_begin_run "reliability rollback" || return $?
             hss_rollback "${HSS_ROLLBACK_RUN_ID:?HSS_ROLLBACK_RUN_ID is required}"
+            ;;
+        state-update)
+            hss_begin_run "reliability state-update" || return $?
+            case "${HSS_STATE_UPDATE_KIND:?HSS_STATE_UPDATE_KIND is required}" in
+                manifest)
+                    printf '%s' "${HSS_STATE_INITIAL:?HSS_STATE_INITIAL is required}" > "$HSS_MANIFEST"
+                    hss_manifest_replace_after \
+                        "${HSS_STATE_PATH:?HSS_STATE_PATH is required}" \
+                        "${HSS_STATE_AFTER:?HSS_STATE_AFTER is required}"
+                    ;;
+                meta)
+                    hss_meta_append HSS_TEST_STATE old
+                    hss_meta_set HSS_TEST_STATE new
+                    ;;
+                *)
+                    print_error "Unknown state update kind '$HSS_STATE_UPDATE_KIND'"
+                    return 2
+                    ;;
+            esac
             ;;
         *)
             print_error "Unknown reliability action '$action'"

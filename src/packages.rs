@@ -680,6 +680,20 @@ mod tests {
     }
 
     #[test]
+    fn restricted_role_tokens_reject_path_separators() {
+        let mut registry = shipped_registry();
+        registry
+            .roles
+            .get_mut("launcher")
+            .expect("launcher role must exist")
+            .options[0]
+            .namespace = Some("bad/name".to_string());
+
+        let error = registry.validate().unwrap_err().to_string();
+        assert!(error.contains("invalid namespace"));
+    }
+
+    #[test]
     fn zed_role_uses_the_installed_arch_executable() {
         let registry = shipped_registry();
         let zed = registry.roles["gui_editor"]

@@ -76,8 +76,14 @@ hss_meta_set() {
     value=${value//$'\r'/ }
     value=${value//$'\t'/ }
     make_tmp tmp meta.XXXXXX || return 1
-    awk -F= -v key="$key" -v value="$value" 'BEGIN {updated=0} $1 == key {if (!updated) print key "=" value; updated=1; next} {print} END {if (!updated) print key "=" value}' "$HSS_RUN_DIR/meta" > "$tmp"
-    mv -f -- "$tmp" "$HSS_RUN_DIR/meta"
+    if ! awk -F= -v key="$key" -v value="$value" 'BEGIN {updated=0} $1 == key {if (!updated) print key "=" value; updated=1; next} {print} END {if (!updated) print key "=" value}' "$HSS_RUN_DIR/meta" > "$tmp"; then
+        printf 'Failed to generate run metadata update for key %s\n' "$key" >&2
+        return 1
+    fi
+    mv -f -- "$tmp" "$HSS_RUN_DIR/meta" || {
+        printf 'Failed to replace run metadata for key %s\n' "$key" >&2
+        return 1
+    }
 }
 
 hss_init_run() {
@@ -240,8 +246,14 @@ hss_manifest_find() {
 hss_manifest_replace_after() {
     local path=$1 after=$2 tmp
     make_tmp tmp manifest.XXXXXX || return 1
-    awk -F '\t' -v OFS='\t' -v path="$path" -v after="$after" '$2 == path {$4=after} {print}' "$HSS_MANIFEST" > "$tmp"
-    mv -f -- "$tmp" "$HSS_MANIFEST"
+    if ! awk -F '\t' -v OFS='\t' -v path="$path" -v after="$after" '$2 == path {$4=after} {print}' "$HSS_MANIFEST" > "$tmp"; then
+        printf 'Failed to generate manifest update for %s\n' "$path" >&2
+        return 1
+    fi
+    mv -f -- "$tmp" "$HSS_MANIFEST" || {
+        printf 'Failed to replace manifest while updating %s\n' "$path" >&2
+        return 1
+    }
 }
 
 hss_manifest_prepare() {
@@ -413,8 +425,18 @@ hss_validate_manifest() {
     done < "$manifest"
 }
 
+hss_remove_rollback_path() {
+    local path=$1
+    if hss_path_is_privileged "$path"; then
+        sudo rm -f -- "$path"
+    else
+        rm -f -- "$path"
+    fi
+}
+
 hss_rollback() {
     local run_id=$1 runs_root source_run source_canonical expected manifest kind path before after backup current mismatch=false
+    local completed=0 status
     hss_valid_run_id "$run_id" || { printf 'Rollback refused: invalid run ID %s\n' "$run_id" >&2; return 1; }
     runs_root=$(readlink -m -- "$(hss_state_root)/runs")
     source_run="$runs_root/$run_id"
@@ -424,8 +446,15 @@ hss_rollback() {
     hss_validate_meta "$source_run/meta" || return 1
     hss_validate_manifest "$source_run" || return 1
     manifest="$source_run/manifest.tsv"
-    while IFS=$'\t' read -r kind path before after backup; do
-        if [[ -f $path ]]; then current=$(hss_sha256 "$path"); else current=missing; fi
+    while IFS=$'\t' read -r kind path before after backup || [[ -n ${kind}${path}${before}${after}${backup} ]]; do
+        if [[ -f $path ]]; then
+            current=$(hss_sha256 "$path") || {
+                printf 'Rollback failed while reading %s\n' "$path" >&2
+                return 1
+            }
+        else
+            current=missing
+        fi
         if [[ $current != "$after" ]]; then
             printf 'Digest mismatch: %s (expected %s, found %s)\n' "$path" "$after" "$current" >&2
             mismatch=true
@@ -439,14 +468,32 @@ hss_rollback() {
         read -rp 'Overwrite files changed since setup? (y/N): ' answer
         [[ $answer =~ ^[Yy]$ ]] || { printf 'Rollback cancelled\n' >&2; return 1; }
     fi
-    while IFS=$'\t' read -r kind path before after backup; do
+    while IFS=$'\t' read -r kind path before after backup || [[ -n ${kind}${path}${before}${after}${backup} ]]; do
         if [[ $kind == created ]]; then
-            rm -f -- "$path"
+            if is_dry_run; then
+                log_dry_run_operation hss_rollback "would delete $path: rollback $run_id"
+            else
+                hss_remove_rollback_path "$path" || {
+                    status=$?
+                    printf 'Rollback failed for %s after %d completed change(s); rollback is partial\n' "$path" "$completed" >&2
+                    return "$status"
+                }
+            fi
         else
-            write_file_atomic "$path" "$source_run/$backup" "rollback $run_id"
+            write_file_atomic "$path" "$source_run/$backup" "rollback $run_id" || {
+                status=$?
+                printf 'Rollback failed for %s after %d completed change(s); rollback is partial\n' "$path" "$completed" >&2
+                return "$status"
+            }
         fi
+        completed=$((completed + 1))
     done < "$manifest"
-    printf 'Rollback completed for run %s\n' "$run_id"
+    if is_dry_run; then
+        print_dry_run_summary
+        printf 'Rollback dry run completed for run %s; no files changed\n' "$run_id"
+    else
+        printf 'Rollback completed for run %s\n' "$run_id"
+    fi
 }
 
 hss_list_runs() {

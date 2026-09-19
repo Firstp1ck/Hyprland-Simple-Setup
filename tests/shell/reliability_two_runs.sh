@@ -19,9 +19,11 @@ for run in "$first" "$second"; do
   windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
   [[ $(awk -F '\t' -v path="$windows" '$2 == path {count++} END {print count+0}' "$dir/manifest.tsv") -eq 1 ]]
 done
-grep -q '^[[:space:]]*terminal = "alacritty",$' "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
-grep -q '^[[:space:]]*browser = "firefox",$' "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
-grep -q 'sudo -n chsh -s /usr/bin/fish -- ' "$STUB_LOG"
+grep -q "^[[:space:]]*terminal = \"'alacritty'\",$" "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
+grep -q "^[[:space:]]*browser = \"'firefox'\",$" "$HOME/dotfiles/.config/hypr/sources/app_variables.lua"
+jq -e '.roles.terminal.package == "alacritty" and .roles.browser.package == "firefox"' \
+  "$HOME/.config/hypr/roles.json" >/dev/null
+grep -Fq "sudo -n chsh -s /usr/bin/fish -- $(id -un)" "$STUB_LOG"
 second_manifest="$XDG_STATE_HOME/hyprland-simple-setup/runs/$second/manifest.tsv"
 windows="$HOME/dotfiles/.config/hypr/sources/windows_and_workspaces.lua"
 IFS=$'\t' read -r _ _ before_hash after_hash backup_rel < <(awk -F '\t' -v path="$windows" '$2 == path' "$second_manifest")
