@@ -99,19 +99,7 @@ struct PreflightConfig {
 enum PreflightField {
     EnvPromptDefaultYn,
     EnvFishLanguageChoiceOverride,
-    RoleBrowser,
-    RoleShell,
-    RoleTerminal,
-    RoleNotifications,
-    RoleTuiEditor,
-    RoleGuiEditor,
-    RoleBar,
-    RoleDock,
-    RoleCalendar,
-    RoleBluetooth,
-    RoleNetwork,
-    RoleAudio,
-    RoleLauncher,
+    Applications,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
@@ -134,6 +122,7 @@ enum EditKind {
     ConfirmReboot,
     ConfirmEnableMonitorSetup,
     ConfirmStartInstall,
+    SelectApplications,
     SelectRole,
     SelectPacman,
     SelectAur,
@@ -275,6 +264,7 @@ struct AppState {
     package_registry: Option<PackagesRoot>,
     package_load_error: Option<String>,
     role_selection: Option<RoleSelection>,
+    application_cursor: usize,
     role_cursor: usize,
     required_pacman: BTreeSet<String>,
     required_aur: BTreeSet<String>,
@@ -374,6 +364,7 @@ impl AppState {
             package_registry: None,
             package_load_error: None,
             role_selection: None,
+            application_cursor: 0,
             role_cursor: 0,
             required_pacman: BTreeSet::new(),
             required_aur: BTreeSet::new(),
@@ -1061,6 +1052,292 @@ fn role_selection_summary(app: &AppState, role_name: &str) -> String {
         .join(", ")
 }
 
+fn application_type_description(role: &str) -> &'static str {
+    match role {
+        "browser" => {
+            "Opens websites and web apps. The primary browser is used by this setup's shortcuts."
+        }
+        "shell" => {
+            "Interprets commands inside a terminal. The primary choice becomes your login shell."
+        }
+        "terminal" => {
+            "Provides the window for shells and text-based apps; separate from the shell itself."
+        }
+        "notifications" => {
+            "Displays desktop alerts. Some providers also offer history and do-not-disturb controls."
+        }
+        "tui_editor" => {
+            "Edits text and code inside a terminal. The primary choice supplies EDITOR and VISUAL."
+        }
+        "gui_editor" => {
+            "Edits text and code in a graphical window. Optional; None uses the terminal editor for editor shortcuts."
+        }
+        "bar" => "Displays desktop status, workspaces and controls, usually along a screen edge.",
+        "dock" => {
+            "Provides an optional strip of pinned or running apps for launching and switching windows."
+        }
+        "calendar" => {
+            "Views and manages dates, appointments and tasks through the desktop calendar action."
+        }
+        "bluetooth" => {
+            "Pairs and manages Bluetooth devices. GUI and terminal choices use the same BlueZ backend."
+        }
+        "network" => "Connects to networks and edits connection settings through NetworkManager.",
+        "audio" => {
+            "Controls sound volume and devices. Stream mixers manage apps; ALSA mixers manage hardware."
+        }
+        "launcher" => {
+            "Searches for and starts apps from a keyboard menu, without opening a terminal first."
+        }
+        _ => "Select the applications used for this desktop role.",
+    }
+}
+
+fn wrap_choice_description(text: &str, width: u16) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if !line.is_empty()
+            && Line::from(line.as_str()).width() + 1 + Line::from(word).width() > width as usize
+        {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        for ch in word.chars() {
+            if !line.is_empty()
+                && Line::from(line.as_str()).width() + Line::from(ch.to_string()).width()
+                    > width as usize
+            {
+                lines.push(std::mem::take(&mut line));
+            }
+            line.push(ch);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+fn choice_popup_width(area: Rect) -> u16 {
+    area.width.saturating_sub(4).max(50).min(area.width)
+}
+
+fn choice_popup_layout(area: Rect, row_counts: [usize; 3], tallest_item: u16) -> (Rect, [Rect; 3]) {
+    let width = choice_popup_width(area);
+    let height = (row_counts.iter().sum::<usize>() + 2).min(area.height as usize) as u16;
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    let inner = Block::default().borders(Borders::ALL).inner(popup);
+    // On short screens, keep a complete highlighted item before allocating help rows.
+    let list_min = tallest_item.min(inner.height);
+    let spare = inner.height.saturating_sub(list_min) as usize;
+    let footer_height = row_counts[2].min(spare);
+    let intro_height = row_counts[0].min(spare.saturating_sub(footer_height));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(intro_height as u16),
+            Constraint::Min(list_min),
+            Constraint::Length(footer_height as u16),
+        ])
+        .split(inner);
+    (popup, [rows[0], rows[1], rows[2]])
+}
+
+fn draw_applications_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
+    let width = choice_popup_width(area).saturating_sub(2);
+    let role_name = selected_application_role(app).unwrap_or("browser");
+    let detail_lines = wrap_choice_description(application_type_description(role_name), width);
+    let detail_height = ROLE_ORDER
+        .iter()
+        .map(|role| wrap_choice_description(application_type_description(role), width).len())
+        .max()
+        .unwrap_or(0);
+    let (popup, rows) = choice_popup_layout(area, [1, ROLE_ORDER.len(), detail_height + 1], 1);
+    let block = Block::default()
+        .title("Applications")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+        .border_style(Style::default().fg(app.theme.mauve));
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    f.render_widget(
+        Paragraph::new("↑/↓: select group   Enter: open   Esc/q: back")
+            .style(Style::default().fg(app.theme.subtext0)),
+        rows[0],
+    );
+    let items: Vec<ListItem> = ROLE_ORDER
+        .iter()
+        .map(|role_name| {
+            let label = app
+                .package_registry
+                .as_ref()
+                .and_then(|registry| registry.roles.get(*role_name))
+                .map(|role| role.label.as_str())
+                .unwrap_or(role_name);
+            ListItem::new(format!(
+                "{label:<16} {}",
+                role_selection_summary(app, role_name)
+            ))
+        })
+        .collect();
+    let mut state = ListState::default();
+    state.select(Some(app.application_cursor));
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ "),
+        rows[1],
+        &mut state,
+    );
+    let mut details = vec![Line::from(format!(
+        "Group {}/{} | ↑/↓ scroll",
+        app.application_cursor + 1,
+        ROLE_ORDER.len()
+    ))];
+    details.extend(detail_lines.into_iter().map(Line::from));
+    f.render_widget(
+        Paragraph::new(details).style(Style::default().fg(app.theme.subtext0)),
+        rows[2],
+    );
+}
+
+fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
+    let Some(role_name) = selected_application_role(app) else {
+        return;
+    };
+    let Some(registry) = app.package_registry.as_ref() else {
+        return;
+    };
+    let role = &registry.roles[role_name];
+    let selected = app
+        .role_selection
+        .as_ref()
+        .and_then(|s| s.selected_packages(role_name));
+    let primary = app
+        .role_selection
+        .as_ref()
+        .and_then(|s| s.selected_package(role_name));
+    let inner_width = choice_popup_width(area).saturating_sub(2);
+    let intro = wrap_choice_description(application_type_description(role_name), inner_width);
+    let mut items = Vec::new();
+    let mut total_rows = 0;
+    let mut tallest_item = 1;
+    let mut add_choice = |name: String, description: &str| {
+        let mut lines = vec![Line::from(name)];
+        lines.extend(
+            wrap_choice_description(description, inner_width.saturating_sub(4))
+                .into_iter()
+                .map(|line| Line::from(format!("  {line}"))),
+        );
+        total_rows += lines.len();
+        tallest_item = tallest_item.max(lines.len() as u16);
+        items.push(ListItem::new(lines));
+    };
+    if !role.required {
+        let marker = if selected.is_some_and(BTreeSet::is_empty) {
+            "[*]"
+        } else {
+            "[ ]"
+        };
+        let description = if role_name == "gui_editor" {
+            "Skip GUI editors; editor shortcuts use the primary terminal editor. No editor is autostarted."
+        } else {
+            "Do not start a dock. The selected bar remains enabled."
+        };
+        add_choice(format!("{marker} None"), description);
+    }
+    for option in &role.options {
+        let marker = if primary == Some(option.package.as_str()) {
+            "[*]"
+        } else if selected.is_some_and(|members| members.contains(&option.package)) {
+            "[x]"
+        } else {
+            "[ ]"
+        };
+        let terminal = if option.terminal { " [TUI]" } else { "" };
+        let name = format!(
+            "{marker} {} [{}]{terminal}",
+            option.package,
+            option.source.as_str()
+        );
+        add_choice(
+            name,
+            app.pkg_descs
+                .get(&option.package)
+                .map(String::as_str)
+                .unwrap_or("No description available."),
+        );
+    }
+    let count = items.len();
+    let (popup, rows) = choice_popup_layout(area, [intro.len(), total_rows, 2], tallest_item);
+    let cardinality = match role.selection {
+        SelectionKind::Single => "single choice",
+        SelectionKind::Multiple => "multiple choices",
+    };
+    let optional = if role.required {
+        "required"
+    } else {
+        "optional"
+    };
+    let block = Block::default()
+        .title(format!("{} — {cardinality}, {optional}", role.label))
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+        .border_style(Style::default().fg(app.theme.mauve));
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    f.render_widget(
+        Paragraph::new(intro.into_iter().map(Line::from).collect::<Vec<_>>())
+            .style(Style::default().fg(app.theme.subtext0)),
+        rows[0],
+    );
+    let mut state = ListState::default();
+    state.select(Some(app.role_cursor.min(count.saturating_sub(1))));
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ "),
+        rows[1],
+        &mut state,
+    );
+    let keys = if role.selection == SelectionKind::Multiple {
+        "Space: toggle   p: primary   [*]: primary"
+    } else {
+        "Space: choose/clear   [*]: selected"
+    };
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(keys),
+            Line::from(format!(
+                "{}/{} | ↑/↓ scroll | Enter/Esc: back",
+                app.role_cursor + 1,
+                count
+            )),
+        ])
+        .style(Style::default().fg(app.theme.subtext0)),
+        rows[2],
+    );
+}
+
 fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1113,35 +1390,12 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
         sel(PreflightField::EnvFishLanguageChoiceOverride),
     ));
-    let role_fields = [
-        (PreflightField::RoleBrowser, "browser"),
-        (PreflightField::RoleShell, "shell"),
-        (PreflightField::RoleTerminal, "terminal"),
-        (PreflightField::RoleNotifications, "notifications"),
-        (PreflightField::RoleTuiEditor, "tui_editor"),
-        (PreflightField::RoleGuiEditor, "gui_editor"),
-        (PreflightField::RoleBar, "bar"),
-        (PreflightField::RoleDock, "dock"),
-        (PreflightField::RoleCalendar, "calendar"),
-        (PreflightField::RoleBluetooth, "bluetooth"),
-        (PreflightField::RoleNetwork, "network"),
-        (PreflightField::RoleAudio, "audio"),
-        (PreflightField::RoleLauncher, "launcher"),
-    ];
-    for (field, role_name) in role_fields {
-        let label = app
-            .package_registry
-            .as_ref()
-            .and_then(|registry| registry.roles.get(role_name))
-            .map(|role| role.label.as_str())
-            .unwrap_or(role_name);
-        rows.push(mk(
-            "Enter",
-            label,
-            role_selection_summary(app, role_name),
-            sel(field),
-        ));
-    }
+    rows.push(mk(
+        "Enter",
+        "Applications",
+        format!("{} groups", ROLE_ORDER.len()),
+        sel(PreflightField::Applications),
+    ));
     rows.push(mk(
         "Edit",
         "Wallpaper directory",
@@ -1543,112 +1797,16 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         );
         f.render_widget(bottom_help, rows[3]);
     }
+    if app.editing
+        && matches!(
+            app.edit_kind,
+            EditKind::SelectApplications | EditKind::SelectRole
+        )
+    {
+        draw_applications_menu(f, app, area);
+    }
     if app.editing && app.edit_kind == EditKind::SelectRole {
-        let Some(role_name) = preflight_role_name(app.preflight_focus) else {
-            return;
-        };
-        let Some(registry) = app.package_registry.as_ref() else {
-            return;
-        };
-        let role = &registry.roles[role_name];
-        let selected = app
-            .role_selection
-            .as_ref()
-            .and_then(|selection| selection.selected_packages(role_name));
-        let primary = app
-            .role_selection
-            .as_ref()
-            .and_then(|selection| selection.selected_package(role_name));
-        let popup_w = ((area.width as u32 * 3 / 4) as u16).max(50).min(area.width);
-        let popup_h = (role.options.len() as u16 + 6).max(10).min(area.height);
-        let popup_rect = Rect {
-            x: area.x + area.width.saturating_sub(popup_w) / 2,
-            y: area.y + area.height.saturating_sub(popup_h) / 2,
-            width: popup_w,
-            height: popup_h,
-        };
-        f.render_widget(Clear, popup_rect);
-        let cardinality = match role.selection {
-            SelectionKind::Single => "single choice",
-            SelectionKind::Multiple => "multiple choices",
-        };
-        let optional = if role.required {
-            "required"
-        } else {
-            "optional"
-        };
-        let block = Block::default()
-            .title(format!("{} — {cardinality}, {optional}", role.label))
-            .borders(Borders::ALL)
-            .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
-            .border_style(Style::default().fg(app.theme.mauve));
-        f.render_widget(block, popup_rect);
-        let inner = Rect {
-            x: popup_rect.x + 1,
-            y: popup_rect.y + 1,
-            width: popup_rect.width.saturating_sub(2),
-            height: popup_rect.height.saturating_sub(2),
-        };
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(2),
-                Constraint::Min(2),
-                Constraint::Length(1),
-            ])
-            .split(inner);
-        let help = match role.selection {
-            SelectionKind::Single => {
-                "Space: choose/clear   Enter: done   Esc: close   required choices may be empty only while editing"
-            }
-            SelectionKind::Multiple => {
-                "Space: membership   p: make primary   Enter: done   Esc: close"
-            }
-        };
-        f.render_widget(
-            Paragraph::new(help).style(Style::default().fg(app.theme.subtext0)),
-            rows[0],
-        );
-        let mut items: Vec<ListItem> = Vec::new();
-        if !role.required {
-            let marker = if selected.is_some_and(BTreeSet::is_empty) {
-                "[*]"
-            } else {
-                "[ ]"
-            };
-            items.push(ListItem::new(format!("{marker} None")));
-        }
-        items.extend(role.options.iter().map(|option| {
-            let is_selected = selected.is_some_and(|members| members.contains(&option.package));
-            let marker = if primary == Some(option.package.as_str()) {
-                "[*]"
-            } else if is_selected {
-                "[x]"
-            } else {
-                "[ ]"
-            };
-            let terminal = if option.terminal { " (terminal)" } else { "" };
-            ListItem::new(format!("{marker} {}{terminal}", option.package))
-        }));
-        let mut state = ListState::default();
-        state.select(Some(app.role_cursor.min(items.len().saturating_sub(1))));
-        let list = List::new(items)
-            .highlight_style(
-                Style::default()
-                    .fg(app.theme.blue)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("▶ ")
-            .block(Block::default().borders(Borders::ALL));
-        f.render_stateful_widget(list, rows[1], &mut state);
-        f.render_widget(
-            Paragraph::new(format!(
-                "Selected: {}",
-                role_selection_summary(app, role_name)
-            ))
-            .style(Style::default().fg(app.theme.subtext0)),
-            rows[2],
-        );
+        draw_role_menu(f, app, area);
     }
 
     // Package multiselect popups (categorized)
@@ -2491,23 +2649,8 @@ fn load_package_registry(setup_script: Option<&Path>) -> Result<PackagesRoot> {
     PackagesRoot::load(&root.join("packages.json"))
 }
 
-fn preflight_role_name(field: PreflightField) -> Option<&'static str> {
-    match field {
-        PreflightField::RoleBrowser => Some("browser"),
-        PreflightField::RoleShell => Some("shell"),
-        PreflightField::RoleTerminal => Some("terminal"),
-        PreflightField::RoleNotifications => Some("notifications"),
-        PreflightField::RoleTuiEditor => Some("tui_editor"),
-        PreflightField::RoleGuiEditor => Some("gui_editor"),
-        PreflightField::RoleBar => Some("bar"),
-        PreflightField::RoleDock => Some("dock"),
-        PreflightField::RoleCalendar => Some("calendar"),
-        PreflightField::RoleBluetooth => Some("bluetooth"),
-        PreflightField::RoleNetwork => Some("network"),
-        PreflightField::RoleAudio => Some("audio"),
-        PreflightField::RoleLauncher => Some("launcher"),
-        _ => None,
-    }
+fn selected_application_role(app: &AppState) -> Option<&'static str> {
+    ROLE_ORDER.get(app.application_cursor).copied()
 }
 
 fn sync_role_package_selection(app: &mut AppState) {
@@ -2824,8 +2967,36 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 _ => {}
             }
             return Ok(false);
+        } else if app.edit_kind == EditKind::SelectApplications {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
+                    app.application_cursor = (app.application_cursor + 1) % ROLE_ORDER.len();
+                }
+                KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
+                    app.application_cursor =
+                        (app.application_cursor + ROLE_ORDER.len() - 1) % ROLE_ORDER.len();
+                }
+                KeyCode::Home => app.application_cursor = 0,
+                KeyCode::End => app.application_cursor = ROLE_ORDER.len() - 1,
+                KeyCode::PageDown => {
+                    app.application_cursor = (app.application_cursor + 5).min(ROLE_ORDER.len() - 1)
+                }
+                KeyCode::PageUp => {
+                    app.application_cursor = app.application_cursor.saturating_sub(5)
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    app.edit_kind = EditKind::SelectRole;
+                    app.role_cursor = 0;
+                }
+                _ => {}
+            }
+            return Ok(false);
         } else if app.edit_kind == EditKind::SelectRole {
-            let Some(role_name) = preflight_role_name(app.preflight_focus) else {
+            let Some(role_name) = selected_application_role(app) else {
                 app.editing = false;
                 app.edit_kind = EditKind::None;
                 return Ok(false);
@@ -2840,8 +3011,7 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 .unwrap_or(0);
             match key.code {
                 KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                    app.editing = false;
-                    app.edit_kind = EditKind::None;
+                    app.edit_kind = EditKind::SelectApplications;
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
                     if option_count > 0 {
@@ -2857,6 +3027,12 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         };
                     }
                 }
+                KeyCode::Home => app.role_cursor = 0,
+                KeyCode::End => app.role_cursor = option_count.saturating_sub(1),
+                KeyCode::PageDown => {
+                    app.role_cursor = (app.role_cursor + 5).min(option_count.saturating_sub(1))
+                }
+                KeyCode::PageUp => app.role_cursor = app.role_cursor.saturating_sub(5),
                 KeyCode::Char(' ') | KeyCode::Char('p') => {
                     let choice = app.package_registry.as_ref().and_then(|registry| {
                         let role = &registry.roles[role_name];
@@ -3170,10 +3346,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.edit_kind = EditKind::ConfirmStartInstall;
                     return Ok(false);
                 }
-                field if preflight_role_name(field).is_some() => {
+                PreflightField::Applications => {
                     app.editing = true;
-                    app.edit_kind = EditKind::SelectRole;
-                    app.role_cursor = 0;
+                    app.edit_kind = EditKind::SelectApplications;
                 }
                 PreflightField::EnvWallpaperDirOverride => begin_editing(app),
                 PreflightField::EnvMonitorConfig => begin_editing(app),
@@ -3209,20 +3384,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::RoleBrowser,
-        PreflightField::RoleBrowser => PreflightField::RoleShell,
-        PreflightField::RoleShell => PreflightField::RoleTerminal,
-        PreflightField::RoleTerminal => PreflightField::RoleNotifications,
-        PreflightField::RoleNotifications => PreflightField::RoleTuiEditor,
-        PreflightField::RoleTuiEditor => PreflightField::RoleGuiEditor,
-        PreflightField::RoleGuiEditor => PreflightField::RoleBar,
-        PreflightField::RoleBar => PreflightField::RoleDock,
-        PreflightField::RoleDock => PreflightField::RoleCalendar,
-        PreflightField::RoleCalendar => PreflightField::RoleBluetooth,
-        PreflightField::RoleBluetooth => PreflightField::RoleNetwork,
-        PreflightField::RoleNetwork => PreflightField::RoleAudio,
-        PreflightField::RoleAudio => PreflightField::RoleLauncher,
-        PreflightField::RoleLauncher => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::Applications,
+        PreflightField::Applications => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
@@ -3240,20 +3403,8 @@ fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
         PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::RoleBrowser => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::RoleShell => PreflightField::RoleBrowser,
-        PreflightField::RoleTerminal => PreflightField::RoleShell,
-        PreflightField::RoleNotifications => PreflightField::RoleTerminal,
-        PreflightField::RoleTuiEditor => PreflightField::RoleNotifications,
-        PreflightField::RoleGuiEditor => PreflightField::RoleTuiEditor,
-        PreflightField::RoleBar => PreflightField::RoleGuiEditor,
-        PreflightField::RoleDock => PreflightField::RoleBar,
-        PreflightField::RoleCalendar => PreflightField::RoleDock,
-        PreflightField::RoleBluetooth => PreflightField::RoleCalendar,
-        PreflightField::RoleNetwork => PreflightField::RoleBluetooth,
-        PreflightField::RoleAudio => PreflightField::RoleNetwork,
-        PreflightField::RoleLauncher => PreflightField::RoleAudio,
-        PreflightField::EnvWallpaperDirOverride => PreflightField::RoleLauncher,
+        PreflightField::Applications => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::Applications,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
@@ -3278,7 +3429,6 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
             }
             app.preflight.fish_language_choice = v as u8;
         }
-        field if preflight_role_name(field).is_some() => {}
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
         }
@@ -4129,6 +4279,285 @@ mod tests {
         }
     }
 
+    fn open_application_role(app: &mut AppState, role: &str) {
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        if !app.editing {
+            app.preflight_focus = PreflightField::Applications;
+            handle_preflight_keys(app, key(KeyCode::Enter)).unwrap();
+        }
+        assert_eq!(app.edit_kind, EditKind::SelectApplications);
+        handle_preflight_keys(app, key(KeyCode::Home)).unwrap();
+        for _ in 0..ROLE_ORDER.iter().position(|name| *name == role).unwrap() {
+            handle_preflight_keys(app, key(KeyCode::Down)).unwrap();
+        }
+        handle_preflight_keys(app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.edit_kind, EditKind::SelectRole);
+    }
+
+    fn render_app_screen(app: &mut AppState, width: u16, height: u16) -> String {
+        let mut terminal =
+            Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| draw_ui(frame, app)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn preflight_shows_one_applications_entry_instead_of_individual_roles() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        let screen = render_app_screen(&mut app, 120, 24);
+        assert_eq!(screen.matches("Applications").count(), 1);
+        assert!(screen.contains("13 groups"));
+        assert!(screen.contains("Start unattended install"));
+        for label in [
+            "Browser",
+            "Notifications",
+            "TUI editor",
+            "GUI editor",
+            "Launcher",
+        ] {
+            assert!(!screen.contains(label));
+        }
+        assert!(!screen.contains("zen-browser-bin"));
+        assert!(!screen.contains("(primary)"));
+
+        app.preflight_focus = PreflightField::EnvFishLanguageChoiceOverride;
+        preflight_focus_next(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::Applications);
+        preflight_focus_next(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::EnvWallpaperDirOverride);
+        preflight_focus_prev(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::Applications);
+        preflight_focus_prev(&mut app);
+        assert_eq!(
+            app.preflight_focus,
+            PreflightField::EnvFishLanguageChoiceOverride
+        );
+    }
+
+    #[test]
+    fn applications_submenu_reaches_every_role_and_returns_one_level_at_a_time() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        app.preflight_focus = PreflightField::Applications;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        let screen = render_app_screen(&mut app, 120, 30);
+        assert!(screen.contains("Browser"));
+        assert!(screen.contains("Launcher"));
+        assert!(screen.contains("zen-browser-bin (primary)"));
+        let original = app.role_selection.clone();
+
+        for (index, role) in ROLE_ORDER.into_iter().enumerate() {
+            assert_eq!(selected_application_role(&app), Some(role));
+            handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+            assert_eq!(app.edit_kind, EditKind::SelectRole);
+            let label = app.package_registry.as_ref().unwrap().roles[role]
+                .label
+                .clone();
+            assert!(render_app_screen(&mut app, 120, 30).contains(&label));
+            let back = [KeyCode::Esc, KeyCode::Enter, KeyCode::Char('q')][index % 3];
+            handle_preflight_keys(&mut app, key(back)).unwrap();
+            assert!(app.editing);
+            assert_eq!(app.edit_kind, EditKind::SelectApplications);
+            assert_eq!(app.application_cursor, index);
+            handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        }
+        assert_eq!(app.application_cursor, 0);
+        assert_eq!(app.role_selection, original);
+        handle_preflight_keys(&mut app, key(KeyCode::Up)).unwrap();
+        assert_eq!(app.application_cursor, ROLE_ORDER.len() - 1);
+        for back in [KeyCode::Esc, KeyCode::Char('q')] {
+            handle_preflight_keys(&mut app, key(back)).unwrap();
+            assert!(!app.editing);
+            assert_eq!(app.edit_kind, EditKind::None);
+            assert_eq!(app.preflight_focus, PreflightField::Applications);
+            handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+            assert_eq!(app.application_cursor, ROLE_ORDER.len() - 1);
+        }
+    }
+
+    #[test]
+    fn applications_submenu_scrolls_selected_groups_into_small_viewports() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        app.preflight_focus = PreflightField::Applications;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        for role in ROLE_ORDER {
+            let label = app.package_registry.as_ref().unwrap().roles[role]
+                .label
+                .clone();
+            assert!(render_app_screen(&mut app, 60, 10).contains(&label));
+            handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        }
+        handle_preflight_keys(&mut app, key(KeyCode::End)).unwrap();
+        assert_eq!(selected_application_role(&app), Some("launcher"));
+        handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+        assert_eq!(selected_application_role(&app), Some("browser"));
+    }
+
+    fn render_choice_screen(app: &AppState, width: u16, height: u16, group_list: bool) -> String {
+        let mut terminal =
+            Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| {
+                if group_list {
+                    draw_applications_menu(frame, app, frame.area());
+                } else {
+                    draw_role_menu(frame, app, frame.area());
+                }
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| match cell.symbol() {
+                "│" | "─" | "┌" | "┐" | "└" | "┘" | "▶" => " ",
+                symbol => symbol,
+            })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn every_application_type_and_package_has_descriptive_help() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+            app.application_cursor = index;
+            let description = application_type_description(role_name);
+            assert!(description.len() > 40);
+            assert!(!description.starts_with("Select the applications"));
+            let screen = render_choice_screen(&app, 100, 24, true);
+            assert!(
+                screen.contains(description),
+                "type description hidden for {role_name}: {screen}"
+            );
+            for option in &app.package_registry.as_ref().unwrap().roles[role_name].options {
+                let description = &app.pkg_descs[&option.package];
+                assert!(
+                    description.len() >= 50 && description.len() <= 160,
+                    "{} needs a concise differentiating description",
+                    option.package
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_choices_and_descriptions_fit_when_terminal_height_permits() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        for width in [80, 120] {
+            for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+                app.application_cursor = index;
+                let role = &app.package_registry.as_ref().unwrap().roles[role_name];
+                let screen = render_choice_screen(&app, width, 24, false);
+                assert!(screen.contains(application_type_description(role_name)));
+                if !role.required {
+                    assert!(screen.contains("None"));
+                }
+                for option in &role.options {
+                    assert!(
+                        screen.contains(&option.package),
+                        "choice {} clipped at {width}x24",
+                        option.package
+                    );
+                    assert!(
+                        screen.contains(&app.pkg_descs[&option.package]),
+                        "description for {} clipped at {width}x24: {screen}",
+                        option.package
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn short_choosers_keep_every_focused_choice_description_visible() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.editing = true;
+        app.edit_kind = EditKind::SelectRole;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+            app.application_cursor = index;
+            let role = &app.package_registry.as_ref().unwrap().roles[role_name];
+            let optional = !role.required;
+            let packages: Vec<_> = role.options.iter().map(|o| o.package.clone()).collect();
+            app.role_cursor = usize::from(optional);
+            for package in &packages {
+                let screen = render_choice_screen(&app, 60, 10, false);
+                assert!(screen.contains(package));
+                assert!(
+                    screen.contains(&app.pkg_descs[package]),
+                    "focused description for {package} clipped: {screen}"
+                );
+                assert!(screen.contains("scroll"));
+                handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+            }
+            handle_preflight_keys(&mut app, key(KeyCode::End)).unwrap();
+            assert_eq!(app.role_cursor, packages.len() - 1 + usize::from(optional));
+            assert!(render_choice_screen(&app, 60, 10, false).contains(packages.last().unwrap()));
+            handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+            assert_eq!(app.role_cursor, 0);
+            if optional {
+                assert!(render_choice_screen(&app, 60, 10, false).contains("None"));
+            }
+        }
+    }
+
+    #[test]
+    fn choice_layout_stays_within_tiny_terminal_bounds() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let app = AppState::new(rx, tx, Some(script));
+        for (width, height) in [(0, 0), (1, 1), (20, 4), (40, 8)] {
+            let area = Rect::new(0, 0, width, height);
+            let (popup, rows) = choice_popup_layout(area, [3, 18, 2], 4);
+            assert!(popup.right() <= area.right() && popup.bottom() <= area.bottom());
+            assert!(
+                rows.iter()
+                    .all(|row| row.right() <= popup.right() && row.bottom() <= popup.bottom())
+            );
+            render_choice_screen(&app, width, height, false);
+            render_choice_screen(&app, width, height, true);
+        }
+    }
+
+    #[test]
+    fn choice_descriptions_wrap_long_words_without_losing_text() {
+        assert_eq!(
+            wrap_choice_description("abcdefghij next", 4),
+            ["abcd", "efgh", "ij", "next"]
+        );
+        assert!(wrap_choice_description("text", 0).is_empty());
+        assert_eq!(
+            wrap_choice_description("a  short   sentence", 40),
+            ["a short sentence"]
+        );
+    }
+
     #[test]
     fn role_popup_edits_membership_primary_and_single_choice_independently() {
         let (tx, rx) = mpsc::channel();
@@ -4136,8 +4565,7 @@ mod tests {
         let mut app = AppState::new(rx, tx, Some(script));
         let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
 
-        app.preflight_focus = PreflightField::RoleTerminal;
-        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "terminal");
         assert_eq!(app.edit_kind, EditKind::SelectRole);
         handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
         handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
@@ -4152,8 +4580,7 @@ mod tests {
         assert!(app.pacman_sel_map["kitty"]);
 
         handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
-        app.preflight_focus = PreflightField::RoleLauncher;
-        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "launcher");
         handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
         handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
         let selection = app.role_selection.as_ref().unwrap();
@@ -4172,8 +4599,7 @@ mod tests {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
         let mut app = AppState::new(rx, tx, Some(script));
         let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
-        app.preflight_focus = PreflightField::RoleDock;
-        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "dock");
 
         let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
         terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
@@ -4189,8 +4615,7 @@ mod tests {
         assert!(package_start_blocker(&app).is_none());
 
         handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
-        app.preflight_focus = PreflightField::RoleNotifications;
-        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "notifications");
         handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
         assert_eq!(
             package_start_blocker(&app).as_deref(),

@@ -4,7 +4,13 @@ The setup UI manages 13 independent application roles. Browser, shell, terminal,
 
 ## TUI controls
 
-Open a role with Enter. Use Up/Down to move and Space to select or clear an option. Single-choice groups replace the previous choice. In multi-choice groups, press `p` on a selected app to make it primary. Enter or Escape closes the chooser. Required groups may be temporarily empty while editing, but installation cannot start until all have a selection. Optional groups have a None entry.
+Open **Applications** with Enter from the main preflight window. The submenu lists all 13 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
+
+Each package shows a short description explaining its distinguishing features, its package source, and a TUI label when it runs in a terminal. The chooser grows to fit all entries and their wrapped descriptions when space permits, including optional None. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
+
+Use Space to select or clear an option. Single-choice groups replace the previous choice. In multi-choice groups, press `p` on a selected app to make it primary. Enter, Escape, or `q` returns to the group list; Escape or `q` from that list returns to the main window. Selections and the focused group are retained.
+
+Required groups may be temporarily empty while editing, but installation cannot start until all have a selection. Optional groups have a None entry.
 
 ## Installer environment
 

@@ -146,7 +146,7 @@ MOCK_CHECKUPDATES_OUTPUT=$'linux 6.12.1-1 -> 6.12.2-1\n'
 run_action check
 assert_status 0
 assert_contains 'linux 6.12.1-1 -> 6.12.2-1'
-assert_contains "The optional AUR helper 'yay' is not installed"
+assert_contains 'Neither paru nor yay is installed'
 pass 'check reports official updates and handles absent yay'
 
 reset_sandbox
@@ -183,6 +183,36 @@ assert_status 0
 assert_contains 'aur-package 1.0-1 -> 1.1-1'
 assert_command_log 'yay <-Qua>'
 pass 'check routes AUR queries through yay -Qua when yay exists'
+
+reset_sandbox
+mock_checkupdates
+mock_yay
+write_mock paru 'printf "paru" > "$MOCK_COMMAND_LOG"; for arg in "$@"; do printf " <%s>" "$arg" >> "$MOCK_COMMAND_LOG"; done; printf "\n" >> "$MOCK_COMMAND_LOG"'
+run_action check
+assert_status 0
+assert_command_log 'paru <-Qua>'
+pass 'check prefers paru consistently with the bundled updater'
+
+reset_sandbox
+mock_checkupdates
+mock_yay
+write_mock paru 'exit 9'
+run_action check
+assert_status 9
+assert_contains 'paru -Qua failed with exit status 9.'
+[[ ! -s "$COMMAND_LOG" ]] || fail 'failed paru query unexpectedly ran yay'
+pass 'check propagates paru failure without falling back to another helper'
+
+reset_sandbox
+mock_less
+default_log="$TMP_DIR/xdg-state/hyprland-simple-setup/system-update.log"
+mkdir -p "$(dirname -- "$default_log")"
+printf '[SESSION_START] default log\n' > "$default_log"
+PATH="$MOCK_BIN" HOME="$TEST_HOME" XDG_STATE_HOME="$TMP_DIR/xdg-state" \
+    WAYBAR_UPDATE_LOG_FILE="" MOCK_COMMAND_LOG="$COMMAND_LOG" \
+    /usr/bin/bash "$ACTION_SCRIPT" show-log
+assert_command_log "$(printf 'LESSSECURE=1\nargc=3\narg=+1g\narg=--\narg=%s' "$default_log")"
+pass 'show-log defaults to the bundled updater state path'
 
 reset_sandbox
 run_action firmware

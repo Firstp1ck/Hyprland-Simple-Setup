@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly ACTION="${1:-}"
-readonly DETAILED_LOG_FILE="${WAYBAR_UPDATE_LOG_FILE:-${HOME}/Linux-Setup-detailed.log}"
+readonly DETAILED_LOG_FILE="${WAYBAR_UPDATE_LOG_FILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/hyprland-simple-setup/system-update.log}"
 
 error() {
     printf 'Error: %s\n' "$*" >&2
@@ -28,7 +28,7 @@ pause_if_interactive() {
 
 run_check() {
     local output=""
-    local status=0
+    local status=0 helper=""
 
     require_command checkupdates || return $?
 
@@ -51,12 +51,16 @@ run_check() {
     fi
 
     printf '\nAUR updates:\n'
-    if ! command -v yay >/dev/null 2>&1; then
-        printf "The optional AUR helper 'yay' is not installed; skipping the AUR check.\n"
+    if command -v paru >/dev/null 2>&1; then
+        helper=paru
+    elif command -v yay >/dev/null 2>&1; then
+        helper=yay
+    else
+        printf 'Neither paru nor yay is installed; skipping the AUR check.\n'
         return 0
     fi
 
-    if output=$(yay -Qua 2>&1); then
+    if output=$("$helper" -Qua 2>&1); then
         if [[ -n "$output" ]]; then
             printf '%s\n' "$output"
         else
@@ -64,7 +68,7 @@ run_check() {
         fi
     else
         status=$?
-        error "yay -Qua failed with exit status ${status}."
+        error "${helper} -Qua failed with exit status ${status}."
         [[ -z "$output" ]] || printf '%s\n' "$output" >&2
         return "$status"
     fi

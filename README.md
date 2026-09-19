@@ -295,7 +295,7 @@ Choose applications independently in 13 groups:
 | Exactly one | App launcher, notifications, audio interface, network interface, calendar, bar |
 | Zero or one | Dock |
 
-Open a group with Enter. Use Space to change selections and `p` to choose the primary app in a multi-select group. GUI editor and dock offer None. Installation is blocked when a required group is empty.
+Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. GUI editor and dock offer None. Installation is blocked when a required group is empty.
 
 Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
 

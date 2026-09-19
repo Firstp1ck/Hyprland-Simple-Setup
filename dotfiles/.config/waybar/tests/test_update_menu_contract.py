@@ -65,14 +65,21 @@ def main() -> None:
         'ACTION_COMMAND=("$MAINTENANCE_SCRIPT" clean-cache)',
         'ACTION_COMMAND=("$MAINTENANCE_SCRIPT" show-log)',
         'readonly UNIT_NAME="${WAYBAR_UPDATE_UNIT:-waybar-system-update}"',
-        'readonly UPDATE_SCRIPT="${WAYBAR_UPDATE_SCRIPT:-}"',
+        'readonly UPDATE_SCRIPT="${WAYBAR_UPDATE_SCRIPT:-${HOME}/.config/waybar/scripts/system_update.sh}"',
         '"$TERMINAL_LAUNCHER"',
         '-- "${ACTION_COMMAND[@]}"',
-        'Set WAYBAR_UPDATE_SCRIPT to enable full system updates.',
+        '"--setenv=WAYBAR_UPDATE_LOG_FILE=$UPDATE_LOG_FILE"',
     ]
     for route in required_routes:
         assert route in launcher, route
     assert "eval " not in launcher
+    assert 'Set WAYBAR_UPDATE_SCRIPT to enable full system updates.' not in launcher
+    updater = WAYBAR_DIR / 'scripts/system_update.sh'
+    assert updater.is_file()
+    assert updater.stat().st_mode & 0o111
+    setup = (WAYBAR_DIR.parents[2] / 'setup.sh').read_text(encoding='utf-8')
+    for name in ['system_update.sh', 'launch_system_update.sh', 'update_maintenance_action.sh']:
+        assert f'".config/waybar/scripts/{name}"' in setup
 
     status_wrapper = (
         WAYBAR_DIR / "scripts/updates_status.sh"

@@ -6,7 +6,8 @@ set -euo pipefail
 readonly UNIT_NAME="${WAYBAR_UPDATE_UNIT:-waybar-system-update}"
 readonly UNIT="${UNIT_NAME%.service}.service"
 readonly TERMINAL_LAUNCHER="${WAYBAR_UPDATE_TERMINAL_LAUNCHER:-${HOME}/.config/hypr/scripts/term_exec.sh}"
-readonly UPDATE_SCRIPT="${WAYBAR_UPDATE_SCRIPT:-}"
+readonly UPDATE_SCRIPT="${WAYBAR_UPDATE_SCRIPT:-${HOME}/.config/waybar/scripts/system_update.sh}"
+readonly UPDATE_LOG_FILE="${WAYBAR_UPDATE_LOG_FILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/hyprland-simple-setup/system-update.log}"
 readonly MAINTENANCE_SCRIPT="${WAYBAR_UPDATE_MAINTENANCE_SCRIPT:-${HOME}/.config/waybar/scripts/update_maintenance_action.sh}"
 readonly WINDOW_CLASS="${WAYBAR_UPDATE_CLASS:-waybar-system-update}"
 readonly WINDOW_TITLE="${WAYBAR_UPDATE_TITLE:-System Update}"
@@ -64,6 +65,8 @@ find_window_address() {
                 | select(
                     (.class // "") == $class
                     or (.initialClass // "") == $class
+                    or ((.class // "") == "org.kde.konsole"
+                        and ((.title // "") == $class or ((.title // "") | startswith($class + " "))))
                 )
                 | .address
             ) // empty
@@ -96,18 +99,10 @@ declare -a ACTION_COMMAND
 ACTION_SCRIPT_KIND=""
 case "$UPDATE_MODE" in
     default)
-        if [[ -z "$UPDATE_SCRIPT" ]]; then
-            notify_message critical "Set WAYBAR_UPDATE_SCRIPT to enable full system updates."
-            exit 78
-        fi
         ACTION_SCRIPT_KIND="update"
         ACTION_COMMAND=("$UPDATE_SCRIPT" --function update_arch)
         ;;
     --without-aur)
-        if [[ -z "$UPDATE_SCRIPT" ]]; then
-            notify_message critical "Set WAYBAR_UPDATE_SCRIPT to enable full system updates."
-            exit 78
-        fi
         ACTION_SCRIPT_KIND="update"
         ACTION_COMMAND=("$UPDATE_SCRIPT" --function update_arch_without_aur)
         ;;
@@ -171,6 +166,7 @@ if ! systemd-run \
     --no-block \
     --unit="$UNIT_NAME" \
     --description="Waybar system update" \
+    "--setenv=WAYBAR_UPDATE_LOG_FILE=$UPDATE_LOG_FILE" \
     "$TERMINAL_LAUNCHER" \
     --app-id "$WINDOW_CLASS" \
     --title "$WINDOW_TITLE" \
