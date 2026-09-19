@@ -25,7 +25,7 @@ setup_role_fixture() {
   cp -a "$repo_root/dotfiles" "$HOME/dotfiles"
   rm -rf "$HOME/dotfiles/.config/hypr/sources"
   cp -a "$HOME/dotfiles/.config/hypr/sources_example" "$HOME/dotfiles/.config/hypr/sources"
-  for name in hypr fish waybar pypr kitty zellij; do
+  for name in hypr fish waybar pypr kitty zellij nwg-panel ironbar; do
     ln -s "$HOME/dotfiles/.config/$name" "$HOME/.config/$name"
   done
   printf '%s\n' /usr/bin/fish /bin/bash /usr/bin/zsh > "$HSS_ETC_SHELLS"
@@ -47,8 +47,9 @@ set_role_defaults() {
   export ROLE_NETWORK=plasma-nm
   export ROLE_AUDIO=pavucontrol-qt
   export ROLE_LAUNCHER=wofi
+  export ROLE_AGENT=
   local role list_env
-  for role in browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher; do
+  for role in browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent; do
     list_env="ROLE_${role^^}_PACKAGES"
     unset "$list_env"
   done
@@ -70,6 +71,7 @@ set_role_value() {
     network) export ROLE_NETWORK=$package ;;
     audio) export ROLE_AUDIO=$package ;;
     launcher) export ROLE_LAUNCHER=$package ;;
+    agent) export ROLE_AGENT=$package ;;
     *) return 1 ;;
   esac
 }

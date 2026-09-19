@@ -6,6 +6,11 @@
     "layer": "top",
     "height": 32,
     "controls": "off",
+    "controls-settings": {},
+    "menu-start": "off",
+    "hyprland-workspaces": {},
+    "clock": {},
+    "tray": {},
     "modules-left": ["hyprland-workspaces"],
     "modules-center": ["clock"],
     "modules-right": ["tray"]

@@ -108,18 +108,16 @@ mkdir -p "$bin"
 cat > "$bin/pgrep" <<'STUB'
 #!/usr/bin/env bash
 [[ $3 == -f ]]
-printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c bar' | grep -Eq -- "$4"
-! printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c dock' | grep -Eq -- "$4"
+printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c hss-panels' | grep -Eq -- "$4"
 STUB
 cat > "$bin/pkill" <<'STUB'
 #!/usr/bin/env bash
-[[ $3 == -f ]]
-printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c bar' | grep -Eq -- "$4"
-! printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c dock' | grep -Eq -- "$4"
+[[ $3 == --signal && $4 == RTMIN && $5 == -f ]]
+printf '%s\n' '/usr/bin/python /usr/bin/nwg-panel -c hss-panels' | grep -Eq -- "$6"
 printf 'bar-only\n' > "$KILL_LOG"
 STUB
 chmod +x "$bin/pgrep" "$bin/pkill"
 ROLE_BAR=nwg-panel ROLE_DOCK=nwg-panel "$repo_root/setup.sh" --test-scenario roles >/dev/null
 PATH="$bin:$PATH" KILL_LOG="$fixture/kill" "$HOME/.config/hypr/scripts/toggle_waybar.sh"
 [[ $(<"$fixture/kill") == bar-only ]]
-printf 'ok - nwg-panel bar toggle matches only the bar profile and excludes the dock\n'
+printf 'ok - nwg-panel bar toggle signals the shared process instead of terminating the dock\n'

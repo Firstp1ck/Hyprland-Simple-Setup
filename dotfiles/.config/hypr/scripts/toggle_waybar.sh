@@ -6,12 +6,14 @@ roles_file=${HSS_ROLES_FILE:-$HOME/.config/hypr/roles.json}
 process=$(jq -er '.roles.bar.executable' "$roles_file")
 
 match=(-x "$process")
+signal=()
 if [[ $(jq -r '.roles.bar.package' "$roles_file") == nwg-panel ]]; then
-  # The dock uses the same executable with a different named profile.
-  match=(-f '(^|/|[[:space:]])nwg-panel[[:space:]]+-c[[:space:]]+bar([[:space:]]|$)')
+  # One nwg-panel process owns both surfaces; its RT signal hides only the bar.
+  match=(-f '(^|/|[[:space:]])nwg-panel[[:space:]]+-c[[:space:]]+hss-panels([[:space:]]|$)')
+  signal=(--signal RTMIN)
 fi
-if pgrep -u "$USER" "${match[@]}" >/dev/null 2>&1; then
-  pkill -u "$USER" "${match[@]}"
+if pgrep -u "$UID" "${match[@]}" >/dev/null 2>&1; then
+  pkill -u "$UID" "${signal[@]}" "${match[@]}"
 else
   exec "$HOME/.config/hypr/scripts/role_exec.sh" bar
 fi

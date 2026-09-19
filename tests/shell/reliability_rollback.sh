@@ -27,6 +27,15 @@ HSS_RELIABILITY_ACTION=rollback HSS_ROLLBACK_RUN_ID="$created_run" "$repo_root/s
 [[ ! -e $created ]]
 printf 'ok - rollback deletes an unchanged setup-created file\n'
 
+triage_target="$HOME/dotfiles/.local/scripts/troubleshoot_with_agent.py"
+printf 'original triage\n' > "$triage_target"
+printf 'updated triage\n' > "$fixture/source"
+HSS_RELIABILITY_ACTION=atomic HSS_DEST="$triage_target" HSS_SOURCE="$fixture/source" "$repo_root/setup.sh" --test-scenario reliability
+triage_run=$(cat "$state/latest-run")
+HSS_RELIABILITY_ACTION=rollback HSS_ROLLBACK_RUN_ID="$triage_run" "$repo_root/setup.sh" --test-scenario reliability >/dev/null
+[[ $(cat "$triage_target") == 'original triage' ]]
+printf 'ok - rollback restores the exact approved triage helper source\n'
+
 # A later user edit fails closed without confirmation.
 printf 'setup2\n' > "$fixture/source"
 HSS_RELIABILITY_ACTION=atomic HSS_DEST="$target" HSS_SOURCE="$fixture/source" "$repo_root/setup.sh" --test-scenario reliability

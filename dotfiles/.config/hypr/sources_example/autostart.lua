@@ -2,7 +2,7 @@ local apps = require("sources.app_variables")
 
 hl.on("hyprland.start", function()
     hl.exec_cmd("systemctl --user start hyprpolkitagent")
-    hl.exec_cmd([[hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set]])
+    hl.exec_cmd("hyprctl keyword input:kb_numlock true && " .. apps.hyprscripts .. "/startup_state.sh mark numlock")
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1")
 
     -- Start hyprpaper through Hyprland, then apply the wallpaper after its IPC initializes.

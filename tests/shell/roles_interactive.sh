@@ -8,7 +8,7 @@ fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 setup_role_fixture "$fixture"
 
-input=$'1 2\n2\n\n4 5\n1\n2\n\n0\n3\n2\n4\n1 3\n2\n\n5\n3\n'
+input=$'1 2\n2\n\n4 5\n1\n2\n\n0\n3\n2\n4\n3\n\n5\n3\n0\n'
 output=$(printf '%s' "$input" | NON_INTERACTIVE=false "$repo_root/setup.sh" --test-scenario roles)
 grep -Fq 'Select Browser:' <<<"$output"
 grep -Fq 'Choose the primary Browser:' <<<"$output"
@@ -26,10 +26,12 @@ jq -e '
   and .roles.dock.package == "nwg-panel"
   and .roles.calendar.package == "calcurse"
   and .roles.bluetooth.package == "bluetui"
-  and ([.selected.bluetooth[].package] == ["blueman", "bluetui"])
+  and ([.selected.bluetooth[].package] == ["bluetui"])
   and .roles.network.package == "plasma-nm"
   and .roles.audio.package == "ncpamixer"
   and .roles.launcher.package == "fuzzel"
+  and .roles.agent == null and .selected.agent == []
+  and .agent_executables == {}
 ' "$roles_file" >/dev/null
 printf 'ok - interactive setup supports single, multiple, optional None, and primary choices\n'
 

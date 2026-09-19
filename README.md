@@ -286,18 +286,22 @@ cd ~/Hyprland-Simple-Setup
 
 ### Application roles
 
-Choose applications independently in 13 groups:
+Choose applications independently in 14 groups:
 
 | Selection | Groups |
 | --- | --- |
-| One or more | Browser, shell, terminal, terminal text editor, Bluetooth interface |
-| Zero or more | GUI text editor |
-| Exactly one | App launcher, notifications, audio interface, network interface, calendar, bar |
+| One or more | Browser, shell, terminal, terminal text editor |
+| Zero or more | GUI text editor, coding agents |
+| Exactly one | App launcher, notifications, audio interface, network interface, Bluetooth interface, calendar, bar |
 | Zero or one | Dock |
 
 Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. GUI editor and dock offer None. Installation is blocked when a required group is empty.
 
 Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
+
+Coding agents are optional, with Pi selected by default. Available choices are Pi, OpenCode, Claude Code, Codex CLI and Cursor CLI. Setup uses their official installers for missing selections; authentication remains manual. See [Coding agents](Documents/agents.md) for installation and rollback limits.
+
+Startup failures can offer a **Troubleshoot with your primary agent** notification action. No agent starts until you click it. Triage uses tmux, Zellij or an available Herdr session before falling back to the selected terminal. See [Startup checks and triage](Documents/startup-triage.md) for diagnostic privacy and behavior.
 
 See [Application selections](Documents/app-selections.md) for direct-installer environment variables, compatibility, and runtime details.
 

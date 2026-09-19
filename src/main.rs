@@ -1377,6 +1377,9 @@ fn application_type_description(role: &str) -> &'static str {
         "launcher" => {
             "Searches for and starts apps from a keyboard menu, without opening a terminal first."
         }
+        "agent" => {
+            "Installs optional terminal coding agents from approved official scripts. Choose one primary for troubleshooting integration."
+        }
         _ => "Select the applications used for this desktop role.",
     }
 }
@@ -1563,10 +1566,14 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
         } else {
             "[ ]"
         };
-        let description = if role_name == "gui_editor" {
-            "Skip GUI editors; editor shortcuts use the primary terminal editor. No editor is autostarted."
-        } else {
-            "Do not start a dock. The selected bar remains enabled."
+        let description = match role_name {
+            "gui_editor" => {
+                "Skip GUI editors; editor shortcuts use the primary terminal editor. No editor is autostarted."
+            }
+            "agent" => {
+                "Do not install or integrate a coding agent. Existing agent installations are not removed."
+            }
+            _ => "Do not start a dock. The selected bar remains enabled.",
         };
         add_choice(format!("{marker} None"), description);
     }
@@ -3019,6 +3026,9 @@ fn sync_role_package_selection(app: &mut AppState) {
             let selected = match source {
                 PackageSource::Pacman => &selected_pacman,
                 PackageSource::Aur => &selected_aur,
+                PackageSource::Official => {
+                    unreachable!("official packages are not generic selections")
+                }
             };
             registry
                 .role_controlled_packages(source)
@@ -3034,6 +3044,7 @@ fn sync_role_package_selection(app: &mut AppState) {
             PackageSource::Aur => {
                 app.aur_sel_map.insert(package, selected);
             }
+            PackageSource::Official => unreachable!("official packages are not generic selections"),
         }
     }
 }
@@ -3053,6 +3064,7 @@ fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: 
     let required = match source {
         PackageSource::Pacman => app.required_pacman.contains(package),
         PackageSource::Aur => app.required_aur.contains(package),
+        PackageSource::Official => return,
     };
     if required {
         return;
@@ -3065,6 +3077,7 @@ fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: 
         PackageSource::Aur => {
             toggle_with_required(&app.required_aur, &mut app.aur_sel_map, package)
         }
+        PackageSource::Official => return,
     }
     force_required_selected(app);
 }
@@ -3077,6 +3090,7 @@ fn set_all_package_selections(app: &mut AppState, source: PackageSource, selecte
         PackageSource::Aur => {
             set_all_with_required(&app.required_aur, &mut app.aur_sel_map, selected)
         }
+        PackageSource::Official => return,
     }
     sync_role_package_selection(app);
     force_required_selected(app);
@@ -3086,6 +3100,7 @@ fn visible_package_rows(app: &AppState, source: PackageSource) -> Vec<Option<Str
     let (categories, filter) = match source {
         PackageSource::Pacman => (&app.pacman_cats, &app.pacman_filter_working),
         PackageSource::Aur => (&app.aur_cats, &app.aur_filter_working),
+        PackageSource::Official => return Vec::new(),
     };
     let mut rows = Vec::new();
     for (category, packages) in categories {
@@ -4664,7 +4679,7 @@ mod tests {
         app.ui_mode = UiMode::Preflight;
         let screen = render_app_screen(&mut app, 120, 24);
         assert_eq!(screen.matches("Applications").count(), 1);
-        assert!(screen.contains("13 groups"));
+        assert!(screen.contains("14 groups"));
         assert!(screen.contains("Start unattended install"));
         for label in [
             "Browser",
@@ -4753,7 +4768,7 @@ mod tests {
             handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
         }
         handle_preflight_keys(&mut app, key(KeyCode::End)).unwrap();
-        assert_eq!(selected_application_role(&app), Some("launcher"));
+        assert_eq!(selected_application_role(&app), Some("agent"));
         handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
         assert_eq!(selected_application_role(&app), Some("browser"));
     }
@@ -5301,6 +5316,7 @@ mod tests {
                 "Install pacman packages",
                 "Install AUR extras",
                 "Verifying selected packages",
+                "Install selected coding agents",
                 "Update configs",
                 "Configuring selected application roles",
                 "Configuring selected shell",

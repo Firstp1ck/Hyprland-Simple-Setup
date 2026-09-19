@@ -335,6 +335,18 @@ RUN_ONCE_LOG="$run_once_log" RUN_ONCE_READY="$run_once_ready" \
 XDG_RUNTIME_DIR="$run_once_dir/runtime" HYPRLAND_INSTANCE_SIGNATURE=test-instance \
   "$repo_root/dotfiles/.config/hypr/scripts/run_once.sh" kitty-layout "$run_once_dir/hold.sh" &
 run_once_pid=$!
+startup_state="$repo_root/dotfiles/.config/hypr/scripts/startup_state.sh"
+startup_signature='test-session-a'
+state_dir=$(HYPRLAND_INSTANCE_SIGNATURE="$startup_signature" "$startup_state" init)
+HYPRLAND_INSTANCE_SIGNATURE="$startup_signature" "$startup_state" mark numlock
+HYPRLAND_INSTANCE_SIGNATURE="$startup_signature" "$startup_state" has numlock
+[[ -f $state_dir/numlock.ready && ! -L $state_dir/numlock.ready ]]
+[[ $(stat -c '%a' "$state_dir") == 700 ]]
+[[ $(stat -c '%a' "$state_dir/numlock.ready") == 600 ]]
+other_state=$(HYPRLAND_INSTANCE_SIGNATURE='test-session-b' "$startup_state" init)
+[[ $other_state != "$state_dir" && ! -e $other_state/numlock.ready ]]
+printf 'ok - startup markers are private and scoped to the current Hyprland session\n'
+
 for _ in {1..50}; do
   [[ -e $run_once_ready ]] && break
   sleep 0.02

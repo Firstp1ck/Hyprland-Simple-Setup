@@ -53,6 +53,36 @@ HSS_RELIABILITY_ACTION=atomic HSS_DEST="$created" HSS_SOURCE="$fixture/new-sourc
 [[ $(stat -c %u "$created") == $(id -u) ]]
 printf 'ok - new user files default to invoking-user ownership and mode 0644\n'
 
+triage_target="$HOME/dotfiles/.local/scripts/troubleshoot_with_agent.py"
+printf 'triage update\n' > "$fixture/triage-source"
+HSS_RELIABILITY_ACTION=atomic HSS_DEST="$triage_target" HSS_SOURCE="$fixture/triage-source" "$repo_root/setup.sh" --test-scenario reliability
+[[ $(cat "$triage_target") == 'triage update' ]]
+triage_created="$HOME/dotfiles/.local/scripts/troubleshoot_with_agent.sh"
+rm -f -- "$triage_created"
+HSS_RELIABILITY_ACTION=atomic HSS_DEST="$triage_created" HSS_SOURCE="$fixture/triage-source" "$repo_root/setup.sh" --test-scenario reliability
+[[ -f $triage_created ]]
+for refused in "$HOME/dotfiles/.local/scripts/sibling.sh" "$HOME/dotfiles/.local/other/troubleshoot_with_agent.py"; do
+  mkdir -p -- "$(dirname -- "$refused")"
+  set +e
+  refusal=$(HSS_RELIABILITY_ACTION=atomic HSS_DEST="$refused" HSS_SOURCE="$fixture/triage-source" "$repo_root/setup.sh" --test-scenario reliability 2>&1)
+  refusal_status=$?
+  set -e
+  [[ $refusal_status -ne 0 && ! -e $refused ]]
+  grep -Fq 'outside approved roots' <<< "$refusal"
+done
+outside_triage="$fixture/outside-triage"
+printf 'outside\n' > "$outside_triage"
+rm -f -- "$triage_created"
+ln -s "$outside_triage" "$triage_created"
+set +e
+triage_escape=$(HSS_RELIABILITY_ACTION=atomic HSS_DEST="$triage_created" HSS_SOURCE="$fixture/triage-source" "$repo_root/setup.sh" --test-scenario reliability 2>&1)
+triage_escape_status=$?
+set -e
+[[ $triage_escape_status -ne 0 && $(cat "$outside_triage") == outside ]]
+grep -Fq 'outside approved roots' <<< "$triage_escape"
+rm -f -- "$triage_created"
+printf 'ok - only exact triage helper sources allow create/update; siblings and escaping symlinks are refused\n'
+
 export HSS_TEST_ETC_ROOT="$fixture/etc"
 mkdir -p "$HSS_TEST_ETC_ROOT"
 printf '[options]\n' > "$HSS_TEST_ETC_ROOT/pacman.conf"

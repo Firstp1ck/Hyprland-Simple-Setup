@@ -190,8 +190,21 @@ fi
 
 CURRENT_WALL="$WALLPAPER"
 
-# Create timestamp file for autostart checks
-touch "${WALLPAPER_CHANGE_STAMP:-/tmp/wallpaper-change-ran}"
+# Publish readiness only after every wallpaper request succeeded. Tests may use
+# an explicit stamp without requiring a live Hyprland session.
+if [ -n "${WALLPAPER_CHANGE_STAMP:-}" ]; then
+  touch "$WALLPAPER_CHANGE_STAMP"
+fi
+if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+  STARTUP_STATE_HELPER="${HSS_STARTUP_STATE_HELPER:-$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/startup_state.sh}"
+  if [ ! -x "$STARTUP_STATE_HELPER" ] || ! "$STARTUP_STATE_HELPER" mark wallpaper; then
+    echo "Error: Could not publish current-session wallpaper readiness." >&2
+    exit 1
+  fi
+elif [ -z "${WALLPAPER_CHANGE_STAMP:-}" ]; then
+  echo "Error: Cannot publish wallpaper readiness outside a Hyprland session." >&2
+  exit 1
+fi
 
 echo "Current wallpaper: $CURRENT_WALL"
 echo "New wallpaper: $WALLPAPER"

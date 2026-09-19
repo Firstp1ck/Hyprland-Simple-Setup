@@ -51,6 +51,7 @@ for root in sources sources_example; do
   sed -i 's|^    -- hl.exec_cmd("kitty -e zellij|    hl.exec_cmd("kitty -e zellij|' "$autostart"
   sed -i '/hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "\/change_wallpaper.sh")/d' "$autostart"
   sed -i 's|^    hl.exec_cmd("hyprpaper")$|    hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")|' "$autostart"
+  sed -i 's|^    hl.exec_cmd("hyprctl keyword input:kb_numlock true.*$|    hl.exec_cmd([[hyprctl keyword input:kb_numlock true \&\& date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set]])|' "$autostart"
 done
 HSS_RELIABILITY_ACTION=autostart-extras \
   "$repo_root/setup.sh" --test-scenario reliability >/dev/null 2>&1
@@ -59,6 +60,7 @@ for root in sources sources_example; do
   [[ $(grep -Fxc '    hl.exec_cmd("hyprpaper")' "$autostart") -eq 1 ]]
   [[ $(grep -Fxc '    hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/change_wallpaper.sh")' "$autostart") -eq 1 ]]
   [[ $(grep -Fxc '    hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")' "$autostart") -eq 0 ]]
+  [[ $(grep -Fxc '    hl.exec_cmd("hyprctl keyword input:kb_numlock true && " .. apps.hyprscripts .. "/startup_state.sh mark numlock")' "$autostart") -eq 1 ]]
   [[ $(grep -Fxc '    hl.exec_cmd(apps.hyprscripts .. "/run_once.sh kitty-layout kitty --session ~/.config/kitty/my_layout.conf", { workspace = "3 silent" })' "$autostart") -eq 1 ]]
   [[ $(grep -Fxc '    hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })' "$autostart") -eq 0 ]]
 done

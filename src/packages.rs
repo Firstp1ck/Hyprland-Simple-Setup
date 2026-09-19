@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-pub const ROLE_ORDER: [&str; 13] = [
+pub const ROLE_ORDER: [&str; 14] = [
     "browser",
     "shell",
     "terminal",
@@ -19,6 +19,7 @@ pub const ROLE_ORDER: [&str; 13] = [
     "network",
     "audio",
     "launcher",
+    "agent",
 ];
 
 const REQUIRED_ROLE_PACKAGE_EXCEPTIONS: [&str; 1] = ["networkmanager"];
@@ -28,6 +29,7 @@ const REQUIRED_ROLE_PACKAGE_EXCEPTIONS: [&str; 1] = ["networkmanager"];
 pub enum PackageSource {
     Pacman,
     Aur,
+    Official,
 }
 
 impl PackageSource {
@@ -35,6 +37,7 @@ impl PackageSource {
         match self {
             Self::Pacman => "pacman",
             Self::Aur => "aur",
+            Self::Official => "official",
         }
     }
 }
@@ -53,6 +56,14 @@ pub struct RequiredPackages {
     pub aur: Vec<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct OfficialInstaller {
+    pub url: String,
+    pub shell: String,
+    pub args: Vec<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleOption {
@@ -62,6 +73,10 @@ pub struct RoleOption {
     pub args: Vec<String>,
     #[serde(default)]
     pub terminal: bool,
+    #[serde(default)]
+    pub installer: Option<OfficialInstaller>,
+    #[serde(default)]
+    pub binary_paths: Vec<String>,
     #[serde(default)]
     pub class: Option<String>,
     #[serde(default)]
@@ -97,6 +112,7 @@ pub struct RoleDefinition {
 pub struct PackagesRoot {
     pub hyprland_packages: BTreeMap<String, Vec<String>>,
     pub aur_packages: BTreeMap<String, Vec<String>>,
+    pub official_packages: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub package_descriptions: BTreeMap<String, String>,
     pub required: RequiredPackages,
@@ -133,6 +149,11 @@ impl PackagesRoot {
         self.collect_registry_packages(
             &self.aur_packages,
             PackageSource::Aur,
+            &mut registry_sources,
+        )?;
+        self.collect_registry_packages(
+            &self.official_packages,
+            PackageSource::Official,
             &mut registry_sources,
         )?;
 
@@ -181,12 +202,17 @@ impl PackagesRoot {
                     .insert(role_name);
                 for extra in &option.extra_packages {
                     validate_package_name(extra)?;
+                    let expected_source = if option.source == PackageSource::Official {
+                        PackageSource::Pacman
+                    } else {
+                        option.source
+                    };
                     match registry_sources.get(extra.as_str()) {
-                        Some(source) if *source == option.source => {}
+                        Some(source) if *source == expected_source => {}
                         Some(source) => bail!(
-                            "extra package {extra} for {} is marked {} but registered as {}",
+                            "extra package {extra} for {} must be registered as {}, not {}",
                             option.package,
-                            option.source.as_str(),
+                            expected_source.as_str(),
                             source.as_str()
                         ),
                         None => bail!(
@@ -275,6 +301,7 @@ impl PackagesRoot {
         let categories = match source {
             PackageSource::Pacman => &self.hyprland_packages,
             PackageSource::Aur => &self.aur_packages,
+            PackageSource::Official => &self.official_packages,
         };
         let controlled = self.role_controlled_packages(source);
         categories
@@ -295,6 +322,7 @@ impl PackagesRoot {
         match source {
             PackageSource::Pacman => self.required.pacman.iter().cloned().collect(),
             PackageSource::Aur => self.required.aur.iter().cloned().collect(),
+            PackageSource::Official => BTreeSet::new(),
         }
     }
 
@@ -302,10 +330,22 @@ impl PackagesRoot {
         self.roles
             .values()
             .flat_map(|role| &role.options)
-            .filter(|option| option.source == source)
             .flat_map(|option| {
-                std::iter::once(option.package.as_str())
-                    .chain(option.extra_packages.iter().map(String::as_str))
+                let package = (option.source == source).then_some(option.package.as_str());
+                let extras_source = if option.source == PackageSource::Official {
+                    PackageSource::Pacman
+                } else {
+                    option.source
+                };
+                package
+                    .into_iter()
+                    .chain(
+                        (extras_source == source)
+                            .then_some(option.extra_packages.iter().map(String::as_str))
+                            .into_iter()
+                            .flatten(),
+                    )
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -493,12 +533,20 @@ impl RoleSelection {
                 registry.roles[role_name]
                     .options
                     .iter()
-                    .filter(move |option| {
-                        option.source == source && members.contains(&option.package)
-                    })
-                    .flat_map(|option| {
-                        std::iter::once(option.package.clone())
-                            .chain(option.extra_packages.iter().cloned())
+                    .filter(move |option| members.contains(&option.package))
+                    .flat_map(move |option| {
+                        let package = (option.source == source).then_some(option.package.clone());
+                        let extras_source = if option.source == PackageSource::Official {
+                            PackageSource::Pacman
+                        } else {
+                            option.source
+                        };
+                        package.into_iter().chain(
+                            (extras_source == source)
+                                .then_some(option.extra_packages.iter().cloned())
+                                .into_iter()
+                                .flatten(),
+                        )
                     })
             })
             .collect()
@@ -544,6 +592,16 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
     validate_package_name(&option.package)?;
     validate_executable(&option.executable, "executable")?;
     validate_args(&option.args)?;
+
+    if role_name == "agent" {
+        return validate_agent_option(option);
+    }
+    if option.source == PackageSource::Official
+        || option.installer.is_some()
+        || !option.binary_paths.is_empty()
+    {
+        bail!("official installer fields are only valid for agent options");
+    }
 
     match role_name {
         "browser" | "terminal" => {
@@ -599,6 +657,123 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
         _ => bail!("unknown role {role_name}"),
     }
     Ok(())
+}
+
+fn validate_agent_option(option: &RoleOption) -> Result<()> {
+    if option.source != PackageSource::Official {
+        bail!("agent {} must use the official source", option.package);
+    }
+    reject_fields(
+        option,
+        &["class", "shell_path", "editor_bin", "desktop_file", "dmenu"],
+    )?;
+    if option.terminal {
+        bail!("agent {} cannot set terminal metadata", option.package);
+    }
+    let installer = option
+        .installer
+        .as_ref()
+        .with_context(|| format!("agent {} is missing installer metadata", option.package))?;
+    validate_args(&installer.args)?;
+    for path in &option.binary_paths {
+        if !path.starts_with("{HOME}/") {
+            bail!(
+                "agent {} binary path must start with {{HOME}}/",
+                option.package
+            );
+        }
+        validate_executable(path.trim_start_matches("{HOME}"), "binary path")?;
+    }
+    if option.binary_paths.is_empty() {
+        bail!("agent {} must register a binary path", option.package);
+    }
+
+    let expected = expected_agent_contract(&option.package)
+        .with_context(|| format!("unknown official agent {}", option.package))?;
+    if option.executable != expected.0
+        || installer.url != expected.1
+        || installer.shell != expected.2
+        || installer
+            .args
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected.3
+        || option
+            .binary_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected.4
+        || option
+            .extra_packages
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected.5
+    {
+        bail!(
+            "agent {} does not match the approved installer contract",
+            option.package
+        );
+    }
+    Ok(())
+}
+
+#[allow(clippy::type_complexity)]
+fn expected_agent_contract(
+    package: &str,
+) -> Option<(
+    &'static str,
+    &'static str,
+    &'static str,
+    Vec<&'static str>,
+    Vec<&'static str>,
+    Vec<&'static str>,
+)> {
+    match package {
+        "pi" => Some((
+            "pi",
+            "https://pi.dev/install.sh",
+            "sh",
+            vec![],
+            vec!["{HOME}/.local/bin/pi"],
+            vec!["curl", "nodejs", "npm"],
+        )),
+        "opencode" => Some((
+            "opencode",
+            "https://opencode.ai/install",
+            "bash",
+            vec!["--no-modify-path"],
+            vec!["{HOME}/.opencode/bin/opencode"],
+            vec!["curl", "tar", "gzip"],
+        )),
+        "claude-code" => Some((
+            "claude",
+            "https://claude.ai/install.sh",
+            "bash",
+            vec![],
+            vec!["{HOME}/.local/bin/claude"],
+            vec!["curl"],
+        )),
+        "codex-cli" => Some((
+            "codex",
+            "https://chatgpt.com/codex/install.sh",
+            "sh",
+            vec![],
+            vec!["{HOME}/.local/bin/codex"],
+            vec!["curl", "tar", "gzip"],
+        )),
+        "cursor-cli" => Some((
+            "cursor-agent",
+            "https://cursor.com/install",
+            "bash",
+            vec![],
+            vec!["{HOME}/.local/bin/cursor-agent"],
+            vec!["curl", "tar", "gzip"],
+        )),
+        _ => None,
+    }
 }
 
 fn reject_fields(option: &RoleOption, fields: &[&str]) -> Result<()> {
@@ -700,7 +875,7 @@ mod tests {
                 .into_iter()
                 .filter(|role| registry.roles[*role].selection == SelectionKind::Single)
                 .count(),
-            7
+            8
         );
         assert_eq!(
             ROLE_ORDER
@@ -722,7 +897,7 @@ mod tests {
                 .values()
                 .map(|role| role.options.len())
                 .sum::<usize>(),
-            54
+            59
         );
     }
 
@@ -763,6 +938,42 @@ mod tests {
     }
 
     #[test]
+    fn bluetooth_selection_replaces_the_previous_interface() {
+        let registry = shipped_registry();
+        let mut selection = RoleSelection::defaults(&registry);
+        assert_eq!(registry.roles["bluetooth"].selection, SelectionKind::Single);
+        selection
+            .toggle_member(&registry, "bluetooth", "blueman")
+            .unwrap();
+        assert_eq!(
+            selection.selected_packages("bluetooth").unwrap(),
+            &BTreeSet::from(["blueman".to_string()])
+        );
+        selection
+            .toggle_member(&registry, "bluetooth", "bluetuith")
+            .unwrap();
+        assert_eq!(
+            selection.selected_packages("bluetooth").unwrap(),
+            &BTreeSet::from(["bluetuith".to_string()])
+        );
+        let env = selection.export_env(&registry).unwrap();
+        assert_eq!(env["ROLE_BLUETOOTH"], "bluetuith");
+        assert_eq!(env["ROLE_BLUETOOTH_PACKAGES"], "bluetuith");
+        let pacman = selection.selected_install_packages(&registry, PackageSource::Pacman);
+        assert!(!pacman.contains("blueman") && !pacman.contains("bluedevil"));
+        selection
+            .toggle_member(&registry, "bluetooth", "bluetuith")
+            .unwrap();
+        assert!(
+            selection
+                .export_env(&registry)
+                .unwrap_err()
+                .to_string()
+                .contains("Bluetooth")
+        );
+    }
+
+    #[test]
     fn optional_roles_export_explicit_empty_values() {
         let registry = shipped_registry();
         let selection = RoleSelection::defaults(&registry);
@@ -770,6 +981,8 @@ mod tests {
         assert_eq!(env["ROLE_DOCK"], "");
         assert_eq!(env["ROLE_DOCK_PACKAGES"], "");
         assert_eq!(env["ROLE_GUI_EDITOR"], "visual-studio-code-bin");
+        assert_eq!(env["ROLE_AGENT"], "pi");
+        assert_eq!(env["ROLE_AGENT_PACKAGES"], "pi");
         assert_eq!(env.len(), ROLE_ORDER.len() * 2);
     }
 
@@ -790,6 +1003,9 @@ mod tests {
         assert!(selected.contains("nwg-panel"));
         assert!(selected.contains("vivaldi"));
         assert!(selected.contains("vivaldi-ffmpeg-codecs"));
+        assert!(selected.contains("nodejs"));
+        assert!(selected.contains("npm"));
+        assert!(!selected.contains("pi"));
         assert!(!selected.contains("plasma-systemmonitor"));
         assert!(!selected.contains("zenity"));
         assert_eq!(selected.iter().filter(|p| *p == "nwg-panel").count(), 1);
@@ -925,6 +1141,40 @@ mod tests {
         assert_eq!(zed.executable, "zeditor");
         assert_eq!(zed.editor_bin.as_deref(), Some("zeditor"));
         assert_eq!(zed.desktop_file.as_deref(), Some("dev.zed.Zed.desktop"));
+    }
+
+    #[test]
+    fn official_agent_contract_rejects_metadata_changes() {
+        let mut registry = shipped_registry();
+        let pi = registry
+            .roles
+            .get_mut("agent")
+            .unwrap()
+            .options
+            .first_mut()
+            .unwrap();
+        pi.installer.as_mut().unwrap().url = "https://example.invalid/install".to_string();
+        assert!(
+            registry
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("approved installer contract")
+        );
+
+        let mut registry = shipped_registry();
+        registry.roles.get_mut("browser").unwrap().options[0].installer = Some(OfficialInstaller {
+            url: "https://pi.dev/install.sh".to_string(),
+            shell: "sh".to_string(),
+            args: Vec::new(),
+        });
+        assert!(
+            registry
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("only valid for agent options")
+        );
     }
 
     #[test]

@@ -1,10 +1,10 @@
 # Application selections
 
-The setup UI manages 13 independent application roles. Browser, shell, terminal, TUI editor, GUI editor, and Bluetooth may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. Notifications, bar, calendar, network, audio, launcher, and dock are single-choice roles. GUI editor and dock may be set to **None**.
+The setup UI manages 14 independent application roles. Browser, shell, terminal, TUI editor, GUI editor, and coding agents may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. Notifications, bar, calendar, Bluetooth, network, audio, launcher, and dock are single-choice roles. GUI editor, dock, and coding agents may be set to **None**.
 
 ## TUI controls
 
-Open **Applications** with Enter from the main preflight window. The submenu lists all 13 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
+Open **Applications** with Enter from the main preflight window. The submenu lists all 14 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
 
 The package chooser has two columns: app names on the left and wrapped descriptions on the right. The app-type explanation is in its own titled frame above the choices, separated by a blank row. Names retain selection markers, package sources and TUI labels. Row heights accommodate wrapping in either column, including optional None. The chooser grows to fit all entries when space permits; very short windows prioritize the focused row over the description panel. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
 
@@ -26,6 +26,8 @@ ROLE_BROWSER=firefox \
 ROLE_BROWSER_PACKAGES='firefox chromium' \
 ROLE_DOCK= \
 ROLE_DOCK_PACKAGES= \
+ROLE_AGENT= \
+ROLE_AGENT_PACKAGES= \
 ./setup.sh
 ```
 
@@ -37,19 +39,29 @@ The installer writes `~/.config/hypr/roles.json` with schema version 2:
 
 - `.roles.<name>` contains the primary option metadata, or `null` for a disabled optional role.
 - `.selected.<name>` contains metadata for every selected member.
+- `.agent_executables` maps selected agent IDs to verified absolute executable paths found after the installer stage.
 - command arguments remain JSON arrays and are passed as separate argv fields.
 
 Scripts use `role_exec.sh` to launch the primary application. Terminal applications are wrapped by the selected terminal. If the GUI editor is disabled, explicit editor actions open the TUI editor in that terminal; it is not autostarted.
 
 ## Desktop controls
 
-Hyprland and Waybar actions use the selected calendar, audio, Bluetooth, network, launcher, notification provider, bar, and optional dock. Selecting `nwg-panel` for both bar and dock uses separate `bar` and `dock` configurations. The notification selection also writes a user D-Bus service override for `org.freedesktop.Notifications`.
+Hyprland and Waybar actions use the selected calendar, audio, Bluetooth, network, launcher, notification provider, bar, and optional dock. Selecting `nwg-panel` for both bar and dock combines the `bar` and `dock` profiles into one generated `hss-panels` configuration and one process; nwg-panel replaces other running instances. The notification selection also writes a user D-Bus service override for `org.freedesktop.Notifications`.
 
 Konsole uses fixed `hss-*` tab titles and separate processes for role windows, since it has no application-ID flag. The installer configures title matching for its scratchpads; other terminals retain class-based matching. GUI calendar and audio buttons use native application classes with the existing focus/float helper.
 
-When Waybar is selected, its role action updates preserve JSONC comments, unrelated settings, and trailing-comma syntax. Selecting another bar leaves the Waybar configuration unchanged. Toggling an nwg-panel bar targets its `bar` profile without stopping its `dock` profile.
+When Waybar is selected, its role action updates preserve JSONC comments, unrelated settings, and trailing-comma syntax. Selecting another bar leaves the Waybar configuration unchanged. Toggling an nwg-panel bar sends its configured real-time signal to hide or show only the bar, without stopping the shared dock.
 
-Changing a selection and rerunning setup rewrites the generated metadata and role-managed lines atomically. It does not uninstall previously installed alternatives. NetworkManager, BlueZ, and BlueZ utilities remain installed as required backends regardless of UI choice.
+Changing a selection and rerunning setup rewrites the generated metadata and role-managed lines atomically. It does not uninstall previously installed alternatives. Coding-agent choices use the fixed official installer contract described in [Coding agents](agents.md); None disables agent integration without uninstalling an existing CLI. NetworkManager, BlueZ, and BlueZ utilities remain installed as required backends regardless of UI choice.
+
+## Startup errors
+
+All launcher entry points use `menu_exec.sh`; Bemenu explicitly installs and selects its Wayland renderer. Launcher and panel stderr is appended under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/apps/`:
+
+- `launcher.log` for Wofi, Rofi, Fuzzel, Bemenu or tofi.
+- `bar.log` and `dock.log` for the selected panel startup paths.
+
+These logs help distinguish missing dependencies, invalid settings and compositor errors. The launcher itself opens on demand; it is not a persistent autostart process. Rerunning setup refreshes the repo-owned helpers and panel profiles in existing dotfiles.
 
 ## Limitations
 

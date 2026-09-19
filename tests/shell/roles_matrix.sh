@@ -298,7 +298,8 @@ assert_common_consumers() {
   assert_contains 'roles.json' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather uses role metadata'
   assert_contains '.roles.browser.executable' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather resolves selected browser'
 
-  jq -e '.schema_version == 2 and (.roles | length == 13) and (.selected | length == 13)' "$roles_file" >/dev/null
+  jq -e '.schema_version == 2 and (.roles | length == 14) and (.selected | length == 14)
+    and (.agent_executables | type == "object")' "$roles_file" >/dev/null
 }
 
 assert_role_consumers() {
@@ -346,14 +347,19 @@ assert_role_consumers() {
       fi
       ;;
     launcher)
-      command_json=$(jq -r '[.roles.launcher.executable] + .roles.launcher.args | @sh | @json' "$roles_file")
+      command_json=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable] | @sh | @json')
       dmenu=$(jq -r '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$roles_file")
       process=$(jq -er '.roles.launcher.process' "$roles_file")
       namespace=$(jq -er '.roles.launcher.namespace' "$roles_file")
       assert_line "    menu = $command_json," "$app_variables" 'Lua launcher command'
-      assert_contains "pkill $process || " "$hypr_root/keybindings.lua" 'Lua launcher process'
+      assert_contains 'menu_exec.sh' "$hypr_root/keybindings.lua" 'Lua launcher toggle wrapper'
+      assert_contains '--toggle' "$hypr_root/keybindings.lua" 'Lua launcher toggle mode'
       assert_contains "namespace = \"$namespace\"" "$hypr_root/windows_and_workspaces.lua" 'Lua launcher namespace'
       assert_line "set -gx MENU_DMENU \"$HOME/.config/hypr/scripts/menu_exec.sh --dmenu\"" "$fish_env" 'Fish dmenu wrapper'
+      ;;
+    agent)
+      assert_contains 'hss-role:agent-path' "$hypr_root/environment_variables.lua" 'Hyprland agent PATH'
+      assert_contains 'hss-role:agent-path' "$fish_env" 'Fish agent PATH'
       ;;
     notifications|bar|dock|calendar|bluetooth|network|audio)
       :
@@ -397,5 +403,5 @@ while IFS=$'\t' read -r role package; do
   fixture=""
 done < <(jq -r '.roles | to_entries[] | .key as $role | .value.options[] | [$role, .package] | @tsv' "$repo_root/packages.json")
 
-[[ $count -eq 54 ]] || fail "expected 54 role cases, got $count"
-printf 'ok - 54 role options passed metadata and behavioral assertions\n'
+[[ $count -eq 59 ]] || fail "expected 59 role cases, got $count"
+printf 'ok - 59 role options passed metadata and behavioral assertions\n'

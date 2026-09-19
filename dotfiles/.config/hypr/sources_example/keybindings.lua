@@ -16,7 +16,7 @@ local function bind(keys, description, dispatcher, flags)
     hl.bind(keys, dispatcher, flags)
 end
 
-bind(main_mod .. " + SPACE", "Open Menu", hl.dsp.exec_cmd("pkill wofi || " .. apps.menu))
+bind(main_mod .. " + SPACE", "Open Menu", hl.dsp.exec_cmd(apps.menu .. " --toggle"))
 bind(control .. " + Y", "Open Preferred Terminal", hl.dsp.exec_cmd(apps.hyprscripts .. "/term_exec.sh -- " .. apps.multiplex))
 bind(main_mod .. " + E", "Open Preferred File Manager", hl.dsp.exec_cmd(apps.file_manager))
 bind(main_mod .. " + F", "Open Preferred Browser", hl.dsp.exec_cmd(apps.browser))

@@ -68,6 +68,10 @@ expect_rejected "duplicate package 'firefox'" \
   ROLE_BROWSER=firefox ROLE_BROWSER_PACKAGES='firefox firefox'
 expect_rejected 'ROLE_NOTIFICATIONS_PACKAGES accepts at most one package' \
   ROLE_NOTIFICATIONS=swaync ROLE_NOTIFICATIONS_PACKAGES='swaync mako'
+expect_rejected 'ROLE_BLUETOOTH_PACKAGES accepts at most one package' \
+  ROLE_BLUETOOTH=blueman ROLE_BLUETOOTH_PACKAGES='blueman bluetui'
+expect_rejected 'ROLE_BLUETOOTH is required and cannot be empty' \
+  ROLE_BLUETOOTH= ROLE_BLUETOOTH_PACKAGES=
 expect_rejected 'ROLE_BROWSER is required and cannot be empty' \
   ROLE_BROWSER= ROLE_BROWSER_PACKAGES=
 expect_rejected "invalid package token 'firefox;'" \

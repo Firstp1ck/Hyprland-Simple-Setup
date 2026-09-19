@@ -9,6 +9,13 @@ role=${1:-}
 }
 shift
 [[ ${1:-} != -- ]] || shift
+if [[ $role == launcher ]]; then
+  exec "$HOME/.config/hypr/scripts/menu_exec.sh" "$@"
+fi
+if [[ $role == bar || $role == dock ]]; then
+  source "$(dirname -- "${BASH_SOURCE[0]}")/app_log.sh"
+  hss_start_app_log "$role"
+fi
 [[ -r $roles_file ]] || { printf 'Missing role data: %s\n' "$roles_file" >&2; exit 1; }
 
 option=$(jq -ce --arg role "$role" '.roles[$role]' "$roles_file") || {
@@ -22,6 +29,10 @@ option=$(jq -ce --arg role "$role" '.roles[$role]' "$roles_file") || {
     exit 1
   fi
 }
+
+if [[ $(jq -r '.package' <<<"$option") == nwg-panel && ( $role == bar || $role == dock ) ]]; then
+  exec "$HOME/.config/hypr/scripts/nwg_panel.sh" "$role" "$@"
+fi
 
 executable=$(jq -er '.executable' <<<"$option")
 mapfile -t args < <(jq -r '.args[]?' <<<"$option")

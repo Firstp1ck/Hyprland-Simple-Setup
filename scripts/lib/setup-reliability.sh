@@ -195,13 +195,16 @@ hss_start_sudo_keepalive() {
 
 hss_path_is_approved() {
     local path=$1 home_root home_config home_dotfiles notification_runtime notification_source
+    local triage_python_source triage_shell_source
     home_root=$(readlink -f -- "$HOME") || return 1
     home_config=$(readlink -m -- "$HOME/.config")
     home_dotfiles=$(readlink -m -- "$HOME/dotfiles/.config")
     notification_runtime="$home_root/.local/share/dbus-1/services/org.freedesktop.Notifications.service"
     notification_source="$home_root/dotfiles/.local/share/dbus-1/services/org.freedesktop.Notifications.service"
+    triage_python_source="$home_root/dotfiles/.local/scripts/troubleshoot_with_agent.py"
+    triage_shell_source="$home_root/dotfiles/.local/scripts/troubleshoot_with_agent.sh"
     case "$path" in
-        "$home_config"/*|"$home_dotfiles"/*|"$notification_runtime"|"$notification_source") return 0 ;;
+        "$home_config"/*|"$home_dotfiles"/*|"$notification_runtime"|"$notification_source"|"$triage_python_source"|"$triage_shell_source") return 0 ;;
     esac
     case "$path" in
         /etc/pam.d/login|/etc/pam.d/system-local-login|/etc/pacman.conf|/etc/systemd/system/grub-btrfsd.service.d/override.conf|/etc/sddm.conf.d/sddm.conf) return 0 ;;

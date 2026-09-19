@@ -49,6 +49,7 @@
       "rofi",
       "fuzzel",
       "bemenu",
+      "bemenu-wayland",
       "wpa_supplicant",
       "xdg-utils",
       "foot",
@@ -179,7 +180,11 @@
       "jq",
       "curl",
       "less",
-      "lm_sensors"
+      "lm_sensors",
+      "nodejs",
+      "npm",
+      "tar",
+      "gzip"
     ],
     "gui_tools": [
       "zed",
@@ -372,6 +377,7 @@
     "rofi": "Extensible launcher with scripts, themes and multiple menu modes; more configurable than a simple app list.",
     "fuzzel": "Wayland desktop-app launcher with icons and fuzzy matching; a focused alternative to Rofi's many modes.",
     "bemenu": "Text-based dmenu-style chooser; bemenu-run launches executable commands rather than desktop entries.",
+    "bemenu-wayland": "Wayland renderer required for graphical bemenu menus in Hyprland.",
     "zed": "GPU-rendered code editor with collaboration features; a native alternative to Electron-based editors.",
     "merkuro": "KDE calendar with a touch-friendly interface and Akonadi-backed local and online calendars.",
     "visual-studio-code-bin": "Microsoft's VS Code build with a large extension marketplace and integrated debugging tools.",
@@ -403,7 +409,16 @@
     "bluetui": "Keyboard-driven terminal Bluetooth manager focused on pairing and connecting devices.",
     "bluetuith": "Terminal Bluetooth manager with mouse support and OBEX file transfers, beyond basic pairing.",
     "ncpamixer": "Terminal mixer for PulseAudio-compatible devices and app streams; unlike ALSAmixer, supports per-app control.",
-    "tofi": "Minimal text-only Wayland launcher; this setup uses desktop entries through tofi-drun."
+    "tofi": "Minimal text-only Wayland launcher; this setup uses desktop entries through tofi-drun.",
+    "nodejs": "JavaScript runtime required by the Pi coding agent installer.",
+    "npm": "Node.js package manager required by the Pi coding agent installer.",
+    "tar": "Archive extraction tool required by several official coding-agent installers.",
+    "gzip": "Gzip decompressor required by official coding-agent installers that download tar.gz archives.",
+    "pi": "Extensible terminal coding agent with tool support; its installer requires Node.js 22.19 or newer and npm.",
+    "opencode": "Terminal coding agent with multiple provider integrations and a local client/server architecture.",
+    "claude-code": "Anthropic terminal coding agent for repository exploration, editing and development workflows.",
+    "codex-cli": "OpenAI terminal coding agent with interactive workflows and configurable sandbox modes.",
+    "cursor-cli": "Cursor terminal coding agent for codebase questions and changes; account authentication is completed manually."
   },
   "required": {
     "pacman": [
@@ -785,7 +800,7 @@
     },
     "bluetooth": {
       "label": "Bluetooth",
-      "selection": "multiple",
+      "selection": "single",
       "required": true,
       "default": "bluedevil",
       "options": [
@@ -953,24 +968,141 @@
         {
           "package": "bemenu",
           "source": "pacman",
+          "extra_packages": [
+            "bemenu-wayland"
+          ],
           "executable": "bemenu-run",
           "args": [],
           "dmenu_executable": "bemenu",
           "dmenu_args": [],
-          "process": "bemenu",
+          "process": "bemenu-run",
           "namespace": "bemenu"
         },
         {
           "package": "tofi",
           "source": "aur",
           "executable": "tofi-drun",
-          "args": ["--drun-launch=true"],
+          "args": [
+            "--drun-launch=true"
+          ],
           "dmenu_executable": "tofi",
           "dmenu_args": [],
           "process": "tofi-drun",
           "namespace": "tofi"
         }
       ]
+    },
+    "agent": {
+      "label": "Coding agents",
+      "selection": "multiple",
+      "required": false,
+      "default": "pi",
+      "options": [
+        {
+          "package": "pi",
+          "source": "official",
+          "executable": "pi",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "nodejs",
+            "npm"
+          ],
+          "installer": {
+            "url": "https://pi.dev/install.sh",
+            "shell": "sh",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/pi"
+          ]
+        },
+        {
+          "package": "opencode",
+          "source": "official",
+          "executable": "opencode",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://opencode.ai/install",
+            "shell": "bash",
+            "args": [
+              "--no-modify-path"
+            ]
+          },
+          "binary_paths": [
+            "{HOME}/.opencode/bin/opencode"
+          ]
+        },
+        {
+          "package": "claude-code",
+          "source": "official",
+          "executable": "claude",
+          "args": [],
+          "extra_packages": [
+            "curl"
+          ],
+          "installer": {
+            "url": "https://claude.ai/install.sh",
+            "shell": "bash",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/claude"
+          ]
+        },
+        {
+          "package": "codex-cli",
+          "source": "official",
+          "executable": "codex",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://chatgpt.com/codex/install.sh",
+            "shell": "sh",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/codex"
+          ]
+        },
+        {
+          "package": "cursor-cli",
+          "source": "official",
+          "executable": "cursor-agent",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://cursor.com/install",
+            "shell": "bash",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/cursor-agent"
+          ]
+        }
+      ]
     }
+  },
+  "official_packages": {
+    "coding_agents": [
+      "pi",
+      "opencode",
+      "claude-code",
+      "codex-cli",
+      "cursor-cli"
+    ]
   }
 }

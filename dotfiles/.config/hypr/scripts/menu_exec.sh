@@ -8,12 +8,22 @@ case "${1:-}" in
   --toggle) mode=toggle; shift ;;
 esac
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/app_log.sh"
+hss_start_app_log launcher
 [[ -r "$roles_file" ]] || { printf 'Missing role data: %s\n' "$roles_file" >&2; exit 1; }
+if [[ $(jq -er '.roles.launcher.package' "$roles_file") == bemenu ]]; then
+  export BEMENU_BACKEND=wayland
+fi
 process=$(jq -er '.roles.launcher.process' "$roles_file")
 
-if [[ "$mode" == toggle ]] && pgrep -x "$process" >/dev/null 2>&1; then
-  pkill -x "$process"
-  exit 0
+if [[ "$mode" == toggle ]]; then
+  if pkill -u "$UID" -x -- "$process"; then
+    exit 0
+  else
+    status=$?
+  fi
+  # No matching process means open the menu; other errors must remain visible.
+  ((status == 1)) || exit "$status"
 fi
 
 if [[ "$mode" == dmenu ]]; then

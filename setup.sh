@@ -29,6 +29,8 @@ LOG_FILE=""
 SETUP_SCRIPT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/lib/setup-reliability.sh
 source "$SETUP_SCRIPT_ROOT/scripts/lib/setup-reliability.sh"
+# shellcheck source=scripts/lib/agent-installers.sh
+source "$SETUP_SCRIPT_ROOT/scripts/lib/agent-installers.sh"
 
 # Arrays to store update statuses
 mirror_updates=()
@@ -58,7 +60,7 @@ ROLE_DATA_FILE=""
 ROLE_SELECTIONS_LOADED=false
 PACKAGE_SELECTIONS_PREPARED=false
 SELECTED_PACKAGES_VERIFIED=false
-ROLE_NAMES=(browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher)
+ROLE_NAMES=(browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent)
 declare -a SELECTED_PACMAN_LIST=()
 declare -a SELECTED_AUR_LIST=()
 declare -a SELECTED_ALL_PACKAGES=()
@@ -331,6 +333,10 @@ remove_role_managed_packages() {
 prepare_package_selections() {
     [ "$PACKAGE_SELECTIONS_PREPARED" = true ] && return 0
     load_role_selections || return 1
+    validate_official_agent_registry || {
+        print_error "Official coding-agent registry does not match the approved installer allowlist"
+        return 1
+    }
 
     local pacman_present=false aur_present=false package role option source list_env selected_packages
     [[ -v SELECTED_PACMAN_PACKAGES ]] && pacman_present=true
@@ -367,13 +373,23 @@ prepare_package_selections() {
         for package in $selected_packages; do
             option=$(jq -ce --arg role "$role" --arg package "$package" '.roles[$role].options[] | select(.package == $package)' "$PACKAGE_REGISTRY") || return 1
             source=$(jq -er '.source' <<<"$option") || return 1
-            if [ "$source" = pacman ]; then
-                append_unique SELECTED_PACMAN_LIST "$package"
-                while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
-            else
-                append_unique SELECTED_AUR_LIST "$package"
-                while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
-            fi
+            case "$source" in
+                pacman)
+                    append_unique SELECTED_PACMAN_LIST "$package"
+                    while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+                    ;;
+                aur)
+                    append_unique SELECTED_AUR_LIST "$package"
+                    while IFS= read -r package; do append_unique SELECTED_AUR_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+                    ;;
+                official)
+                    while IFS= read -r package; do append_unique SELECTED_PACMAN_LIST "$package"; done < <(jq -r '.extra_packages[]?' <<<"$option")
+                    ;;
+                *)
+                    print_error "Unsupported package source '$source' for role $role"
+                    return 1
+                    ;;
+            esac
         done
     done
 
@@ -1630,11 +1646,16 @@ sync_installer_managed_runtime_files() {
     local relative source destination
     local managed_files=(
         ".config/hypr/scripts/change_wallpaper.sh"
+        ".config/hypr/scripts/fix-dolphin.sh"
         ".config/hypr/scripts/Startup_check.sh"
+        ".config/hypr/scripts/startup_state.sh"
         ".config/hypr/scripts/run_once.sh"
         ".config/hypr/scripts/float_calendar.sh"
         ".config/hypr/scripts/notification_control.sh"
         ".config/hypr/scripts/role_exec.sh"
+        ".config/hypr/scripts/menu_exec.sh"
+        ".config/hypr/scripts/app_log.sh"
+        ".config/hypr/scripts/nwg_panel.sh"
         ".config/hypr/scripts/role_window.sh"
         ".config/waybar/scripts/clipboard.sh"
         ".config/hypr/scripts/term_exec.sh"
@@ -1652,6 +1673,8 @@ sync_installer_managed_runtime_files() {
         ".config/ironbar/config.toml"
         ".config/nwg-panel/bar"
         ".config/nwg-panel/dock"
+        ".local/scripts/troubleshoot_with_agent.py"
+        ".local/scripts/troubleshoot_with_agent.sh"
         ".local/share/dbus-1/services/org.freedesktop.Notifications.service"
     )
 
@@ -1883,6 +1906,31 @@ replace_literal_assignment() {
     ' "$file" > "$tmp" && role_write_file "$file" "$tmp" "$reason"
 }
 
+replace_exact_trimmed_line() {
+    local file=$1 original=$2 replacement=$3 reason=$4 tmp status=0
+    [ -f "$file" ] || return 0
+    if is_dry_run; then
+        write_file_atomic "$file" /dev/null "$reason"
+        return 0
+    fi
+    make_tmp tmp role-edit.XXXXXX || return 1
+    HSS_ORIGINAL=$original HSS_REPLACEMENT=$replacement awk '
+        {
+            comparison = $0
+            sub(/^[[:space:]]+/, "", comparison)
+            sub(/[[:space:]]+$/, "", comparison)
+            if (comparison == ENVIRON["HSS_ORIGINAL"]) {
+                print ENVIRON["HSS_REPLACEMENT"]
+                matched = 1
+            } else print
+        }
+        END { if (!matched) exit 3 }
+    ' "$file" > "$tmp" || status=$?
+    case "$status" in 0) ;; 3) return 0 ;; *) return "$status" ;; esac
+    cmp -s -- "$file" "$tmp" && return 0
+    role_write_file "$file" "$tmp" "$reason"
+}
+
 replace_literal_prefix() {
     local file=$1 prefix=$2 replacement=$3 reason=$4 tmp
     [ -f "$file" ] || return 0
@@ -1976,13 +2024,14 @@ replace_toml_section_key() {
 
 generate_roles_json() {
     load_role_selections || return 1
-    local generated source_file runtime_file source_tmp runtime_tmp
+    local generated source_file runtime_file source_tmp runtime_tmp agent_executables
     source_file="$HOME/dotfiles/.config/hypr/roles.json"
     runtime_file="$HOME/.config/hypr/roles.json"
-    generated=$(jq -ce --arg home "$HOME" '
+    agent_executables=${AGENT_EXECUTABLES_JSON:-\{\}}
+    generated=$(jq -ce --arg home "$HOME" --argjson agent_executables "$agent_executables" '
         . as $registry
         | reduce (.roles | keys_unsorted[]) as $role (
-            {schema_version: 2, roles: {}, selected: {}};
+            {schema_version: 2, roles: {}, selected: {}, agent_executables: $agent_executables};
             ("ROLE_" + ($role | ascii_upcase)) as $primary_name
             | ($primary_name + "_PACKAGES") as $packages_name
             | (env[$primary_name] // "") as $primary
@@ -2042,18 +2091,18 @@ configure_roles() {
     announce_step "Configuring selected application roles"
     generate_roles_json || return 1
 
-    local terminal_command browser_command launcher_command editor_command calendar_command
-    local browser_exec browser_class terminal_exec editor_bin launcher_process launcher_namespace
+    local terminal_command browser_command launcher_command menu_toggle_command editor_command calendar_command
+    local browser_exec browser_class terminal_exec editor_bin launcher_namespace
     terminal_command=$(role_option_json terminal | role_command_json) || return 1
     browser_command=$(role_option_json browser | role_command_json) || return 1
-    launcher_command=$(role_option_json launcher | role_command_json) || return 1
+    launcher_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable] | @sh | @json') || return 1
+    menu_toggle_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable, "--toggle"] | @sh | @json') || return 1
     editor_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" --arg role gui_editor '[$executable, $role] | @sh | @json') || return 1
     calendar_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" --arg role calendar '[$executable, $role] | @sh | @json') || return 1
     browser_exec=$(role_field browser executable) || return 1
     browser_class=$(role_field browser class) || return 1
     terminal_exec=$(role_field terminal executable) || return 1
     editor_bin=$(role_field tui_editor editor_bin) || return 1
-    launcher_process=$(role_field launcher process) || return 1
     launcher_namespace=$(role_field launcher namespace) || return 1
 
     local root file browser_exec_lua gui_autostart dock_autostart audio_class
@@ -2096,9 +2145,21 @@ configure_roles() {
 
         file="$root/environment_variables.lua"
         replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment" || return 1
+        if [ -n "$ROLE_AGENT_PACKAGES" ]; then
+            replace_config_line "$file" 'hss-role:agent-path$' 'hl.env("PATH", os.getenv("HOME") .. "/.local/bin:" .. os.getenv("HOME") .. "/.opencode/bin:" .. (os.getenv("PATH") or "")) -- hss-role:agent-path' "selected agent executable paths" || return 1
+        else
+            remove_config_matching "$file" 'hss-role:agent-path$' "disabled agent executable paths" || return 1
+        fi
+
+        file="$root/environment_variables.conf"
+        if [ -n "$ROLE_AGENT_PACKAGES" ]; then
+            replace_config_line "$file" 'hss-role:agent-path$' 'env = PATH,$HOME/.local/bin:$HOME/.opencode/bin:$PATH # hss-role:agent-path' "selected agent executable paths for Hyprlang" || return 1
+        else
+            remove_config_matching "$file" 'hss-role:agent-path$' "disabled agent executable paths for Hyprlang" || return 1
+        fi
 
         file="$root/keybindings.lua"
-        replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd(\"pkill $launcher_process || \" .. apps.menu))" "selected launcher process" || return 1
+        replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd($menu_toggle_command))" "selected launcher toggle wrapper" || return 1
         replace_literal_prefix "$file" 'bind(main_mod .. " + " .. less,' 'bind(main_mod .. " + " .. less, "Notification action", hl.dsp.exec_cmd(apps.hyprscripts .. "/notification_control.sh toggle"))' "selected notification control" || return 1
         replace_literal_prefix "$file" 'bind(main_mod .. " + H",' 'bind(main_mod .. " + H", "Toggle Selected Bar", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_waybar.sh"))' "selected bar toggle" || return 1
 
@@ -2129,6 +2190,11 @@ configure_roles() {
         replace_config_line "$file" '^set -x BROWSER |^set -gx BROWSER ' "set -gx BROWSER $browser_exec" "selected browser" || return 1
         replace_config_line "$file" '^set -gx MANPAGER ' "set -gx MANPAGER '$editor_bin'" "selected TUI editor pager" || return 1
         replace_config_line "$file" '^set -gx MENU_DMENU ' "set -gx MENU_DMENU \"$HOME/.config/hypr/scripts/menu_exec.sh --dmenu\"" "selected launcher dmenu wrapper" || return 1
+        if [ -n "$ROLE_AGENT_PACKAGES" ]; then
+            replace_config_line "$file" 'hss-role:agent-path$' 'fish_add_path --prepend $HOME/.local/bin $HOME/.opencode/bin # hss-role:agent-path' "selected agent executable paths" || return 1
+        else
+            remove_config_matching "$file" 'hss-role:agent-path$' "disabled agent executable paths" || return 1
+        fi
     done
 
     local waybar_files=(
@@ -2206,6 +2272,8 @@ configure_hypr_autostart_optional_extras() {
     }
 
     local configured_terminal=""
+    local legacy_numlock_line='hl.exec_cmd([[hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set]])'
+    local session_numlock_line='hl.exec_cmd("hyprctl keyword input:kb_numlock true && " .. apps.hyprscripts .. "/startup_state.sh mark numlock")'
     local legacy_wallpaper_line='hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")'
     local hyprpaper_line='hl.exec_cmd("hyprpaper")'
     local delayed_wallpaper_line='hl.exec_cmd("sleep 1; " .. apps.hyprscripts .. "/change_wallpaper.sh")'
@@ -2224,6 +2292,7 @@ configure_hypr_autostart_optional_extras() {
         [ -f "$lua_file" ] || continue
 
         reconcile_wallpaper_autostart "$lua_file"
+        replace_exact_trimmed_line "$lua_file" "$legacy_numlock_line" "    $session_numlock_line" "Use current-session numlock readiness state" || return 1
         comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("swaync")'
         comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("nm-applet --indicator")'
         comment_lua_line_if_active "$lua_file" 'hl.exec_cmd("blueman-applet")'
@@ -2244,6 +2313,12 @@ configure_hypr_autostart_optional_extras() {
         elif [ "$configured_terminal" = "alacritty" ] && command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
             uncomment_lua_line_if_cmd_exists "$lua_file" "alacritty" "$alacritty_zellij_line"
         fi
+    done
+
+    local conf_file
+    local legacy_numlock_conf='exec-once = hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set'
+    for conf_file in "$HOME/dotfiles/.config/hypr/sources/autostart.conf" "$HOME/dotfiles/.config/hypr/sources_example/autostart.conf"; do
+        replace_exact_trimmed_line "$conf_file" "$legacy_numlock_conf" 'exec-once = hyprctl keyword input:kb_numlock true && $hyprscripts/startup_state.sh mark numlock' "Use current-session numlock readiness in Hyprlang" || return 1
     done
 }
 
@@ -3305,6 +3380,12 @@ main() {
     install_pacman_packages
     install_aur_extras
     verify_installed_packages
+    announce_step "Install selected coding agents"
+    install_official_agents || {
+        print_error "Official coding-agent metadata validation failed"
+        record_hard_failure "install_official_agents" "Approved installer metadata validation failed"
+        return 1
+    }
     update_configs
     if [ "$ROLE_SHELL" = fish ]; then
         set_fish_language_config

@@ -38,12 +38,13 @@ if ! jq -e '
       elif $role == "gui_editor" then ["editor_bin", "desktop_file"]
       elif $role == "tui_editor" then ["editor_bin"]
       elif $role == "launcher" then ["dmenu_executable", "dmenu_args", "process", "namespace"]
+      elif $role == "agent" then ["installer", "binary_paths"]
       else [] end;
   def valid_option($role):
     type == "object"
     and ((keys - option_keys($role)) | length == 0)
     and (.package | package_name)
-    and (.source == "pacman" or .source == "aur")
+    and (if $role == "agent" then .source == "official" else (.source == "pacman" or .source == "aur") end)
     and (.executable | executable_or_path)
     and (.args | valid_args)
     and ((.extra_packages // []) | type == "array" and all(.[]; package_name))
@@ -57,6 +58,13 @@ if ! jq -e '
           and (.dmenu_args | valid_args)
           and (.process | restricted_token)
           and (.namespace | restricted_token)
+        elif $role == "agent" then
+          (.installer | type == "object" and keys_exact(["args", "shell", "url"])
+            and (.url | type == "string" and startswith("https://"))
+            and (.shell == "sh" or .shell == "bash")
+            and (.args | valid_args))
+          and (.binary_paths | type == "array" and length > 0
+            and all(.[]; type == "string" and startswith("{HOME}/") and test("^[{]HOME[}]/[A-Za-z0-9@._+/-]+$")))
         else true end;
   def role_policy:
     {
@@ -69,10 +77,11 @@ if ! jq -e '
       bar: ["single", true, "waybar"],
       dock: ["single", false, null],
       calendar: ["single", true, "merkuro"],
-      bluetooth: ["multiple", true, "bluedevil"],
+      bluetooth: ["single", true, "bluedevil"],
       network: ["single", true, "plasma-nm"],
       audio: ["single", true, "pavucontrol-qt"],
-      launcher: ["single", true, "wofi"]
+      launcher: ["single", true, "wofi"],
+      agent: ["multiple", false, "pi"]
     };
   def expected_options:
     {
@@ -88,16 +97,20 @@ if ! jq -e '
       bluetooth: ["bluedevil", "blueman", "bluetui", "bluetuith"],
       network: ["network-manager-applet", "networkmanager", "nm-connection-editor", "plasma-nm"],
       audio: ["alsa-utils", "ncpamixer", "pavucontrol", "pavucontrol-qt", "qastools"],
-      launcher: ["bemenu", "fuzzel", "rofi", "tofi", "wofi"]
+      launcher: ["bemenu", "fuzzel", "rofi", "tofi", "wofi"],
+      agent: ["claude-code", "codex-cli", "cursor-cli", "opencode", "pi"]
     };
 
   . as $root
   | type == "object"
-  and keys_exact(["aur_packages", "hyprland_packages", "package_descriptions", "required", "roles"])
+  and keys_exact(["aur_packages", "hyprland_packages", "official_packages", "package_descriptions", "required", "roles"])
   and no_controls
   and (.hyprland_packages | type == "object" and length > 0
        and all(to_entries[]; (.key | length > 0) and (.value | type == "array" and all(.[]; package_name))))
   and (.aur_packages | type == "object" and length > 0
+       and all(to_entries[]; (.key | length > 0) and (.value | type == "array" and all(.[]; package_name))))
+  and (.official_packages | type == "object" and length > 0
+       and ([to_entries[].value[]] | sort == ["claude-code", "codex-cli", "cursor-cli", "opencode", "pi"])
        and all(to_entries[]; (.key | length > 0) and (.value | type == "array" and all(.[]; package_name))))
   and (.package_descriptions | type == "object" and all(to_entries[]; (.key | package_name) and (.value | type == "string" and length > 0)))
   and (.required | type == "object" and keys_exact(["aur", "pacman"])
@@ -118,7 +131,8 @@ if ! jq -e '
       and (($definition.default == null) or ([ $definition.options[].package ] | index($definition.default) != null))
       and (($definition.required | not) or ($definition.default != null)))
   and (
-    (registry_entries("hyprland_packages"; "pacman") + registry_entries("aur_packages"; "aur")) as $registry
+    (registry_entries("hyprland_packages"; "pacman") + registry_entries("aur_packages"; "aur")
+      + registry_entries("official_packages"; "official")) as $registry
     | ([.roles | to_entries[] | .key as $role | .value.options[] | . + {role: $role}]) as $options
     | ([.required.pacman[]] + [.required.aur[]]) as $required
     | (($registry | map(.package) | length) == ($registry | map(.package) | unique | length))
@@ -128,7 +142,10 @@ if ! jq -e '
         . as $option
         | any($registry[]; .package == $option.package and .source == $option.source)
           and all(($option.extra_packages // [])[];
-            . as $extra | any($registry[]; .package == $extra and .source == $option.source)))
+            . as $extra
+            | any($registry[];
+                .package == $extra
+                and .source == (if $option.source == "official" then "pacman" else $option.source end))))
       and all(.required.pacman[];
         . as $package | any($registry[]; .package == $package and .source == "pacman"))
       and all(.required.aur[];
@@ -141,6 +158,13 @@ if ! jq -e '
       and (.roles.launcher.options[] | select(.package == "tofi") | .source == "aur")
       and (.roles.bluetooth.options[] | select(.package == "bluetuith") | .source == "aur")
       and (.roles.audio.options[] | select(.package == "ncpamixer") | .source == "aur")
+      and (.roles.agent.options == [
+        {package:"pi", source:"official", executable:"pi", args:[], extra_packages:["curl","nodejs","npm"], installer:{url:"https://pi.dev/install.sh",shell:"sh",args:[]}, binary_paths:["{HOME}/.local/bin/pi"]},
+        {package:"opencode", source:"official", executable:"opencode", args:[], extra_packages:["curl","tar","gzip"], installer:{url:"https://opencode.ai/install",shell:"bash",args:["--no-modify-path"]}, binary_paths:["{HOME}/.opencode/bin/opencode"]},
+        {package:"claude-code", source:"official", executable:"claude", args:[], extra_packages:["curl"], installer:{url:"https://claude.ai/install.sh",shell:"bash",args:[]}, binary_paths:["{HOME}/.local/bin/claude"]},
+        {package:"codex-cli", source:"official", executable:"codex", args:[], extra_packages:["curl","tar","gzip"], installer:{url:"https://chatgpt.com/codex/install.sh",shell:"sh",args:[]}, binary_paths:["{HOME}/.local/bin/codex"]},
+        {package:"cursor-cli", source:"official", executable:"cursor-agent", args:[], extra_packages:["curl","tar","gzip"], installer:{url:"https://cursor.com/install",shell:"bash",args:[]}, binary_paths:["{HOME}/.local/bin/cursor-agent"]}
+      ])
       and all($options[]; .package as $package | $root.package_descriptions[$package] | type == "string" and length > 0)
   )
 ' "$registry" >/dev/null; then
