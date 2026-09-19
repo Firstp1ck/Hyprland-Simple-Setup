@@ -9,7 +9,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use chrono::Local;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    MouseButton, MouseEvent, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -20,7 +23,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -209,13 +212,26 @@ fn is_compact_output(raw: &str) -> bool {
         .any(|prefix| message.starts_with(prefix))
 }
 
+#[derive(Default)]
+struct OutputViewport {
+    area: Rect,
+    body: Rect,
+    scrollbar: Rect,
+    follow_button: Rect,
+    mode_button: Rect,
+    total_rows: usize,
+    focused: bool,
+    dragging: bool,
+}
+
 struct AppState {
     list_state: ListState,
     logs: OutputLog,
     last_tick: Instant,
-    scroll: u16,
+    scroll: usize,
     follow_tail: bool,
     log_viewport_lines: usize,
+    output: OutputViewport,
     rx: Receiver<String>,
     tx: Sender<String>,
     setup_script: Option<PathBuf>,
@@ -317,6 +333,7 @@ impl AppState {
             scroll: 0,
             follow_tail: true,
             log_viewport_lines: 1,
+            output: OutputViewport::default(),
             rx,
             tx,
             setup_script,
@@ -441,6 +458,17 @@ impl AppState {
         update_sections_from_line(self, &raw);
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let s = format!("[{}] {}", ts, raw);
+        let evicted_rows = if !self.follow_tail && self.logs.len() == OUTPUT_HISTORY_LIMIT {
+            self.logs.lines().first().map_or(0, |line| {
+                wrap_output_line(
+                    live_output_line(self.theme, line, self.logs.show_details),
+                    self.output.body.width,
+                )
+                .len()
+            })
+        } else {
+            0
+        };
         let dropped = self.logs.push(s.clone(), &raw);
         // Append all output, independent of the selected display mode.
         if let Ok(mut f) = OpenOptions::new()
@@ -450,26 +478,22 @@ impl AppState {
         {
             let _ = writeln!(f, "{}", s);
         }
-        if !self.follow_tail {
-            self.scroll = self.scroll.saturating_sub(dropped as u16);
+        if !self.follow_tail && dropped > 0 {
+            self.scroll = self.scroll.saturating_sub(evicted_rows);
         }
-        sync_output_scroll_after_append(
-            &mut self.scroll,
-            self.follow_tail,
-            self.logs.len(),
-            self.log_viewport_lines,
-        );
+        // The next render computes visual-row offsets using the current viewport width.
     }
 }
 
-const OUTPUT_SCROLL_STEP: u16 = 8;
+const OUTPUT_SCROLL_STEP: usize = 8;
+const OUTPUT_MESSAGES_PER_TICK: usize = 128;
 
-fn output_tail_start(total_lines: usize, visible_lines: usize) -> u16 {
-    total_lines.saturating_sub(visible_lines) as u16
+fn output_tail_start(total_lines: usize, visible_lines: usize) -> usize {
+    total_lines.saturating_sub(visible_lines)
 }
 
 fn scroll_output_up(
-    scroll: &mut u16,
+    scroll: &mut usize,
     follow_tail: &mut bool,
     total_lines: usize,
     visible_lines: usize,
@@ -481,13 +505,13 @@ fn scroll_output_up(
     *scroll = scroll.saturating_sub(OUTPUT_SCROLL_STEP);
 }
 
-fn scroll_output_down(scroll: &mut u16, total_lines: usize, visible_lines: usize) {
+fn scroll_output_down(scroll: &mut usize, total_lines: usize, visible_lines: usize) {
     let max_scroll = output_tail_start(total_lines, visible_lines);
     *scroll = scroll.saturating_add(OUTPUT_SCROLL_STEP).min(max_scroll);
 }
 
 fn resume_output_follow(
-    scroll: &mut u16,
+    scroll: &mut usize,
     follow_tail: &mut bool,
     total_lines: usize,
     visible_lines: usize,
@@ -497,7 +521,7 @@ fn resume_output_follow(
 }
 
 fn sync_output_scroll_after_append(
-    scroll: &mut u16,
+    scroll: &mut usize,
     follow_tail: bool,
     total_lines: usize,
     visible_lines: usize,
@@ -505,6 +529,107 @@ fn sync_output_scroll_after_append(
     if follow_tail {
         *scroll = output_tail_start(total_lines, visible_lines);
     }
+}
+
+fn scroll_live_output(app: &mut AppState, delta: isize) {
+    let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+    if app.follow_tail {
+        app.scroll = end;
+    }
+    app.follow_tail = false;
+    app.output.focused = true;
+    app.scroll = app.scroll.saturating_add_signed(delta).min(end);
+}
+
+fn follow_live_output(app: &mut AppState) {
+    resume_output_follow(
+        &mut app.scroll,
+        &mut app.follow_tail,
+        app.output.total_rows,
+        app.log_viewport_lines,
+    );
+    app.output.dragging = false;
+}
+
+fn toggle_live_output_mode(app: &mut AppState) {
+    app.logs.show_details = !app.logs.show_details;
+    follow_live_output(app);
+}
+
+fn mouse_inside(area: Rect, mouse: MouseEvent) -> bool {
+    mouse.column >= area.x
+        && mouse.column < area.right()
+        && mouse.row >= area.y
+        && mouse.row < area.bottom()
+}
+
+fn seek_output_scrollbar(app: &mut AppState, row: u16) {
+    let bar = app.output.scrollbar;
+    let track = usize::from(bar.height.saturating_sub(1));
+    let position = usize::from(row.saturating_sub(bar.y)).min(track);
+    let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+    app.scroll = position.saturating_mul(end).checked_div(track).unwrap_or(0);
+    app.follow_tail = false;
+}
+
+fn handle_mouse_event(app: &mut AppState, mouse: MouseEvent) {
+    if app.ui_mode != UiMode::Menu || app.editing {
+        app.output.dragging = false;
+        return;
+    }
+    match mouse.kind {
+        MouseEventKind::Up(_) => app.output.dragging = false,
+        MouseEventKind::Drag(MouseButton::Left) if app.output.dragging => {
+            seek_output_scrollbar(app, mouse.row);
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            app.output.focused = mouse_inside(app.output.area, mouse);
+            app.output.dragging = false;
+            if mouse_inside(app.output.follow_button, mouse) {
+                follow_live_output(app);
+            } else if mouse_inside(app.output.mode_button, mouse) {
+                toggle_live_output_mode(app);
+            } else if mouse_inside(app.output.scrollbar, mouse) {
+                app.output.dragging = true;
+                seek_output_scrollbar(app, mouse.row);
+            }
+        }
+        MouseEventKind::ScrollUp if mouse_inside(app.output.area, mouse) => {
+            scroll_live_output(app, -3)
+        }
+        MouseEventKind::ScrollDown if mouse_inside(app.output.area, mouse) => {
+            scroll_live_output(app, 3)
+        }
+        _ => {}
+    }
+}
+
+fn drain_output_events(app: &mut AppState) -> usize {
+    for count in 0..OUTPUT_MESSAGES_PER_TICK {
+        match app.rx.try_recv() {
+            Ok(line) => app.push_log_line(line),
+            Err(_) => return count,
+        }
+    }
+    OUTPUT_MESSAGES_PER_TICK
+}
+
+struct TerminalSession;
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        restore_terminal();
+    }
+}
+
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        io::stdout(),
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+        crossterm::cursor::Show
+    );
 }
 
 fn main() -> Result<()> {
@@ -515,8 +640,10 @@ fn main() -> Result<()> {
 
     install_panic_hook();
     enable_raw_mode().context("enable raw mode")?;
+    let terminal_session = TerminalSession;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).context("enter alt screen")?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("enter interactive terminal")?;
     // (Windows) Avoid duplicate raw mode enabling
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
@@ -525,7 +652,7 @@ fn main() -> Result<()> {
     app.push_log_line("Hyprland Setup TUI - ratatui + crossterm");
     app.push_log_line("Use Arrow Up/Down to select, Enter to run");
     app.push_log_line(
-        "Keys: v=compact/details, q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll, Home/End=follow",
+        "Keys: click/wheel=scroll output, v=compact/details, PgUp/PgDn=scroll, Home=oldest, End=follow, q=quit",
     );
     if app.setup_script.is_none() {
         app.push_log_line(
@@ -537,10 +664,7 @@ fn main() -> Result<()> {
 
     let res = run_app(&mut terminal, &mut app, tick_rate);
 
-    disable_raw_mode().ok();
-    let mut out = io::stdout();
-    execute!(out, LeaveAlternateScreen).ok();
-    terminal.show_cursor().ok();
+    drop(terminal_session);
 
     if let Err(e) = res {
         eprintln!("Error: {e:#}");
@@ -555,12 +679,11 @@ fn run_app<B: ratatui::backend::Backend>(
     tick_rate: Duration,
 ) -> Result<()> {
     loop {
-        while let Ok(line) = app.rx.try_recv() {
-            app.push_log_line(line);
-        }
+        let drained = drain_output_events(app);
 
-        // Detect setup.sh completion and report once
-        if let Some(child) = app.child.as_mut()
+        // Keep input responsive between batches and drain queued output before reporting completion.
+        if drained < OUTPUT_MESSAGES_PER_TICK
+            && let Some(child) = app.child.as_mut()
             && let Ok(Some(status)) = child.try_wait()
         {
             let code = status.code().unwrap_or(-1);
@@ -600,7 +723,11 @@ fn run_app<B: ratatui::backend::Backend>(
 
         terminal.draw(|f| draw_ui(f, app)).context("draw ui")?;
 
-        let timeout = tick_rate.saturating_sub(app.last_tick.elapsed());
+        let timeout = if drained == OUTPUT_MESSAGES_PER_TICK {
+            Duration::ZERO
+        } else {
+            tick_rate.saturating_sub(app.last_tick.elapsed())
+        };
         if event::poll(timeout).context("poll events")? {
             match event::read().context("read event")? {
                 Event::Key(key) => {
@@ -609,11 +736,9 @@ fn run_app<B: ratatui::backend::Backend>(
                         break;
                     }
                 }
-                Event::Mouse(_)
-                | Event::Resize(_, _)
-                | Event::FocusGained
-                | Event::FocusLost
-                | Event::Paste(_) => {}
+                Event::Mouse(mouse) => handle_mouse_event(app, mouse),
+                Event::FocusLost => app.output.dragging = false,
+                Event::Resize(_, _) | Event::FocusGained | Event::Paste(_) => {}
             }
         }
 
@@ -635,7 +760,10 @@ fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     match app.ui_mode {
         UiMode::Menu => draw_menu_ui(f, app, area),
-        UiMode::Preflight => draw_preflight_ui(f, app, area),
+        UiMode::Preflight => {
+            app.output = OutputViewport::default();
+            draw_preflight_ui(f, app, area);
+        }
     }
     draw_completion_popup(f, app, area);
 }
@@ -814,6 +942,197 @@ fn live_output_line(theme: Theme, stored_line: &str, show_details: bool) -> Line
     }
 }
 
+fn wrap_output_line(line: Line<'static>, width: u16) -> Vec<Line<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let style = line.style;
+    let mut rows = Vec::new();
+    let mut row = Line::default().style(style);
+    let mut row_width = 0;
+    for span in line.spans {
+        let content = span.content.as_ref();
+        let mut start = 0;
+        for (index, ch) in content.char_indices() {
+            let glyph_width = Span::raw(&content[index..index + ch.len_utf8()]).width();
+            let newline = ch == '\n';
+            if newline || (row_width > 0 && row_width + glyph_width > usize::from(width)) {
+                if start < index {
+                    row.spans
+                        .push(Span::styled(content[start..index].to_string(), span.style));
+                }
+                rows.push(std::mem::replace(&mut row, Line::default().style(style)));
+                row_width = 0;
+                start = if newline {
+                    index + ch.len_utf8()
+                } else {
+                    index
+                };
+            }
+            if !newline {
+                row_width += glyph_width;
+            }
+        }
+        if start < content.len() {
+            row.spans
+                .push(Span::styled(content[start..].to_string(), span.style));
+        }
+    }
+    rows.push(row);
+    rows
+}
+
+fn output_scrollbar_thumb(total: usize, visible: usize, height: u16, scroll: usize) -> (u16, u16) {
+    if height == 0 {
+        return (0, 0);
+    }
+    let length = if total <= visible {
+        usize::from(height)
+    } else {
+        (usize::from(height).saturating_mul(visible) / total).max(1)
+    }
+    .min(usize::from(height));
+    let end = output_tail_start(total, visible);
+    let offset = scroll
+        .min(end)
+        .saturating_mul(usize::from(height) - length)
+        .checked_div(end)
+        .unwrap_or(0);
+    (offset as u16, length as u16)
+}
+
+fn draw_output_panel(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
+    let mode = if app.logs.show_details {
+        "detailed"
+    } else {
+        "compact"
+    };
+    let focus = if app.output.focused { " [focused]" } else { "" };
+    let block = Block::default()
+        .title(format!("Output: {mode}{focus}"))
+        .borders(Borders::ALL)
+        .style(
+            Style::default()
+                .bg(app.theme.surface0)
+                .fg(app.theme.subtext0),
+        )
+        .border_style(Style::default().fg(if app.output.focused {
+            app.theme.blue
+        } else {
+            app.theme.surface1
+        }));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let toolbar_height = inner.height.min(1);
+    let toolbar = Rect {
+        height: toolbar_height,
+        ..inner
+    };
+    let body = Rect {
+        x: inner.x,
+        y: inner.y + toolbar_height,
+        width: inner.width.saturating_sub(1),
+        height: inner.height.saturating_sub(toolbar_height),
+    };
+    app.output.area = area;
+    app.output.body = body;
+    app.output.scrollbar = Rect {
+        x: body.right(),
+        width: inner.width.min(1),
+        ..body
+    };
+    app.output.follow_button = Rect {
+        width: inner.width.min(8),
+        ..toolbar
+    };
+    let mode_offset = inner.width.min(9);
+    app.output.mode_button = Rect {
+        x: inner.x + mode_offset,
+        width: inner.width.saturating_sub(mode_offset).min(9),
+        ..toolbar
+    };
+
+    let rendered: Vec<Line> = app
+        .logs
+        .lines()
+        .iter()
+        .flat_map(|line| {
+            wrap_output_line(
+                live_output_line(app.theme, line, app.logs.show_details),
+                body.width,
+            )
+        })
+        .collect();
+    app.output.total_rows = rendered.len();
+    app.log_viewport_lines = usize::from(body.height);
+    sync_output_scroll_after_append(
+        &mut app.scroll,
+        app.follow_tail,
+        rendered.len(),
+        app.log_viewport_lines,
+    );
+    app.scroll = app
+        .scroll
+        .min(output_tail_start(rendered.len(), app.log_viewport_lines));
+    let end = app
+        .scroll
+        .saturating_add(app.log_viewport_lines)
+        .min(rendered.len());
+    f.render_widget(Paragraph::new(rendered[app.scroll..end].to_vec()), body);
+
+    let button_style = Style::default()
+        .fg(app.theme.blue)
+        .add_modifier(Modifier::BOLD);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "[Follow]",
+                if app.follow_tail {
+                    button_style.add_modifier(Modifier::REVERSED)
+                } else {
+                    button_style
+                },
+            ),
+            Span::raw(" "),
+            Span::styled(
+                if app.logs.show_details {
+                    "[Compact]"
+                } else {
+                    "[Details]"
+                },
+                button_style,
+            ),
+            Span::raw(format!(
+                "  {} {end}/{}",
+                if app.follow_tail { "Live" } else { "Paused" },
+                rendered.len()
+            )),
+        ])),
+        toolbar,
+    );
+
+    let (thumb_start, thumb_length) = output_scrollbar_thumb(
+        rendered.len(),
+        app.log_viewport_lines,
+        body.height,
+        app.scroll,
+    );
+    let track: Vec<Line> = (0..body.height)
+        .map(|index| {
+            let in_thumb = index >= thumb_start && index < thumb_start + thumb_length;
+            Line::from(Span::styled(
+                if in_thumb { "█" } else { "│" },
+                Style::default().fg(if in_thumb {
+                    app.theme.blue
+                } else {
+                    app.theme.surface1
+                }),
+            ))
+        })
+        .collect();
+    f.render_widget(Paragraph::new(track), app.output.scrollbar);
+}
+
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Split vertically to create a footer for keybind help
     let vchunks = Layout::default()
@@ -917,40 +1236,7 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
-    // Calculate visible slice to avoid cloning thousands of lines every frame
-    let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
-    app.log_viewport_lines = visible_lines;
-    let total_lines = app.logs.len();
-    let max_scroll = total_lines.saturating_sub(visible_lines);
-    let start_idx = if app.follow_tail {
-        max_scroll
-    } else {
-        (app.scroll as usize).min(max_scroll)
-    };
-    let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
-    let log_text: Vec<Line> = app.logs.lines()[start_idx..end_idx]
-        .iter()
-        .map(|line| live_output_line(app.theme, line, app.logs.show_details))
-        .collect();
-
-    let logs = Paragraph::new(log_text)
-        .block(
-            Block::default()
-                .title(if app.logs.show_details {
-                    "Output: detailed | v: compact"
-                } else {
-                    "Output: compact | v: details"
-                })
-                .borders(Borders::ALL)
-                .style(
-                    Style::default()
-                        .bg(app.theme.surface0)
-                        .fg(app.theme.subtext0),
-                )
-                .border_style(Style::default().fg(app.theme.surface1)),
-        )
-        .wrap(Wrap { trim: false });
-    f.render_widget(logs, right_chunks[1]);
+    draw_output_panel(f, app, right_chunks[1]);
 
     if install_running {
         let progress_area = right_chunks[2];
@@ -1000,9 +1286,11 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     }
 
     // Footer with keybind help
-    let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Enter: preflight   v: compact/details   PgUp/PgDn: scroll   Home/End: follow   c: clear   k: kill   q: quit",
-    )]))
+    let footer = Paragraph::new(Text::from(vec![
+        Line::from("Click output: focus   Wheel: scroll   Drag right scrollbar: seek   ↑/↓: scroll focused output"),
+        Line::from("PgUp/PgDn: scroll   Home: oldest   End/[Follow]: live   v/[Details]: change view"),
+        Line::from("Esc: unfocus   Enter: preflight when unfocused   c: clear   k: kill   q: quit"),
+    ]))
     .block(
         Block::default()
             .borders(Borders::ALL)
@@ -1216,6 +1504,13 @@ fn draw_applications_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
     );
 }
 
+fn role_choice_column_widths(area: Rect) -> [u16; 2] {
+    // Account for both frames, the selection marker and the column gap.
+    let available = choice_popup_width(area).saturating_sub(8);
+    let name = (available / 3).clamp(22, 36).min(available / 2);
+    [name, available.saturating_sub(name)]
+}
+
 fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
     let Some(role_name) = selected_application_role(app) else {
         return;
@@ -1233,20 +1528,34 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
         .as_ref()
         .and_then(|s| s.selected_package(role_name));
     let inner_width = choice_popup_width(area).saturating_sub(2);
-    let intro = wrap_choice_description(application_type_description(role_name), inner_width);
+    let intro = wrap_choice_description(
+        application_type_description(role_name),
+        inner_width.saturating_sub(4),
+    );
+    let [name_width, description_width] = role_choice_column_widths(area);
     let mut items = Vec::new();
     let mut total_rows = 0;
     let mut tallest_item = 1;
     let mut add_choice = |name: String, description: &str| {
-        let mut lines = vec![Line::from(name)];
-        lines.extend(
-            wrap_choice_description(description, inner_width.saturating_sub(4))
-                .into_iter()
-                .map(|line| Line::from(format!("  {line}"))),
+        let name_lines = wrap_choice_description(&name, name_width);
+        let description_lines = wrap_choice_description(description, description_width);
+        let height = name_lines.len().max(description_lines.len()).max(1);
+        total_rows += height;
+        tallest_item = tallest_item.max(height as u16);
+        items.push(
+            Row::new(vec![
+                Cell::from(Text::from(
+                    name_lines.into_iter().map(Line::from).collect::<Vec<_>>(),
+                )),
+                Cell::from(Text::from(
+                    description_lines
+                        .into_iter()
+                        .map(Line::from)
+                        .collect::<Vec<_>>(),
+                )),
+            ])
+            .height(height as u16),
         );
-        total_rows += lines.len();
-        tallest_item = tallest_item.max(lines.len() as u16);
-        items.push(ListItem::new(lines));
     };
     if !role.required {
         let marker = if selected.is_some_and(BTreeSet::is_empty) {
@@ -1284,7 +1593,24 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
         );
     }
     let count = items.len();
-    let (popup, rows) = choice_popup_layout(area, [intro.len(), total_rows, 2], tallest_item);
+    let available_height = area.height.saturating_sub(2);
+    // A short terminal may need an unframed table to keep one complete row readable.
+    let framed_table = available_height >= tallest_item.saturating_add(4);
+    let table_overhead = if framed_table { 3 } else { 1 };
+    let minimum_table_height = tallest_item.saturating_add(table_overhead);
+    let framed_intro_height = intro.len() + 3; // two borders and a blank separator row
+    let intro_height = if available_height.saturating_sub(minimum_table_height + 2) as usize
+        >= framed_intro_height
+    {
+        framed_intro_height
+    } else {
+        0
+    };
+    let (popup, rows) = choice_popup_layout(
+        area,
+        [intro_height, total_rows + table_overhead as usize, 2],
+        minimum_table_height,
+    );
     let cardinality = match role.selection {
         SelectionKind::Single => "single choice",
         SelectionKind::Multiple => "multiple choices",
@@ -1301,21 +1627,56 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
         .border_style(Style::default().fg(app.theme.mauve));
     f.render_widget(Clear, popup);
     f.render_widget(block, popup);
-    f.render_widget(
-        Paragraph::new(intro.into_iter().map(Line::from).collect::<Vec<_>>())
-            .style(Style::default().fg(app.theme.subtext0)),
-        rows[0],
-    );
-    let mut state = ListState::default();
+    if intro_height > 0 {
+        let about = Rect {
+            height: rows[0].height.saturating_sub(1),
+            ..rows[0]
+        };
+        let description = Paragraph::new(
+            intro
+                .into_iter()
+                .map(|line| Line::from(format!(" {line}")))
+                .collect::<Vec<_>>(),
+        )
+        .style(Style::default().fg(app.theme.subtext0))
+        .block(
+            Block::default()
+                .title(format!("About {}", role.label))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(app.theme.surface1)),
+        );
+        f.render_widget(description, about);
+    }
+    let table_block = if framed_table {
+        Block::default().title("Choices").borders(Borders::ALL)
+    } else {
+        Block::default()
+    };
+    let mut state = TableState::default();
     state.select(Some(app.role_cursor.min(count.saturating_sub(1))));
     f.render_stateful_widget(
-        List::new(items)
-            .highlight_style(
+        Table::new(
+            items,
+            [
+                Constraint::Length(name_width),
+                Constraint::Length(description_width),
+            ],
+        )
+        .header(
+            Row::new(["App", "Description"]).style(
                 Style::default()
-                    .fg(app.theme.blue)
+                    .fg(app.theme.mauve)
                     .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("▶ "),
+            ),
+        )
+        .column_spacing(2)
+        .row_highlight_style(
+            Style::default()
+                .fg(app.theme.blue)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ")
+        .block(table_block.border_style(Style::default().fg(app.theme.surface1))),
         rows[1],
         &mut state,
     );
@@ -1326,12 +1687,12 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
     };
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(keys),
             Line::from(format!(
                 "{}/{} | ↑/↓ scroll | Enter/Esc: back",
                 app.role_cursor + 1,
                 count
             )),
+            Line::from(keys),
         ])
         .style(Style::default().fg(app.theme.subtext0)),
         rows[2],
@@ -2313,36 +2674,26 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
     match app.ui_mode {
         UiMode::Menu => match key.code {
             KeyCode::Char('q') => return Ok(true),
-            KeyCode::Enter => {
-                app.ui_mode = UiMode::Preflight;
+            KeyCode::Enter if !app.output.focused => app.ui_mode = UiMode::Preflight,
+            KeyCode::Esc => {
+                app.output.focused = false;
+                app.output.dragging = false;
             }
-            KeyCode::PageUp => scroll_output_up(
-                &mut app.scroll,
-                &mut app.follow_tail,
-                app.logs.len(),
-                app.log_viewport_lines,
-            ),
-            KeyCode::PageDown => {
-                scroll_output_down(&mut app.scroll, app.logs.len(), app.log_viewport_lines)
+            KeyCode::Up if app.output.focused => scroll_live_output(app, -1),
+            KeyCode::Down if app.output.focused => scroll_live_output(app, 1),
+            KeyCode::PageUp => scroll_live_output(app, -(OUTPUT_SCROLL_STEP as isize)),
+            KeyCode::PageDown => scroll_live_output(app, OUTPUT_SCROLL_STEP as isize),
+            KeyCode::Home => {
+                app.output.focused = true;
+                app.follow_tail = false;
+                app.scroll = 0;
             }
-            KeyCode::Home | KeyCode::End => resume_output_follow(
-                &mut app.scroll,
-                &mut app.follow_tail,
-                app.logs.len(),
-                app.log_viewport_lines,
-            ),
-            KeyCode::Char('v') => {
-                app.logs.show_details = !app.logs.show_details;
-                resume_output_follow(
-                    &mut app.scroll,
-                    &mut app.follow_tail,
-                    app.logs.len(),
-                    app.log_viewport_lines,
-                );
-            }
+            KeyCode::End => follow_live_output(app),
+            KeyCode::Char('v') => toggle_live_output_mode(app),
             KeyCode::Char('c') => {
                 app.logs.clear();
                 app.scroll = 0;
+                app.output.total_rows = 0;
             }
             KeyCode::Char('k') => {
                 if let Some(mut child) = app.child.take() {
@@ -2790,9 +3141,7 @@ fn classify_package(name: &str) -> Option<PackageSource> {
 
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
-        let _ = disable_raw_mode();
-        let mut stdout = std::io::stdout();
-        let _ = execute!(stdout, LeaveAlternateScreen);
+        restore_terminal();
         eprintln!("Application panicked: {info}");
     }));
 }
@@ -4409,7 +4758,12 @@ mod tests {
         assert_eq!(selected_application_role(&app), Some("browser"));
     }
 
-    fn render_choice_screen(app: &AppState, width: u16, height: u16, group_list: bool) -> String {
+    fn render_choice_lines(
+        app: &AppState,
+        width: u16,
+        height: u16,
+        group_list: bool,
+    ) -> Vec<String> {
         let mut terminal =
             Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
         terminal
@@ -4425,15 +4779,93 @@ mod tests {
             .backend()
             .buffer()
             .content
-            .iter()
-            .map(|cell| match cell.symbol() {
-                "│" | "─" | "┌" | "┐" | "└" | "┘" | "▶" => " ",
-                symbol => symbol,
+            .chunks(usize::from(width.max(1)))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    fn render_choice_screen(app: &AppState, width: u16, height: u16, group_list: bool) -> String {
+        let rows = render_choice_lines(app, width, height, group_list);
+        let mut text = rows.join(" ");
+        if !group_list
+            && let Some((header_y, header)) = rows
+                .iter()
+                .enumerate()
+                .find(|(_, row)| row.contains("Description"))
+        {
+            let column = header[..header.find("Description").unwrap()]
+                .chars()
+                .count();
+            // Read wrapped descriptions vertically, without interleaving wrapped app-name cells.
+            for row in rows
+                .iter()
+                .skip(header_y + 1)
+                .take_while(|row| !row.contains('└') && !row.contains("Enter/Esc"))
+            {
+                text.push(' ');
+                text.extend(row.chars().skip(column));
+            }
+        }
+        text.chars()
+            .map(|ch| match ch {
+                '│' | '─' | '┌' | '┐' | '└' | '┘' | '▶' => ' ',
+                ch => ch,
             })
             .collect::<String>()
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    #[test]
+    fn role_menu_separates_type_help_and_aligns_name_description_columns() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.application_cursor = ROLE_ORDER
+            .iter()
+            .position(|role| *role == "gui_editor")
+            .unwrap();
+        app.role_cursor = 1;
+        let rows = render_choice_lines(&app, 120, 32, false);
+        let about_y = rows
+            .iter()
+            .position(|row| row.contains("About GUI editor"))
+            .unwrap();
+        assert!(rows[about_y].contains('┌') && rows[about_y].contains('┐'));
+        assert!(rows[about_y + 1].contains("Edits text and code in a graphical window."));
+        let about_bottom = rows
+            .iter()
+            .enumerate()
+            .skip(about_y + 1)
+            .find(|(_, row)| row.contains('└'))
+            .unwrap()
+            .0;
+        assert!(rows[about_bottom].contains('┘'));
+        assert!(
+            rows[about_bottom + 1]
+                .chars()
+                .all(|ch| ch == ' ' || ch == '│')
+        );
+        assert!(rows[about_bottom + 2].contains("Choices"));
+        let header_y = rows
+            .iter()
+            .position(|row| row.contains("Description"))
+            .unwrap();
+        assert_eq!(header_y, about_bottom + 3);
+        let column = |row: &str, word: &str| row[..row.find(word).unwrap()].chars().count();
+        let name_x = column(&rows[header_y], "App");
+        let description_x = column(&rows[header_y], "Description");
+        assert!(description_x > name_x + 20);
+        let zed_row = rows
+            .iter()
+            .find(|row| row.contains("zed [pacman]"))
+            .unwrap();
+        assert_eq!(column(zed_row, "[ ] zed"), name_x);
+        assert_eq!(column(zed_row, "GPU-rendered"), description_x);
+        assert!(zed_row.contains('▶'));
+        let none_row = rows.iter().find(|row| row.contains("[ ] None")).unwrap();
+        assert_eq!(column(none_row, "Skip GUI editors"), description_x);
     }
 
     #[test]
@@ -4467,11 +4899,11 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
         let mut app = AppState::new(rx, tx, Some(script));
-        for width in [80, 120] {
+        for (width, height) in [(80, 40), (120, 24)] {
             for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
                 app.application_cursor = index;
                 let role = &app.package_registry.as_ref().unwrap().roles[role_name];
-                let screen = render_choice_screen(&app, width, 24, false);
+                let screen = render_choice_screen(&app, width, height, false);
                 assert!(screen.contains(application_type_description(role_name)));
                 if !role.required {
                     assert!(screen.contains("None"));
@@ -4479,12 +4911,12 @@ mod tests {
                 for option in &role.options {
                     assert!(
                         screen.contains(&option.package),
-                        "choice {} clipped at {width}x24",
+                        "choice {} clipped at {width}x{height}",
                         option.package
                     );
                     assert!(
                         screen.contains(&app.pkg_descs[&option.package]),
-                        "description for {} clipped at {width}x24: {screen}",
+                        "description for {} clipped at {width}x{height}: {screen}",
                         option.package
                     );
                 }
@@ -4937,6 +5369,308 @@ mod tests {
         assert_eq!(
             output_line_severity("[2026-08-29 10:59:08] package installation complete"),
             StepSeverity::None
+        );
+    }
+
+    fn output_test_app(lines: usize) -> AppState {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Menu;
+        app.editing = false;
+        app.edit_kind = EditKind::None;
+        app.logs.show_details = true;
+        // Exercise the in-memory view without writing to the user's installation log.
+        app.logfile_path = PathBuf::new();
+        for index in 0..lines {
+            let line = format!("[*] output {index:04}");
+            app.logs.push(line.clone(), &line);
+        }
+        app
+    }
+
+    fn output_mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: event::KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn output_mouse_focus_wheel_follow_and_details_survive_incoming_logs() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        let tail = app.scroll;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), body.x, body.y),
+        );
+        assert!(app.output.focused && app.follow_tail);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail - 3);
+        assert!(!app.follow_tail);
+        let reading = app.scroll;
+        app.tx.send("[*] another message".into()).unwrap();
+        assert_eq!(drain_output_events(&mut app), 1);
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.scroll, reading);
+        assert!(screen.contains("Paused"));
+        let follow = app.output.follow_button;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), follow.x, follow.y),
+        );
+        assert!(app.follow_tail);
+        assert_eq!(
+            app.scroll,
+            output_tail_start(app.output.total_rows, app.log_viewport_lines)
+        );
+        let mode = app.output.mode_button;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), mode.x, mode.y),
+        );
+        assert!(!app.logs.show_details);
+        assert!(render_app_screen(&mut app, 120, 40).contains("[Details]"));
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollDown, body.x, body.y),
+        );
+        assert!(!app.follow_tail);
+    }
+
+    #[test]
+    fn output_scrollbar_clicks_and_drag_clamp_without_resuming_follow() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let bar = app.output.scrollbar;
+        let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), bar.x, bar.y),
+        );
+        assert!(app.output.dragging && app.output.focused);
+        assert_eq!(app.scroll, 0);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(
+                MouseEventKind::Drag(MouseButton::Left),
+                0,
+                bar.bottom() + 10,
+            ),
+        );
+        assert_eq!(app.scroll, end);
+        assert!(!app.follow_tail);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Drag(MouseButton::Left), 0, 0),
+        );
+        assert_eq!(app.scroll, 0);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Up(MouseButton::Left), 0, 0),
+        );
+        assert!(!app.output.dragging);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Drag(MouseButton::Left), bar.x, bar.bottom()),
+        );
+        assert_eq!(app.scroll, 0);
+        assert_eq!(output_scrollbar_thumb(100, 20, 10, 80), (8, 2));
+        assert_eq!(output_scrollbar_thumb(100, 20, 0, 80), (0, 0));
+        assert_eq!(output_scrollbar_thumb(0, 0, 10, 0), (0, 10));
+    }
+
+    #[test]
+    fn output_mouse_cannot_operate_through_modals_or_other_screens() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        let tail = app.scroll;
+        handle_mouse_event(&mut app, output_mouse(MouseEventKind::ScrollUp, 0, 0));
+        assert_eq!(app.scroll, tail);
+        app.output.focused = true;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), 0, 0),
+        );
+        assert!(!app.output.focused);
+        app.editing = true;
+        app.edit_kind = EditKind::ConfirmReboot;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail);
+        app.editing = false;
+        app.ui_mode = UiMode::Preflight;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail);
+        render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.output.area, Rect::default());
+    }
+
+    #[test]
+    fn focused_output_keyboard_navigation_preserves_explicit_follow_control() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        app.output.focused = true;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        let tail = app.scroll;
+        handle_key_event(&mut app, key(KeyCode::Up)).unwrap();
+        assert_eq!(app.scroll, tail - 1);
+        handle_key_event(&mut app, key(KeyCode::Home)).unwrap();
+        assert_eq!(app.scroll, 0);
+        assert!(!app.follow_tail);
+        handle_key_event(&mut app, key(KeyCode::End)).unwrap();
+        assert_eq!(app.scroll, tail);
+        assert!(app.follow_tail);
+        handle_key_event(&mut app, key(KeyCode::PageUp)).unwrap();
+        assert_eq!(app.scroll, tail - OUTPUT_SCROLL_STEP);
+        handle_key_event(&mut app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.ui_mode, UiMode::Menu);
+        handle_key_event(&mut app, key(KeyCode::Esc)).unwrap();
+        assert!(!app.output.focused);
+        handle_key_event(&mut app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.ui_mode, UiMode::Preflight);
+    }
+
+    #[test]
+    fn wrapped_output_tail_and_styles_use_visual_rows() {
+        let original = Line::from(vec![
+            Span::styled("timestamp ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "warning: abc界defghijklmnop",
+                Style::default().fg(Color::Yellow),
+            ),
+        ]);
+        let text = original.to_string();
+        let rows = wrap_output_line(original, 12);
+        assert!(rows.len() > 1);
+        assert!(rows.iter().all(|line| line.width() <= 12));
+        assert_eq!(
+            rows.iter().map(ToString::to_string).collect::<String>(),
+            text
+        );
+        assert_eq!(
+            rows.last().unwrap().spans.last().unwrap().style.fg,
+            Some(Color::Yellow)
+        );
+        assert!(wrap_output_line(Line::from("text"), 0).is_empty());
+
+        let mut app = output_test_app(0);
+        render_app_screen(&mut app, 80, 14);
+        let text = format!(
+            "[*] {}TAIL-END",
+            "x".repeat(usize::from(app.output.body.width) * 8)
+        );
+        app.logs.push(text.clone(), &text);
+        let screen = render_app_screen(&mut app, 80, 14);
+        assert!(screen.contains("TAIL-END"));
+        assert!(app.output.total_rows > app.logs.len());
+        scroll_live_output(&mut app, -3);
+        render_app_screen(&mut app, 100, 20);
+        assert!(!app.follow_tail);
+        assert!(app.scroll <= output_tail_start(app.output.total_rows, app.log_viewport_lines));
+    }
+
+    #[test]
+    fn history_eviction_adjusts_browsing_by_wrapped_rows() {
+        let mut app = output_test_app(0);
+        app.logs.push(
+            "abcdefghijklmnopqrstuvwx".into(),
+            "abcdefghijklmnopqrstuvwx",
+        );
+        for _ in 1..OUTPUT_HISTORY_LIMIT {
+            app.logs.push("short".into(), "short");
+        }
+        app.output.body.width = 8;
+        app.follow_tail = false;
+        app.scroll = 10;
+        app.push_log_line("[*] new output");
+        assert_eq!(app.logs.len(), OUTPUT_HISTORY_LIMIT);
+        assert_eq!(app.scroll, 7);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn output_mouse_remains_active_while_a_setup_process_is_running() {
+        struct RunningOutput(AppState);
+        impl Drop for RunningOutput {
+            fn drop(&mut self) {
+                if let Some(mut child) = self.0.child.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let mut running = RunningOutput(output_test_app(100));
+        running.0.child = Some(
+            Command::new("/usr/bin/sleep")
+                .arg("60")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        running.0.install_started_at = Some(Instant::now());
+        let app = &mut running.0;
+        let screen = render_app_screen(app, 120, 40);
+        assert!(screen.contains("RUNNING"));
+        let body = app.output.body;
+        handle_mouse_event(app, output_mouse(MouseEventKind::ScrollUp, body.x, body.y));
+        assert!(app.output.focused && !app.follow_tail);
+        let position = app.scroll;
+        app.tx.send("[*] installer progress".into()).unwrap();
+        assert_eq!(drain_output_events(app), 1);
+        render_app_screen(app, 120, 40);
+        assert_eq!(app.scroll, position);
+        let button = app.output.follow_button;
+        handle_mouse_event(
+            app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), button.x, button.y),
+        );
+        assert!(app.follow_tail);
+        assert!(app.child.as_mut().unwrap().try_wait().unwrap().is_none());
+    }
+
+    #[test]
+    fn output_batches_leave_interaction_opportunities_without_dropping_messages() {
+        let mut app = output_test_app(0);
+        for index in 0..OUTPUT_MESSAGES_PER_TICK + 15 {
+            app.tx.send(format!("[*] queued {index}")).unwrap();
+        }
+        assert_eq!(drain_output_events(&mut app), OUTPUT_MESSAGES_PER_TICK);
+        assert_eq!(app.logs.len(), OUTPUT_MESSAGES_PER_TICK);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        let reading = app.scroll;
+        assert!(!app.follow_tail);
+        assert_eq!(drain_output_events(&mut app), 15);
+        assert_eq!(drain_output_events(&mut app), 0);
+        render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.scroll, reading);
+        assert_eq!(app.logs.len(), OUTPUT_MESSAGES_PER_TICK + 15);
+        assert!(
+            app.logs
+                .lines()
+                .last()
+                .unwrap()
+                .ends_with(&format!("queued {}", OUTPUT_MESSAGES_PER_TICK + 14))
         );
     }
 

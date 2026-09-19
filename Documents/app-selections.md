@@ -6,7 +6,7 @@ The setup UI manages 13 independent application roles. Browser, shell, terminal,
 
 Open **Applications** with Enter from the main preflight window. The submenu lists all 13 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
 
-Each package shows a short description explaining its distinguishing features, its package source, and a TUI label when it runs in a terminal. The chooser grows to fit all entries and their wrapped descriptions when space permits, including optional None. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
+The package chooser has two columns: app names on the left and wrapped descriptions on the right. The app-type explanation is in its own titled frame above the choices, separated by a blank row. Names retain selection markers, package sources and TUI labels. Row heights accommodate wrapping in either column, including optional None. The chooser grows to fit all entries when space permits; very short windows prioritize the focused row over the description panel. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
 
 Use Space to select or clear an option. Single-choice groups replace the previous choice. In multi-choice groups, press `p` on a selected app to make it primary. Enter, Escape, or `q` returns to the group list; Escape or `q` from that list returns to the main window. Selections and the focused group are retained.
 
