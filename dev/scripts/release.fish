@@ -24,6 +24,7 @@
 # ============================================================================
 
 set -g REPO_DIR (realpath (dirname (status filename))/../..)
+set -g RELEASES_DIR "$REPO_DIR/dev/RELEASES"
 set -g AUR_GIT_DIR "$HOME/aur-packages/hyprland-simple-setup-git"
 set -g DRY_RUN false
 
@@ -83,6 +84,12 @@ function dry_run_cmd
     end
 end
 
+function cancel_release --on-signal SIGINT
+    echo
+    log_warn "Release cancelled. Completed changes have not been rolled back."
+    exit 130
+end
+
 function confirm_continue
     set -l msg $argv[1]
     if test -z "$msg"
@@ -91,8 +98,10 @@ function confirm_continue
     
     while true
         _cyan; echo -n "$msg [Y/n]: "; _reset
-        read response
-        switch (string lower $response)
+        # Fish read returns failure on Ctrl+C or EOF, not an empty confirmation.
+        read -l response
+        or cancel_release
+        switch (string lower -- "$response")
             case '' y yes
                 return 0
             case n no
@@ -109,7 +118,8 @@ function wait_for_user
         set msg "Press Enter to continue..."
     end
     _cyan; echo -n $msg; _reset
-    read
+    read -l response
+    or cancel_release
 end
 
 function validate_semver
@@ -218,7 +228,7 @@ function phase2_documentation
     log_step "Generate Release Notes"
     _blue; echo -n "[INFO] "; _reset; echo -n "Please run: "; _bold; echo "/release-new $new_ver"; _reset
     
-    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l release_file "$RELEASES_DIR/RELEASE_v$new_ver.md"
     
     if test "$DRY_RUN" = true
         log_info "[DRY-RUN] Would wait for release notes generation"
@@ -394,7 +404,7 @@ function phase4_build_release
     # Step 4.5: Create GitHub release (source only)
     log_step "Creating GitHub Release"
     
-    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l release_file "$RELEASES_DIR/RELEASE_v$new_ver.md"
     
     # Always create stable (non-prerelease) GitHub releases.
     log_info "Creating as stable (non-prerelease) release"
@@ -653,7 +663,7 @@ end
 function update_changelog
     set -l new_ver $argv[1]
     set -l changelog_file "$REPO_DIR/CHANGELOG.md"
-    set -l release_file "$REPO_DIR/Documents/RELEASE_v$new_ver.md"
+    set -l release_file "$RELEASES_DIR/RELEASE_v$new_ver.md"
     
     log_step "Updating CHANGELOG.md"
     
@@ -876,6 +886,7 @@ function main
         set -l current (get_current_version)
         _cyan; echo -n "Enter new version (current: $current): "; _reset
         read new_version
+        or cancel_release
     end
     
     # Validate version

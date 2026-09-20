@@ -252,7 +252,7 @@ Notes:
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
 - **Logging:** Each run writes its own log under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The installer no longer writes `~/Hyprland-Simple-Setup.log`.
-- **Release notes:** See `Documents/RELEASE_v*.md` and `CHANGELOG.md`
+- **Release notes:** See `dev/RELEASES/RELEASE_v*.md` and `CHANGELOG.md`
 
 ## Project Structure
 
