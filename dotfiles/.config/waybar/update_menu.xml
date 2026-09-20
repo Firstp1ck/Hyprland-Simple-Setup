@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <object class="GtkMenu" id="menu">
+    <child>
+      <object class="GtkMenuItem" id="check">
+        <property name="label">Check for updates</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator-updates"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="update">
+        <property name="label">Update System</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="update-no-aur">
+        <property name="label">Update system without AUR</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="firmware">
+        <property name="label">Update firmware</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator-maintenance"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="review-pacnew">
+        <property name="label">Review .pacnew files</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="clean-cache">
+        <property name="label">Clean package cache</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparatorMenuItem" id="separator-log"/>
+    </child>
+    <child>
+      <object class="GtkMenuItem" id="show-log">
+        <property name="label">Show last update log</property>
+      </object>
+    </child>
+  </object>
+</interface>

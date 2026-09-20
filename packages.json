@@ -11,24 +11,34 @@
       "wl-clipboard",
       "wl-clip-persist",
       "hyprgraphics",
-      "hyprland-qtutils",
+      "hyprland-guiutils",
       "hyprland-qt-support",
       "hyprwayland-scanner",
       "python",
       "python-requests",
       "python-pyquery",
       "tk",
+      "xorg-xwayland",
       "arch-wiki-docs",
       "hyprland",
-      "xdg-desktop-portal-hyprland"
+      "hyprsunset",
+      "xdg-desktop-portal-hyprland",
+      "ironbar",
+      "nwg-panel",
+      "nwg-dock-hyprland"
     ],
     "desktop_evnironment": [
       "alacritty",
       "dolphin",
+      "thunar",
+      "nautilus",
+      "nemo",
+      "pcmanfm-qt",
       "grim",
       "htop",
       "iwd",
       "kitty",
+      "ghostty",
       "nano",
       "openssh",
       "polkit-kde-agent",
@@ -40,8 +50,18 @@
       "wget",
       "wireless_tools",
       "wofi",
+      "rofi",
+      "fuzzel",
+      "bemenu",
+      "bemenu-wayland",
       "wpa_supplicant",
-      "xdg-utils"
+      "xdg-utils",
+      "foot",
+      "mako",
+      "dunst",
+      "fnott",
+      "kate",
+      "mousepad"
     ],
     "graphics_driver": [
       "intel-media-driver",
@@ -65,7 +85,10 @@
       "pipewire-pulse",
       "wireplumber",
       "pavucontrol",
-      "pulseaudio-qt"
+      "pavucontrol-qt",
+      "pulseaudio-qt",
+      "qastools",
+      "alsa-utils"
     ],
     "kernel": [
       "linux",
@@ -74,13 +97,20 @@
       "linux-firmware"
     ],
     "file_management": [
+      "yazi",
+      "ranger",
+      "lf",
+      "nnn",
+      "mc",
+      "vifm",
       "xdg-user-dirs",
       "git",
       "onefetch",
       "fd",
       "fzf",
       "stow",
-      "nvim",
+      "neovim",
+      "helix",
       "ark",
       "7zip",
       "timeshift",
@@ -89,11 +119,18 @@
       "satty"
     ],
     "shell": [
-      "fish"
+      "fish",
+      "bash",
+      "zsh"
     ],
     "browser": [
       "vivaldi",
-      "vivaldi-ffmpeg-codecs"
+      "vivaldi-ffmpeg-codecs",
+      "firefox",
+      "chromium"
+    ],
+    "screenshots": [
+      "hyprshot"
     ],
     "system_integration": [
       "xdg-desktop-portal-gtk",
@@ -105,8 +142,17 @@
       "bluez",
       "bluez-utils",
       "blueman",
+      "bluedevil",
+      "kcmutils",
+      "plasma-nm",
+      "plasma-workspace",
+      "plasma-systemmonitor",
       "swaync",
-      "ddcutil"
+      "ddcutil",
+      "fwupd",
+      "pacman-contrib",
+      "zenity",
+      "bluetui"
     ],
     "theming": [
       "ttf-jetbrains-mono-nerd",
@@ -134,31 +180,43 @@
       "firewalld",
       "fastfetch",
       "tldr",
+      "tmux",
       "zellij",
-      "calcurse",
       "psensor",
       "konsole",
       "playerctl",
       "brightnessctl",
       "reflector",
       "libnotify",
-      "jq"
+      "jq",
+      "curl",
+      "less",
+      "lm_sensors",
+      "nodejs",
+      "npm",
+      "tar",
+      "gzip"
     ],
-    "gui_tools": []
+    "gui_tools": [
+      "zed",
+      "merkuro",
+      "gnome-calendar",
+      "korganizer",
+      "calcurse",
+      "khal"
+    ]
   },
   "aur_packages": {
     "core_hyprland": [
-      "pyprland",
-      "hyprsunset"
+      "pyprland"
     ],
     "browser": [
-      "zen-browser-bin"
-    ],
-    "screenshots": [
-      "hyprshot"
+      "zen-browser-bin",
+      "brave-bin"
     ],
     "gui_tools": [
       "visual-studio-code-bin",
+      "cursor-bin",
       "github-desktop-bin",
       "wlogout"
     ],
@@ -170,16 +228,20 @@
       "xwaylandvideobridge",
       "wl-clipboard-history-git",
       "waybar-module-pacman-updates-git",
-      "input-remapper-2"
+      "input-remapper",
+      "bluetuith"
     ],
     "cli_tools": [
       "lsplug",
       "pacsea-bin",
-      "usrgrp-manager-bin"
+      "usrgrp-manager-bin",
+      "ncpamixer",
+      "tofi",
+      "herdr-bin"
     ]
   },
   "package_descriptions": {
-    "waybar": "Wayland status bar",
+    "waybar": "Modular Wayland bar configured with JSONC and CSS; includes this setup's existing modules and theme.",
     "hyprpaper": "Wallpaper daemon for Hyprland",
     "hyprcursor": "Cursor theme support",
     "hyprlock": "Screen locker for Hyprland",
@@ -189,37 +251,46 @@
     "wl-clipboard": "Wayland clipboard CLI",
     "wl-clip-persist": "Persistent clipboard history",
     "hyprgraphics": "Hyprland graphics helpers",
-    "hyprland-qtutils": "Qt utilities for Hyprland",
+    "hyprland-guiutils": "GUI utilities for Hyprland",
     "hyprland-qt-support": "Qt support for Hyprland",
     "hyprwayland-scanner": "Wayland protocol generator",
     "python": "Python interpreter",
     "python-requests": "Python HTTP library",
     "python-pyquery": "jQuery-like HTML parser",
-    "tk": "Tk GUI toolkit",
+    "tk": "Tk GUI toolkit used by the keybind viewer",
+    "xorg-xwayland": "X11 compatibility server required by the Tk keybind viewer",
     "arch-wiki-docs": "Offline Arch Wiki",
     "hyprland": "Hyprland compositor",
     "xdg-desktop-portal-hyprland": "Portal backend for Hyprland",
-
-    "alacritty": "GPU terminal emulator",
-    "dolphin": "KDE file manager",
+    "alacritty": "Minimal GPU terminal; use tmux or Zellij rather than built-in tabs and splits.",
+    "yazi": "Keyboard-driven terminal file manager with file previews; runs alongside your graphical file manager.",
+    "ranger": "Three-column terminal file manager with Vim-style keys and file previews; written in Python.",
+    "lf": "Minimal Ranger-inspired terminal file manager with shell-based customization; written in Go.",
+    "nnn": "Compact terminal file manager with plugins for additional tools and workflows.",
+    "mc": "Midnight Commander: two-pane terminal file manager with visible menus, mouse support and a built-in editor.",
+    "vifm": "Two-pane terminal file manager with Vim-style modes, commands and key bindings.",
+    "dolphin": "KDE/Qt file manager with split views, tabs and an integrated terminal panel.",
+    "thunar": "Xfce/GTK file manager with a compact interface, bulk renaming and custom actions.",
+    "nautilus": "GNOME Files, a GTK file manager with a streamlined interface and search.",
+    "nemo": "Cinnamon/GTK file manager with dual-pane browsing and a traditional menu interface.",
+    "pcmanfm-qt": "LXQt file manager with tabs and a lightweight Qt interface.",
     "grim": "Wayland screenshot tool",
     "htop": "Interactive process viewer",
     "iwd": "Wireless daemon",
-    "kitty": "GPU terminal emulator",
-    "nano": "Simple text editor",
+    "kitty": "GPU terminal with built-in tabs, splits, image display and configurable keyboard shortcuts.",
+    "nano": "Simple terminal editor with visible shortcut hints; no Vim-style editing modes to learn.",
     "openssh": "SSH client and server",
     "polkit-kde-agent": "KDE polkit agent",
     "qt5-wayland": "Qt5 Wayland platform",
     "qt6-wayland": "Qt6 Wayland platform",
     "slurp": "Select region for screenshots",
     "smartmontools": "S.M.A.R.T. disk tools",
-    "vim": "Vim text editor",
+    "vim": "Traditional modal editor with a mature scripting/plugin ecosystem; less Neovim-specific tooling.",
     "wget": "HTTP/FTP downloader",
     "wireless_tools": "Legacy Wi‑Fi tools",
-    "wofi": "Wayland app launcher",
+    "wofi": "GTK Wayland app launcher styled with CSS; uses this setup's existing launcher theme.",
     "wpa_supplicant": "WPA Wi‑Fi supplicant",
     "xdg-utils": "XDG desktop utilities",
-
     "intel-media-driver": "Intel VAAPI driver",
     "libva-intel-driver": "Intel VAAPI legacy driver",
     "libva-mesa-driver": "Mesa VAAPI driver",
@@ -232,52 +303,61 @@
     "xf86-video-nouveau": "Xorg Nouveau driver",
     "xorg-server": "Xorg display server",
     "xorg-xinit": "X init program",
-
     "sddm": "Display manager",
-
     "pipewire": "Audio/video server",
     "pipewire-pulse": "PulseAudio replacement",
     "wireplumber": "PipeWire session manager",
-    "pavucontrol": "Volume control GUI",
+    "pavucontrol": "GTK mixer for per-app volume, devices and routing; works with PipeWire's PulseAudio interface.",
+    "pavucontrol-qt": "Qt version of the PulseAudio volume controls; similar device/app controls to pavucontrol without GTK.",
     "pulseaudio-qt": "Qt bindings for PulseAudio",
-
+    "qastools": "QasMixer GUI for ALSA hardware controls; does not manage PipeWire per-application streams.",
+    "alsa-utils": "Includes alsamixer, a terminal hardware mixer; controls ALSA devices rather than per-app streams.",
     "linux": "Linux kernel",
     "linux-headers": "Kernel headers",
     "linux-api-headers": "Userspace kernel headers",
     "linux-firmware": "Device firmware",
-
     "xdg-user-dirs": "Manage user directories",
     "git": "Distributed VCS",
     "onefetch": "Git repo summary",
     "fd": "Fast file search",
     "fzf": "Fuzzy finder",
     "stow": "Symlink manager",
-    "nvim": "Neovim editor",
+    "neovim": "Vim-based modal editor with Lua configuration and a large plugin ecosystem; highly customizable.",
+    "helix": "Selection-first modal editor with multiple cursors and a built-in language-server client.",
     "ark": "Archive manager",
     "7zip": "File archiver",
     "timeshift": "System snapshots",
     "grub-btrfs": "GRUB Btrfs snapshots",
     "inotify-tools": "inotify CLI tools",
     "satty": "Screenshot annotator",
-
-    "fish": "Friendly interactive shell",
-
-    "vivaldi": "Vivaldi web browser",
+    "fish": "Interactive shell with autosuggestions and completion out of the box; syntax differs from Bash.",
+    "bash": "Widely used shell with traditional syntax; compatible with many existing shell scripts.",
+    "zsh": "Bash-like shell with advanced completion and many prompt/plugin options; usually needs configuration.",
+    "vivaldi": "Chromium-based browser with tab tiling, notes and extensive interface customization.",
     "vivaldi-ffmpeg-codecs": "Proprietary media codecs",
-    "zen-browser-bin": "Zen Browser (binary, AUR)",
-
+    "firefox": "Mozilla browser using Gecko; an alternative to Chromium-based browsers with extensions and sync.",
+    "chromium": "Open-source Chromium browser; Chrome-like site compatibility without Google Chrome branding.",
+    "brave-bin": "Chromium-based browser with built-in ad/tracker blocking and optional rewards and wallet features.",
+    "zen-browser-bin": "Firefox-based browser focused on vertical tabs, split views and workspaces.",
     "xdg-desktop-portal-gtk": "GTK portal backend",
     "xdg-desktop-portal-kde": "KDE portal backend",
     "gnome-keyring": "Secrets and keyring",
-    "network-manager-applet": "NM tray applet",
-    "networkmanager": "Network manager",
-    "nm-connection-editor": "Network GUI editor",
+    "network-manager-applet": "NetworkManager tray applet for joining networks; runs in a bar's system tray.",
+    "networkmanager": "NetworkManager backend including nmtui, a keyboard-driven text interface for connections.",
+    "nm-connection-editor": "GTK editor for saved network profiles and detailed settings; not a persistent tray applet.",
     "bluez": "Bluetooth stack",
     "bluez-utils": "Bluetooth utilities",
-    "blueman": "Bluetooth manager GUI",
-    "swaync": "Notification center",
+    "blueman": "Standalone GTK Bluetooth manager with pairing and device controls; does not require KDE settings.",
+    "bluedevil": "KDE Bluetooth settings opened through kcmshell6; uses KDE settings components instead of GTK.",
+    "kcmutils": "KDE settings module launcher used by Waybar",
+    "plasma-nm": "KDE network picker opened through plasmawindowed; requires Plasma workspace components.",
+    "plasma-workspace": "Provides plasmawindowed for the Waybar network picker",
+    "plasma-systemmonitor": "System monitor opened from the Waybar temperature module",
+    "swaync": "GTK notification center with history and do-not-disturb controls, rather than popups alone.",
     "ddcutil": "Monitor DDC control",
-
+    "fwupd": "Firmware update service and command-line client",
+    "pacman-contrib": "Package maintenance tools used by the Waybar update menu",
+    "zenity": "GTK confirmation dialogs used by the Waybar update action",
     "ttf-jetbrains-mono-nerd": "JetBrains Mono Nerd Font",
     "ttf-nerd-fonts-symbols": "Nerd Fonts symbols",
     "ttf-nerd-fonts-symbols-common": "Nerd Fonts common symbols",
@@ -289,7 +369,6 @@
     "qt5ct": "Qt5 settings tool",
     "qt6ct": "Qt6 settings tool",
     "nwg-look": "GTK theme switcher",
-
     "dysk": "Disk utility",
     "duf": "Disk usage/free viewer",
     "bat": "cat with syntax highlight",
@@ -302,20 +381,31 @@
     "firewalld": "Firewall daemon",
     "fastfetch": "System info tool",
     "tldr": "Simplified man pages",
-    "zellij": "Terminal workspace",
-    "calcurse": "CLI calendar and tasks",
+    "tmux": "Long-established terminal multiplexer with a compact server/client model and broad remote-session compatibility.",
+    "zellij": "Modern terminal workspace with discoverable shortcuts, built-in layouts and plugins, and a more guided interface than tmux.",
+    "herdr-bin": "Agent-aware terminal multiplexer with workspaces, pane status and a local control API; prebuilt AUR package.",
     "psensor": "Hardware sensors monitor",
-    "konsole": "KDE terminal",
+    "konsole": "KDE/Qt terminal with tabs, split views and profiles; fits KDE-themed desktops.",
     "playerctl": "Media player control",
     "brightnessctl": "Brightness control utility",
     "reflector": "Arch mirrorlist updater",
     "libnotify": "Desktop notifications library",
     "jq": "JSON processor",
-
+    "curl": "HTTP client used by Waybar integrations",
+    "less": "Pager used by the Waybar update log viewer",
+    "lm_sensors": "Hardware sensor tools used by the Waybar temperature module",
     "pyprland": "Hyprland plugin manager",
     "hyprsunset": "Night light for Hyprland",
     "hyprshot": "Hyprland screenshot tool",
-    "visual-studio-code-bin": "VS Code (binary)",
+    "ghostty": "GPU terminal with a GTK interface on Linux and built-in tabs and splits.",
+    "rofi": "Extensible launcher with scripts, themes and multiple menu modes; more configurable than a simple app list.",
+    "fuzzel": "Wayland desktop-app launcher with icons and fuzzy matching; a focused alternative to Rofi's many modes.",
+    "bemenu": "Text-based dmenu-style chooser; bemenu-run launches executable commands rather than desktop entries.",
+    "bemenu-wayland": "Wayland renderer required for graphical bemenu menus in Hyprland.",
+    "zed": "GPU-rendered code editor with collaboration features; a native alternative to Electron-based editors.",
+    "merkuro": "KDE calendar with a touch-friendly interface and Akonadi-backed local and online calendars.",
+    "visual-studio-code-bin": "Microsoft's VS Code build with a large extension marketplace and integrated debugging tools.",
+    "cursor-bin": "VS Code-derived editor with integrated AI assistance; some features need an account or subscription.",
     "github-desktop-bin": "GitHub Desktop",
     "wlogout": "Wayland logout menu",
     "waypaper-git": "Wallpaper manager",
@@ -324,9 +414,836 @@
     "wl-clipboard-history-git": "Clipboard history manager",
     "waybar-module-pacman-updates-git": "Waybar pacman updates module",
     "lsplug": "Monitor plug/unplug events",
-    "input-remapper-2": "Mouse and keyboard button remapper",
+    "input-remapper": "Mouse and keyboard button remapper",
     "pacsea-bin": "Package search and install",
-    "usrgrp-manager-bin": "User and group manager"
+    "usrgrp-manager-bin": "User and group manager",
+    "ironbar": "GTK/Rust bar with modules and popup widgets; an alternative to Waybar with its own configuration.",
+    "nwg-panel": "GTK panel with taskbar, workspace and tray modules; can also provide a separate dock-style panel.",
+    "nwg-dock-hyprland": "Dedicated Hyprland dock for pinned and running apps; narrower in scope than a full nwg-panel.",
+    "foot": "Small Wayland-only terminal with optional client/server mode; a simpler alternative to Kitty or Konsole.",
+    "mako": "Small Wayland notification daemon with config-file rules; no full notification-center panel.",
+    "dunst": "Rule-based notification daemon for Wayland and X11, with history and pause controls.",
+    "fnott": "Keyboard-oriented Wayland notification popups; this setup supports dismissal but no DND action.",
+    "kate": "KDE/Qt editor with projects, split views and language-server support; more tools than a basic text editor.",
+    "mousepad": "Simple GTK/Xfce text editor for everyday files; fewer development tools than Kate or VS Code.",
+    "gnome-calendar": "Simple GTK/GNOME calendar with online-account integration; fewer organizer tools than KOrganizer.",
+    "korganizer": "Full KDE organizer for calendars, tasks and scheduling; integrates with the Kontact suite.",
+    "calcurse": "Keyboard-driven terminal calendar with appointments and tasks; lighter than a desktop organizer.",
+    "khal": "Terminal calendar using ikhal and local calendar files; online sync can be added with vdirsyncer.",
+    "bluetui": "Keyboard-driven terminal Bluetooth manager focused on pairing and connecting devices.",
+    "bluetuith": "Terminal Bluetooth manager with mouse support and OBEX file transfers, beyond basic pairing.",
+    "ncpamixer": "Terminal mixer for PulseAudio-compatible devices and app streams; unlike ALSAmixer, supports per-app control.",
+    "tofi": "Minimal text-only Wayland launcher; this setup uses desktop entries through tofi-drun.",
+    "nodejs": "JavaScript runtime required by the Pi coding agent installer.",
+    "npm": "Node.js package manager required by the Pi coding agent installer.",
+    "tar": "Archive extraction tool required by several official coding-agent installers.",
+    "gzip": "Gzip decompressor required by official coding-agent installers that download tar.gz archives.",
+    "pi": "Extensible terminal coding agent with tool support; its installer requires Node.js 22.19 or newer and npm.",
+    "opencode": "Terminal coding agent with multiple provider integrations and a local client/server architecture.",
+    "claude-code": "Anthropic terminal coding agent for repository exploration, editing and development workflows.",
+    "codex-cli": "OpenAI terminal coding agent with interactive workflows and configurable sandbox modes.",
+    "cursor-cli": "Cursor terminal coding agent for codebase questions and changes; account authentication is completed manually."
+  },
+  "required": {
+    "pacman": [
+      "hyprland",
+      "xdg-desktop-portal-hyprland",
+      "xdg-desktop-portal-gtk",
+      "hyprpaper",
+      "hyprlock",
+      "hypridle",
+      "hyprpolkitagent",
+      "wl-clipboard",
+      "stow",
+      "jq",
+      "pipewire",
+      "pipewire-pulse",
+      "wireplumber",
+      "brightnessctl",
+      "playerctl",
+      "libnotify",
+      "python",
+      "python-requests",
+      "tk",
+      "xorg-xwayland",
+      "hyprshot",
+      "networkmanager",
+      "bluez",
+      "bluez-utils"
+    ],
+    "aur": []
+  },
+  "roles": {
+    "browser": {
+      "label": "Browser",
+      "selection": "multiple",
+      "required": true,
+      "default": "zen-browser-bin",
+      "options": [
+        {
+          "package": "firefox",
+          "source": "pacman",
+          "executable": "firefox",
+          "args": [],
+          "class": "firefox"
+        },
+        {
+          "package": "chromium",
+          "source": "pacman",
+          "executable": "chromium",
+          "args": [],
+          "class": "chromium"
+        },
+        {
+          "package": "vivaldi",
+          "source": "pacman",
+          "executable": "vivaldi-stable",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "extra_packages": [
+            "vivaldi-ffmpeg-codecs"
+          ],
+          "class": "vivaldi-stable"
+        },
+        {
+          "package": "zen-browser-bin",
+          "source": "aur",
+          "executable": "zen-browser",
+          "args": [],
+          "class": "zen"
+        },
+        {
+          "package": "brave-bin",
+          "source": "aur",
+          "executable": "brave",
+          "args": [],
+          "class": "brave-browser"
+        }
+      ]
+    },
+    "shell": {
+      "label": "Shell",
+      "selection": "multiple",
+      "required": true,
+      "default": "fish",
+      "options": [
+        {
+          "package": "bash",
+          "source": "pacman",
+          "executable": "bash",
+          "args": [],
+          "shell_path": "/bin/bash"
+        },
+        {
+          "package": "fish",
+          "source": "pacman",
+          "executable": "fish",
+          "args": [],
+          "shell_path": "/usr/bin/fish"
+        },
+        {
+          "package": "zsh",
+          "source": "pacman",
+          "executable": "zsh",
+          "args": [],
+          "shell_path": "/usr/bin/zsh"
+        }
+      ]
+    },
+    "terminal": {
+      "label": "Terminal",
+      "selection": "multiple",
+      "required": true,
+      "default": "kitty",
+      "options": [
+        {
+          "package": "kitty",
+          "source": "pacman",
+          "executable": "kitty",
+          "args": [],
+          "class": "kitty"
+        },
+        {
+          "package": "alacritty",
+          "source": "pacman",
+          "executable": "alacritty",
+          "args": [],
+          "class": "Alacritty"
+        },
+        {
+          "package": "ghostty",
+          "source": "pacman",
+          "executable": "ghostty",
+          "args": [],
+          "class": "com.mitchellh.ghostty"
+        },
+        {
+          "package": "konsole",
+          "source": "pacman",
+          "executable": "konsole",
+          "args": [],
+          "class": "org.kde.konsole"
+        },
+        {
+          "package": "foot",
+          "source": "pacman",
+          "executable": "foot",
+          "args": [],
+          "class": "foot"
+        }
+      ]
+    },
+    "multiplexer": {
+      "label": "Multiplexer",
+      "selection": "multiple",
+      "required": true,
+      "default": "herdr-bin",
+      "options": [
+        {
+          "package": "tmux",
+          "source": "pacman",
+          "executable": "tmux",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "zellij",
+          "source": "pacman",
+          "executable": "zellij",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "herdr-bin",
+          "source": "aur",
+          "executable": "herdr",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "file_manager": {
+      "label": "File manager",
+      "selection": "single",
+      "required": true,
+      "default": "dolphin",
+      "options": [
+        {
+          "package": "dolphin",
+          "source": "pacman",
+          "executable": "dolphin",
+          "args": []
+        },
+        {
+          "package": "thunar",
+          "source": "pacman",
+          "executable": "thunar",
+          "args": []
+        },
+        {
+          "package": "nautilus",
+          "source": "pacman",
+          "executable": "nautilus",
+          "args": []
+        },
+        {
+          "package": "nemo",
+          "source": "pacman",
+          "executable": "nemo",
+          "args": []
+        },
+        {
+          "package": "pcmanfm-qt",
+          "source": "pacman",
+          "executable": "pcmanfm-qt",
+          "args": []
+        }
+      ]
+    },
+    "tui_file_manager": {
+      "label": "TUI file manager",
+      "selection": "multiple",
+      "required": false,
+      "default": null,
+      "options": [
+        {
+          "package": "yazi",
+          "source": "pacman",
+          "executable": "yazi",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "ranger",
+          "source": "pacman",
+          "executable": "ranger",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "lf",
+          "source": "pacman",
+          "executable": "lf",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "nnn",
+          "source": "pacman",
+          "executable": "nnn",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "mc",
+          "source": "pacman",
+          "executable": "mc",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "vifm",
+          "source": "pacman",
+          "executable": "vifm",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "notifications": {
+      "label": "Notifications",
+      "selection": "single",
+      "required": true,
+      "default": "swaync",
+      "options": [
+        {
+          "package": "swaync",
+          "source": "pacman",
+          "executable": "swaync",
+          "args": []
+        },
+        {
+          "package": "mako",
+          "source": "pacman",
+          "executable": "mako",
+          "args": []
+        },
+        {
+          "package": "dunst",
+          "source": "pacman",
+          "executable": "dunst",
+          "args": []
+        },
+        {
+          "package": "fnott",
+          "source": "pacman",
+          "executable": "fnott",
+          "args": []
+        }
+      ]
+    },
+    "tui_editor": {
+      "label": "TUI editor",
+      "selection": "multiple",
+      "required": true,
+      "default": "neovim",
+      "options": [
+        {
+          "package": "neovim",
+          "source": "pacman",
+          "executable": "nvim",
+          "args": [],
+          "terminal": true,
+          "editor_bin": "nvim"
+        },
+        {
+          "package": "helix",
+          "source": "pacman",
+          "executable": "hx",
+          "args": [],
+          "terminal": true,
+          "editor_bin": "hx"
+        },
+        {
+          "package": "vim",
+          "source": "pacman",
+          "executable": "vim",
+          "args": [],
+          "terminal": true,
+          "editor_bin": "vim"
+        },
+        {
+          "package": "nano",
+          "source": "pacman",
+          "executable": "nano",
+          "args": [],
+          "terminal": true,
+          "editor_bin": "nano"
+        }
+      ]
+    },
+    "gui_editor": {
+      "label": "GUI editor",
+      "selection": "multiple",
+      "required": false,
+      "default": "visual-studio-code-bin",
+      "options": [
+        {
+          "package": "zed",
+          "source": "pacman",
+          "executable": "zeditor",
+          "args": [],
+          "editor_bin": "zeditor",
+          "desktop_file": "dev.zed.Zed.desktop"
+        },
+        {
+          "package": "visual-studio-code-bin",
+          "source": "aur",
+          "executable": "code",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "editor_bin": "code",
+          "desktop_file": "visual-studio-code.desktop"
+        },
+        {
+          "package": "cursor-bin",
+          "source": "aur",
+          "executable": "cursor",
+          "args": [
+            "--ozone-platform=wayland",
+            "--enable-features=UseOzonePlatform"
+          ],
+          "editor_bin": "cursor",
+          "desktop_file": "cursor.desktop"
+        },
+        {
+          "package": "kate",
+          "source": "pacman",
+          "executable": "kate",
+          "args": [],
+          "editor_bin": "kate",
+          "desktop_file": "org.kde.kate.desktop"
+        },
+        {
+          "package": "mousepad",
+          "source": "pacman",
+          "executable": "mousepad",
+          "args": [],
+          "editor_bin": "mousepad",
+          "desktop_file": "org.xfce.mousepad.desktop"
+        }
+      ]
+    },
+    "bar": {
+      "label": "Bar",
+      "selection": "single",
+      "required": true,
+      "default": "waybar",
+      "options": [
+        {
+          "package": "waybar",
+          "source": "pacman",
+          "executable": "waybar",
+          "args": [],
+          "extra_packages": [
+            "plasma-systemmonitor",
+            "fwupd",
+            "pacman-contrib",
+            "zenity",
+            "curl",
+            "less",
+            "lm_sensors"
+          ]
+        },
+        {
+          "package": "ironbar",
+          "source": "pacman",
+          "executable": "ironbar",
+          "args": []
+        },
+        {
+          "package": "nwg-panel",
+          "source": "pacman",
+          "executable": "nwg-panel",
+          "args": [
+            "-c",
+            "bar"
+          ]
+        }
+      ]
+    },
+    "dock": {
+      "label": "Dock",
+      "selection": "single",
+      "required": false,
+      "default": null,
+      "options": [
+        {
+          "package": "nwg-dock-hyprland",
+          "source": "pacman",
+          "executable": "nwg-dock-hyprland",
+          "args": []
+        },
+        {
+          "package": "nwg-panel",
+          "source": "pacman",
+          "executable": "nwg-panel",
+          "args": [
+            "-c",
+            "dock"
+          ]
+        }
+      ]
+    },
+    "calendar": {
+      "label": "Calendar",
+      "selection": "single",
+      "required": true,
+      "default": "merkuro",
+      "options": [
+        {
+          "package": "merkuro",
+          "source": "pacman",
+          "executable": "merkuro-calendar",
+          "args": []
+        },
+        {
+          "package": "gnome-calendar",
+          "source": "pacman",
+          "executable": "gnome-calendar",
+          "args": []
+        },
+        {
+          "package": "korganizer",
+          "source": "pacman",
+          "executable": "korganizer",
+          "args": []
+        },
+        {
+          "package": "calcurse",
+          "source": "pacman",
+          "executable": "calcurse",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "khal",
+          "source": "pacman",
+          "executable": "ikhal",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "bluetooth": {
+      "label": "Bluetooth",
+      "selection": "single",
+      "required": true,
+      "default": "bluedevil",
+      "options": [
+        {
+          "package": "blueman",
+          "source": "pacman",
+          "executable": "blueman-manager",
+          "args": []
+        },
+        {
+          "package": "bluedevil",
+          "source": "pacman",
+          "executable": "kcmshell6",
+          "args": [
+            "kcm_bluetooth"
+          ],
+          "extra_packages": [
+            "kcmutils"
+          ]
+        },
+        {
+          "package": "bluetui",
+          "source": "pacman",
+          "executable": "bluetui",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "bluetuith",
+          "source": "aur",
+          "executable": "bluetuith",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "network": {
+      "label": "Network",
+      "selection": "single",
+      "required": true,
+      "default": "plasma-nm",
+      "options": [
+        {
+          "package": "network-manager-applet",
+          "source": "pacman",
+          "executable": "nm-applet",
+          "args": []
+        },
+        {
+          "package": "nm-connection-editor",
+          "source": "pacman",
+          "executable": "nm-connection-editor",
+          "args": []
+        },
+        {
+          "package": "networkmanager",
+          "source": "pacman",
+          "executable": "nmtui",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "plasma-nm",
+          "source": "pacman",
+          "executable": "plasmawindowed",
+          "args": [
+            "org.kde.plasma.networkmanagement"
+          ],
+          "extra_packages": [
+            "plasma-workspace"
+          ]
+        }
+      ]
+    },
+    "audio": {
+      "label": "Audio",
+      "selection": "single",
+      "required": true,
+      "default": "pavucontrol-qt",
+      "options": [
+        {
+          "package": "pavucontrol",
+          "source": "pacman",
+          "executable": "pavucontrol",
+          "args": []
+        },
+        {
+          "package": "pavucontrol-qt",
+          "source": "pacman",
+          "executable": "pavucontrol-qt",
+          "args": []
+        },
+        {
+          "package": "qastools",
+          "source": "pacman",
+          "executable": "qasmixer",
+          "args": []
+        },
+        {
+          "package": "alsa-utils",
+          "source": "pacman",
+          "executable": "alsamixer",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "ncpamixer",
+          "source": "aur",
+          "executable": "ncpamixer",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "launcher": {
+      "label": "Launcher",
+      "selection": "single",
+      "required": true,
+      "default": "wofi",
+      "options": [
+        {
+          "package": "wofi",
+          "source": "pacman",
+          "executable": "wofi",
+          "args": [
+            "--show",
+            "drun",
+            "--style",
+            "{HOME}/.config/wofi/menu.css"
+          ],
+          "dmenu_executable": "wofi",
+          "dmenu_args": [
+            "--dmenu"
+          ],
+          "process": "wofi",
+          "namespace": "wofi"
+        },
+        {
+          "package": "rofi",
+          "source": "pacman",
+          "executable": "rofi",
+          "args": [
+            "-show",
+            "drun"
+          ],
+          "dmenu_executable": "rofi",
+          "dmenu_args": [
+            "-dmenu"
+          ],
+          "process": "rofi",
+          "namespace": "rofi"
+        },
+        {
+          "package": "fuzzel",
+          "source": "pacman",
+          "executable": "fuzzel",
+          "args": [],
+          "dmenu_executable": "fuzzel",
+          "dmenu_args": [
+            "--dmenu"
+          ],
+          "process": "fuzzel",
+          "namespace": "fuzzel"
+        },
+        {
+          "package": "bemenu",
+          "source": "pacman",
+          "extra_packages": [
+            "bemenu-wayland"
+          ],
+          "executable": "bemenu-run",
+          "args": [],
+          "dmenu_executable": "bemenu",
+          "dmenu_args": [],
+          "process": "bemenu-run",
+          "namespace": "bemenu"
+        },
+        {
+          "package": "tofi",
+          "source": "aur",
+          "executable": "tofi-drun",
+          "args": [
+            "--drun-launch=true"
+          ],
+          "dmenu_executable": "tofi",
+          "dmenu_args": [],
+          "process": "tofi-drun",
+          "namespace": "tofi"
+        }
+      ]
+    },
+    "agent": {
+      "label": "Coding agents",
+      "selection": "multiple",
+      "required": false,
+      "default": "pi",
+      "options": [
+        {
+          "package": "pi",
+          "source": "official",
+          "executable": "pi",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "nodejs",
+            "npm"
+          ],
+          "installer": {
+            "url": "https://pi.dev/install.sh",
+            "shell": "sh",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/pi"
+          ]
+        },
+        {
+          "package": "opencode",
+          "source": "official",
+          "executable": "opencode",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://opencode.ai/install",
+            "shell": "bash",
+            "args": [
+              "--no-modify-path"
+            ]
+          },
+          "binary_paths": [
+            "{HOME}/.opencode/bin/opencode"
+          ]
+        },
+        {
+          "package": "claude-code",
+          "source": "official",
+          "executable": "claude",
+          "args": [],
+          "extra_packages": [
+            "curl"
+          ],
+          "installer": {
+            "url": "https://claude.ai/install.sh",
+            "shell": "bash",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/claude"
+          ]
+        },
+        {
+          "package": "codex-cli",
+          "source": "official",
+          "executable": "codex",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://chatgpt.com/codex/install.sh",
+            "shell": "sh",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/codex"
+          ]
+        },
+        {
+          "package": "cursor-cli",
+          "source": "official",
+          "executable": "cursor-agent",
+          "args": [],
+          "extra_packages": [
+            "curl",
+            "tar",
+            "gzip"
+          ],
+          "installer": {
+            "url": "https://cursor.com/install",
+            "shell": "bash",
+            "args": []
+          },
+          "binary_paths": [
+            "{HOME}/.local/bin/cursor-agent"
+          ]
+        }
+      ]
+    }
+  },
+  "official_packages": {
+    "coding_agents": [
+      "pi",
+      "opencode",
+      "claude-code",
+      "codex-cli",
+      "cursor-cli"
+    ]
   }
 }
-

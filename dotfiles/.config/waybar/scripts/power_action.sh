@@ -34,8 +34,13 @@ case "$action" in
   logout)
     notify-send "Logout" "Logging out in 3 seconds..."
     sleep 3
-    if ! hyprctl dispatch exit; then
-      notify-send "Logout" "Failed to logout" --urgency=critical
+    if ! hyprctl dispatch 'hl.dsp.exit()'; then
+      notify-send "Logout" "Hyprland exit failed, trying loginctl..." --urgency=critical
+      if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+        loginctl terminate-session "$XDG_SESSION_ID"
+      else
+        loginctl terminate-user "$USER"
+      fi
     fi
     ;;
   lock)

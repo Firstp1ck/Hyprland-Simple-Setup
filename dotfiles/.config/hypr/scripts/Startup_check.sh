@@ -1,103 +1,142 @@
 #!/usr/bin/env bash
+set -uo pipefail
 
-sleep 5 # Wait for 5 seconds to allow processes to start
+initial_delay=${HSS_STARTUP_INITIAL_DELAY_SECONDS:-1}
+timeout_seconds=${HSS_STARTUP_TIMEOUT_SECONDS:-30}
+poll_seconds=${HSS_STARTUP_POLL_SECONDS:-1}
+roles_file=${HSS_ROLES_FILE:-$HOME/.config/hypr/roles.json}
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+startup_state=${HSS_STARTUP_STATE_HELPER:-$script_dir/startup_state.sh}
+triage=${HSS_TRIAGE_HELPER:-$HOME/.local/scripts/troubleshoot_with_agent.sh}
+app_logs=${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/apps
+uid=$(id -u)
 
-# Function to check if a process is running
-check_process() {
-    # Check if process is installed otherwise skip
-    if ! command -v "$1" &>/dev/null; then
+sleep "$initial_delay"
+
+notify_failure() {
+    local title=$1 body=$2 log=${3:-}
+    local args=(
+        --source "${BASH_SOURCE[0]}"
+        --title "$title"
+        --body "$body"
+        --urgency critical
+        --app-name "Hyprland Simple Setup"
+        --icon dialog-warning
+    )
+    [[ -z $log ]] || args+=(--log "$log")
+    if [[ -x $triage ]] && "$triage" "${args[@]}"; then
         return 0
     fi
-
-    # Check if the process is running
-    local process_name="$1"
-    if ! pgrep -f "$process_name" >/dev/null; then
-        notify-send -u critical "Autostart Warning" "Process '$process_name' is not running!"
-        return 1
-    fi
-    return 0
+    notify-send --urgency=critical --app-name="Hyprland Simple Setup" --icon=dialog-warning -- "$title" "$body"
 }
 
-check_dolphin_fix() {
-    if [ ! -f "/tmp/dolphin-fix-ran" ]; then
-        notify-send -u critical "Autostart Warning" "Dolphin fix script did not run!"
-        return 1
-    fi
-    return 0
+process_running() {
+    local process=$1
+    [[ $process =~ ^[A-Za-z0-9._+-]+$ ]] || return 1
+    pgrep -u "$uid" -f "(^|/)$process([[:space:]]|$)" >/dev/null 2>&1
 }
 
-check_wallpaper_change() {
-    if [ ! -f "/tmp/wallpaper-change-ran" ]; then
-        notify-send -u critical "Autostart Warning" "Wallpaper change script did not run!"
-        return 1
-    fi
-    return 0
+marker_ready() {
+    "$startup_state" has "$1" >/dev/null 2>&1
 }
 
-check_numlock_setting() {
-    if [ ! -f "/tmp/numlock-set" ]; then
-        notify-send -u critical "Autostart Warning" "Numlock setting was not applied!"
-        return 1
-    fi
-    return 0
-}
-
-# Array of processes to check (extracted from autostart.conf)
-processes=(
-    "tor"
-    "polkitd"
-    "nm-applet"
-    "hyprpaper"
-    "pypr"
-    "wl-clip-persist"
-    "wl-clipboard-history"
-    "swaync"
-    "swaync-client"
-    "hypridle"
-    "xwaylandvideobridge"
-    "input-remapper"
-    "waybar"
-    "Telegram"
-    "wasistlos"
-    "hyprsunset"
-    "conky"
-    "fcitx5"
-    "bluetoothd"
+declare -a process_names=(hyprpaper hypridle wl-clip-persist wl-clipboard-history)
+declare -a process_logs=(
+    "${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/hyprpaper.log"
+    ""
+    ""
+    ""
 )
-
-# Counter for failed processes
-failed=0
-
-# Add numlock check before other checks
-if ! check_numlock_setting; then
-    ((failed++))
-fi
-# Check for dolphin fix
-if ! check_dolphin_fix; then
-    ((failed++))
-fi
-
-# Check for wallpaper change
-if ! check_wallpaper_change; then
-    ((failed++))
-fi
-
-# Check each process
-for process in "${processes[@]}"; do
-    if ! check_process "$process"; then
-        ((failed++))
+declare -A process_seen=(
+    [hyprpaper]=1
+    [hypridle]=1
+    [wl-clip-persist]=1
+    [wl-clipboard-history]=1
+)
+roles_valid=true
+if [[ -r $roles_file ]]; then
+    if jq -e '.roles | type == "object"' "$roles_file" >/dev/null 2>&1; then
+        while IFS=$'\t' read -r executable role; do
+            [[ -n $executable ]] || continue
+            process=${executable##*/}
+            [[ -z ${process_seen[$process]+x} ]] || continue
+            process_seen[$process]=1
+            process_names+=("$process")
+            case "$role" in
+                bar|dock) process_logs+=("$app_logs/$role.log") ;;
+                *) process_logs+=("") ;;
+            esac
+        done < <(jq -r '
+            ["notifications", "bar", "dock"][] as $role
+            | .roles[$role]?
+            | select(type == "object")
+            | [(.executable // ""), $role]
+            | @tsv
+        ' "$roles_file")
+    else
+        roles_valid=false
     fi
+else
+    roles_valid=false
+fi
+
+marker_names=(numlock wallpaper)
+marker_messages=(
+    "Numlock setting was not applied in this Hyprland session."
+    "Wallpaper change did not complete in this Hyprland session."
+)
+expect_dolphin=${HSS_EXPECT_DOLPHIN_FIX:-}
+if [[ -z $expect_dolphin ]]; then
+    expect_dolphin=0
+    autostart_lua=${HSS_AUTOSTART_LUA:-$HOME/.config/hypr/sources/autostart.lua}
+    autostart_conf=${HSS_AUTOSTART_CONF:-$HOME/.config/hypr/sources/autostart.conf}
+    dolphin_conf_pattern='^[[:space:]]*exec-once[[:space:]]*=[[:space:]]*\$hyprscripts/fix-dolphin[.]sh([[:space:]]*&)?[[:space:]]*$'
+    if grep -Fqx '    hl.exec_cmd(apps.hyprscripts .. "/fix-dolphin.sh")' "$autostart_lua" 2>/dev/null \
+        || grep -Eq "$dolphin_conf_pattern" "$autostart_conf" 2>/dev/null; then
+        expect_dolphin=1
+    fi
+fi
+if [[ $expect_dolphin == 1 ]]; then
+    marker_names+=(dolphin)
+    marker_messages+=("Dolphin setup did not run in this Hyprland session.")
+fi
+
+deadline=$((SECONDS + timeout_seconds))
+declare -a missing_markers=() missing_processes=()
+while :; do
+    missing_markers=()
+    missing_processes=()
+    for index in "${!marker_names[@]}"; do
+        marker_ready "${marker_names[$index]}" || missing_markers+=("$index")
+    done
+    for index in "${!process_names[@]}"; do
+        process_running "${process_names[$index]}" || missing_processes+=("$index")
+    done
+    ((${#missing_markers[@]} == 0 && ${#missing_processes[@]} == 0)) && break
+    ((SECONDS >= deadline)) && break
+    sleep "$poll_seconds"
 done
 
-# Final summary notification if any process failed
-if [ $failed -gt 0 ]; then
-    notify-send -u critical "Autostart Status" "$failed processes failed to start!"
-else
-    notify-send -u normal "Autostart Status" "All processes are running!"
+failed=0
+if [[ $roles_valid != true ]]; then
+    notify_failure "Autostart Warning" "Selected application role data is missing or invalid: $roles_file"
+    failed=$((failed + 1))
 fi
+for index in "${missing_markers[@]}"; do
+    notify_failure "Autostart Warning" "${marker_messages[$index]}"
+    failed=$((failed + 1))
+done
+for index in "${missing_processes[@]}"; do
+    process=${process_names[$index]}
+    log=${process_logs[$index]}
+    body="Expected current-user process '$process' is not running."
+    [[ -z $log ]] || body+=" Diagnostic log: $log"
+    notify_failure "Autostart Warning" "$body" "$log"
+    failed=$((failed + 1))
+done
 
-# Clearing all temp files
-rm -f /tmp/dolphin-fix-ran
-rm -f /tmp/wallpaper-change-ran
-rm -f /tmp/numlock-set
-rm -f /tmp/rsync_success
+if ((failed > 0)); then
+    notify_failure "Autostart Status" "$failed startup checks failed. No automatic recovery was attempted."
+    exit 1
+fi
+notify-send --urgency=normal --app-name="Hyprland Simple Setup" -- "Autostart Status" "All expected startup components are ready."

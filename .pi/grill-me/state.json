@@ -1,0 +1,269 @@
+{
+  "createdAt": "2026-09-19T22:54:10.237Z",
+  "updatedAt": "2026-09-19T23:24:41.386Z",
+  "projectDir": "/mnt/SSD_NVME_4TB/GitHub/Hyprland-Simple-Setup",
+  "plan": "i want to do something ambitious. I want to have a ISO of this setup, so the setup should start directly when booted from the iso over for example an usb. get inspiration of omarchy https://github.com/omacom/omarchy the goal for now is a detailed plan.",
+  "turns": [
+    {
+      "question": "What should appear when someone boots the USB?",
+      "recommendedAnswer": "The configured Hyprland live desktop with an explicit Install launcher, so users can try the setup without touching their disks.",
+      "userAnswer": "Start the setup/installation wizard directly; no full live desktop",
+      "decisionStatus": "resolved",
+      "notes": "User selected installer-first rather than a live desktop. ISO session is an installation environment; configured Hyprland is the installed outcome."
+    },
+    {
+      "question": "Who must the first release serve?",
+      "recommendedAnswer": "A public experimental release for technical users, with a narrow tested hardware matrix rather than a general-purpose distro promise.",
+      "userAnswer": "Public release for newcomers with a polished supported installation",
+      "decisionStatus": "resolved",
+      "notes": "Requires stronger onboarding, safety, support documentation, hardware validation, and release gates than the recommended technical preview."
+    },
+    {
+      "question": "Which base should the ISO use?",
+      "recommendedAnswer": "Vanilla Arch Linux with archiso; the existing pacman/AUR package model fits it without inheriting another distro's custom repositories.",
+      "userAnswer": "Vanilla Arch Linux",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which hardware must v1 explicitly support and test?",
+      "recommendedAnswer": "x86_64 Intel/AMD graphics plus a QEMU/KVM test target; treat NVIDIA as experimental unless it is essential to your machines.",
+      "userAnswer": "x86_64 PCs with Intel or AMD graphics; x86_64 PCs with NVIDIA graphics; Laptops with hybrid Intel/AMD plus NVIDIA graphics; QEMU/KVM virtual machines; VirtualBox or VMware virtual machines",
+      "decisionStatus": "resolved",
+      "notes": "Broad release matrix selected. Define NVIDIA generations and the actual hardware/VM release evidence in a dependent round. ARM64 not selected."
+    },
+    {
+      "question": "What firmware compatibility is required?",
+      "recommendedAnswer": "UEFI with Secure Boot disabled for v1; legacy BIOS and Secure Boot signing add separate implementation and testing work.",
+      "userAnswer": "UEFI only; Secure Boot disabled",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What must work without internet?",
+      "recommendedAnswer": "The default desktop and default disk installation, if included, work offline; optional applications can require internet. This makes USB boot independent of mirrors and AUR availability.",
+      "userAnswer": "Offline default desktop/install; optional extras online",
+      "decisionStatus": "resolved",
+      "notes": "Applied to selected installer-only boot: ISO boots installer offline and installs a usable default desktop offline."
+    },
+    {
+      "question": "How much of today's selectable setup should ship on the ISO?",
+      "recommendedAnswer": "One curated default profile generated from packages.json, preserving other choices for installation or later configuration rather than bundling everything.",
+      "userAnswer": "One representative default profile; keep optional choices available separately",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Should changes made while running from USB survive reboot?",
+      "recommendedAnswer": "A disposable live session in v1; persistent USB storage is a separate feature with filesystem and privacy implications.",
+      "userAnswer": "No persistence; every USB boot starts clean",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which Omarchy ideas should guide this project?",
+      "recommendedAnswer": "Borrow installer structure, prebuilt package delivery, and release testing, while keeping this project's appearance and application choices.",
+      "userAnswer": "Prebuilt packages and offline installation; Polished onboarding and cohesive defaults",
+      "decisionStatus": "resolved",
+      "notes": "Omarchy is inspiration for these selected aspects, not authorization to fork it or adopt its appearance/update system."
+    },
+    {
+      "question": "What should happen to the current setup-on-existing-Arch workflow?",
+      "recommendedAnswer": "Preserve it and share package/configuration logic with the ISO rather than replacing it.",
+      "userAnswer": "Other: the github repo is currently also an aur package. this should be kept. iso will be a release artifact on github releases.",
+      "decisionStatus": "resolved",
+      "notes": "Preserve AUR distribution and add ISO as a GitHub Release artifact. Need check current PKGBUILD and resolve compatibility requirements for existing workflows."
+    },
+    {
+      "question": "How should v1 be built and distributed?",
+      "recommendedAnswer": "A documented local build plus manually approved experimental releases; introduce automated publication only after VM and hardware gates work.",
+      "userAnswer": "Automated CI builds and public releases from the start",
+      "decisionStatus": "resolved",
+      "notes": "Use GitHub Releases per preceding answer. Define publication gates, runner constraints, artifact splitting, and signing policy."
+    },
+    {
+      "question": "What image-size constraint should the plan optimize for?",
+      "recommendedAnswer": "Target an 8 GB USB drive and measure actual ISO/RAM use before declaring hard limits.",
+      "userAnswer": "No initial size target; prioritize functionality",
+      "decisionStatus": "resolved",
+      "notes": "GitHub Release per-asset limits still constrain distribution and require evidence-backed handling."
+    },
+    {
+      "question": "If the offline ISO exceeds GitHub's under-2-GiB per-asset limit, how should we distribute it?",
+      "recommendedAnswer": "Preserve offline functionality and use split GitHub assets with a documented verified reassembly helper; users must reassemble them before flashing.",
+      "userAnswer": "Other: both 1. and 2.",
+      "decisionStatus": "resolved",
+      "notes": "Refers to split GitHub Release assets with reassembly/verification tools AND a full externally hosted ISO linked from GitHub Releases. External hosting choice/availability remains to resolve."
+    },
+    {
+      "question": "What should the automatically launched installer look like?",
+      "recommendedAnswer": "Extend the existing Rust TUI with a guided ISO mode; it works without a graphics driver and preserves the project's current interface.",
+      "userAnswer": "Guided text/terminal installer based on the existing Rust TUI",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which disk-installation modes must v1 offer?",
+      "recommendedAnswer": "Erase one explicitly selected whole disk only, with a clear destructive-action summary and typed confirmation; dual boot and partition resizing multiply the risk.",
+      "userAnswer": "Erase disk or install into existing unallocated space; never resize",
+      "decisionStatus": "resolved",
+      "notes": "Requires existing-partition/ESP preservation, free-space validation, boot entry policy, multi-disk guardrails, and negative tests."
+    },
+    {
+      "question": "Which installed filesystem/recovery policy should v1 use?",
+      "recommendedAnswer": "One fixed Btrfs layout with snapshots and a tested recovery path, building on the project's existing Timeshift/grub-btrfs integration rather than exposing many layouts.",
+      "userAnswer": "Btrfs with snapshots and a tested recovery path",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What encryption policy should the installer offer?",
+      "recommendedAnswer": "LUKS2 encryption enabled by default with an explicit opt-out and clear passphrase/recovery guidance; do not collect any actual passphrase here.",
+      "userAnswer": "Encryption optional and off by default",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "How should ISO defaults relate to packages.json?",
+      "recommendedAnswer": "An explicit ISO profile with the same desktop identity, using redistributable prebuilt packages and audited substitutions where needed; keep AUR-install defaults unchanged.",
+      "userAnswer": "Allow an explicit ISO-specific default profile; preserve existing AUR defaults",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "When should users choose and install optional online applications?",
+      "recommendedAnswer": "After the first successful desktop boot, keeping network/AUR failures out of the base OS installation.",
+      "userAnswer": "Inside the USB installer when internet is available",
+      "decisionStatus": "resolved",
+      "notes": "Keep offline base installation independent of optional online selections; clarify behavior if downloads fail."
+    },
+    {
+      "question": "How should optional coding agents appear in the ISO experience?",
+      "recommendedAnswer": "Do not bundle agent binaries or run remote installers during base installation; offer them later through the existing optional agent selector with manual authentication.",
+      "userAnswer": "Offer coding agents later; no agent required for offline installation",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What implementation direction should the plan take for partitioning and base Arch installation?",
+      "recommendedAnswer": "Evaluate a pinned archinstall backend behind the Rust wizard, with an early offline/encryption proof before committing; avoid inventing a partitioning engine.",
+      "userAnswer": "Use pinned archinstall if an early integration proof passes",
+      "decisionStatus": "resolved",
+      "notes": "Spike must include install into unallocated space, ESP preservation, selected Btrfs recovery scheme, and optional LUKS2. Failure triggers an explicit new architecture decision, not silent fallback."
+    },
+    {
+      "question": "Beyond keeping the AUR package, what compatibility must the plan preserve?",
+      "recommendedAnswer": "Keep the current command, existing-system setup, package choices, and config-preservation behavior; add a distinct ISO mode.",
+      "userAnswer": "Preserve current command and existing-system setup behavior",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "How should v1 define NVIDIA support?",
+      "recommendedAnswer": "Support explicitly tested GPUs supported by current Arch drivers, including hybrid laptops; detect unsupported/legacy GPUs early instead of promising all NVIDIA generations.",
+      "userAnswer": "Current-driver-supported, explicitly tested NVIDIA and hybrid hardware",
+      "decisionStatus": "resolved",
+      "notes": "Potential conflict with later VM-only release gate; must reconcile tested hardware scope versus candidate support."
+    },
+    {
+      "question": "How should public support claims be verified?",
+      "recommendedAnswer": "Automated VM gates plus recorded physical Intel/AMD, NVIDIA, and hybrid-laptop checks before a stable release; missing evidence blocks that support claim.",
+      "userAnswer": "Release after VM tests; label physical-hardware support unverified",
+      "decisionStatus": "resolved",
+      "notes": "Requires reconciliation with newcomer-facing supported release and explicitly tested NVIDIA selection. VM tests cannot establish physical GPU behavior."
+    },
+    {
+      "question": "What build infrastructure can the plan rely on?",
+      "recommendedAnswer": "Start with GitHub-hosted runners and a pinned Arch build environment, measure resource limits, and make a dedicated runner a documented escalation rather than an assumption.",
+      "userAnswer": "GitHub-hosted runners only initially; assess limits in a build spike",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "When should automation publish an ISO?",
+      "recommendedAnswer": "Tag-triggered builds with automatic prerelease publication after tests; stable promotion requires the selected hardware evidence, not publication on every commit.",
+      "userAnswer": "Tags publish stable releases automatically after automated tests",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What authenticity guarantees should releases provide?",
+      "recommendedAnswer": "SHA-256 checksums, a signed checksum manifest, and build provenance; checksums alone detect corruption but do not authenticate the publisher.",
+      "userAnswer": "Checksums only for v1",
+      "decisionStatus": "resolved",
+      "notes": "Record authenticity limitation; checksums detect corruption but are not publisher authentication."
+    },
+    {
+      "question": "How should installed machines receive updates?",
+      "recommendedAnswer": "Normal Arch/AUR package updates plus explicit setup/config updates that preserve user edits; do not add a custom distro update service in v1.",
+      "userAnswer": "Normal Arch/AUR updates; explicit non-destructive setup/config updates",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What localization must v1 provide?",
+      "recommendedAnswer": "English installer text with explicit keyboard, timezone, and system-locale selection; remove hardcoded Swiss-German defaults from the ISO path.",
+      "userAnswer": "English and German UI; selectable system localization",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "How should we reconcile broad NVIDIA/hybrid support with VM-only release gates?",
+      "recommendedAnswer": "Implement support for current drivers, publish stable tags after VM gates as requested, but label all physical GPU compatibility unverified until device-specific evidence exists.",
+      "userAnswer": "Target current physical GPUs, but explicitly label them unverified at release",
+      "decisionStatus": "resolved",
+      "notes": "Supersedes the explicitly-tested physical-hardware boundary from turn 23. Public newcomer-oriented stable releases are VM-validated, not physically hardware-certified."
+    },
+    {
+      "question": "Which virtual machines must be release-tested automatically?",
+      "recommendedAnswer": "QEMU/KVM with UEFI and working 3D acceleration is mandatory; document VirtualBox/VMware as unverified until separately tested, since desktop graphics behavior differs.",
+      "userAnswer": "QEMU/KVM required; VirtualBox and VMware documented but unverified",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What external-hosting contract should the plan use for the full ISO?",
+      "recommendedAnswer": "User-provisioned S3-compatible object storage with a public HTTPS download URL and automated CI uploads; keep provider/bucket/credentials as deployment configuration, not source code or interview answers.",
+      "userAnswer": "Plan S3-compatible object storage and public HTTPS downloads",
+      "decisionStatus": "resolved",
+      "notes": "Provider-neutral S3 deployment contract. Provisioning endpoint/bucket/CI credentials is a future infrastructure prerequisite, not authorization to create paid infrastructure now."
+    },
+    {
+      "question": "If one required distribution destination fails, what should release automation do?",
+      "recommendedAnswer": "Keep the GitHub release draft until GitHub parts and the full mirror ISO are uploaded and verified; retry uploads without rebuilding different bytes.",
+      "userAnswer": "Publish verified GitHub assets even if the mirror is temporarily unavailable",
+      "decisionStatus": "resolved",
+      "notes": "Mirror failure is non-blocking. Mark mirror unavailable, omit invalid URLs, retry publishing the exact same verified bytes."
+    },
+    {
+      "question": "If an optional application cannot download or install, what should happen?",
+      "recommendedAnswer": "Preserve the completed offline base, show the failure clearly, and let the user retry or explicitly skip it; never report that application as installed.",
+      "userAnswer": "Keep the base installed; offer explicit Retry or Skip with a final summary",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What should 'install into unallocated space' guarantee?",
+      "recommendedAnswer": "Support existing Windows or Linux on GPT disks, never resize/format their partitions, preserve their EFI files/entries, and let firmware select the OS; a unified cross-OS GRUB menu is not required in v1.",
+      "userAnswer": "Preserve Windows/Linux and require a unified boot menu",
+      "decisionStatus": "resolved",
+      "notes": "Requires GRUB integration plus reliable identification and preservation of foreign boot targets. Unsupported layouts must be refused before writes; clarify supported foreign-OS boundary if needed."
+    },
+    {
+      "question": "What must the tested Btrfs recovery path provide?",
+      "recommendedAnswer": "Initial/system snapshots plus a guided recovery mode on the ISO that restores the system and repairs matching boot files; leave personal files untouched and do not call snapshots a backup.",
+      "userAnswer": "Guided ISO-based snapshot restore and boot repair; no snapshot boot-menu requirement",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which baseline should the plan specify?",
+      "recommendedAnswer": "Firefox, Fish, Kitty, Zellij, Neovim, Kate, Waybar, SwayNC, Wofi, Merkuro, Bluedevil, plasma-nm, and pavucontrol-qt; retain this project's Hyprland theme and keybindings, omit agents and a dock, and audit all bundled assets.",
+      "userAnswer": "Other: packages as recommended in 1. but instead of zejllji, use herdr.",
+      "decisionStatus": "resolved",
+      "notes": "Final profile uses Herdr instead of Zellij. Current package registry identifies herdr-bin as AUR. Audit redistribution, runtime dependencies, offline launch, and update path; do not silently substitute another multiplexer."
+    },
+    {
+      "question": "Must v1 support hibernation to disk?",
+      "recommendedAnswer": "Normal shutdown and suspend only, with suspend explicitly hardware-dependent; defer hibernation because swap/resume setup interacts with encryption and Btrfs recovery.",
+      "userAnswer": "No hibernation guarantee in v1; shutdown and suspend only",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which existing installations should the unified-menu promise cover?",
+      "recommendedAnswer": "GPT/UEFI Windows and Linux with discoverable, intact EFI loaders; reject unsupported or ambiguous layouts before writes, never resize partitions, and warn BitLocker users that boot changes can trigger recovery.",
+      "userAnswer": "Discoverable intact GPT/UEFI loaders only; refuse unsupported layouts before writes",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What Windows-specific evidence should block release?",
+      "recommendedAnswer": "Require synthetic Windows-style partition/EFI preservation tests and real Linux dual-boot VM tests, but label actual Windows/BitLocker boot unverified until a licensed test image is supplied. A fake EFI fixture must not be reported as a Windows boot test.",
+      "userAnswer": "Fixtures and Linux dual-boot gate releases; actual Windows/BitLocker boot remains explicitly unverified",
+      "decisionStatus": "resolved",
+      "notes": "Final user-facing release notes and installer warnings must distinguish implemented detection/chainloading from unverified actual Windows/BitLocker boot."
+    }
+  ]
+}

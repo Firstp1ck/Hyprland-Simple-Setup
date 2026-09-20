@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'xdg-user-dirs-update'
+  printf ' %q' "$@"
+  printf '\n'
+} >> "$STUB_LOG"
+exit 0

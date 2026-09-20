@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=/bin/sh -c 'exec "$HOME/.config/hypr/scripts/role_exec.sh" notifications'

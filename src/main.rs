@@ -1,5 +1,7 @@
+mod packages;
+
 use std::io::{self};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -7,7 +9,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use chrono::Local;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    MouseButton, MouseEvent, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -18,10 +23,14 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap,
 };
-use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+use packages::{
+    PackageSource, PackagesRoot, ROLE_ORDER, RoleSelection, SelectionKind, enforce_required,
+    set_all_with_required, toggle_with_required,
+};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Read as IoRead;
@@ -80,8 +89,7 @@ enum UiMode {
 #[derive(Clone, Debug)]
 struct PreflightConfig {
     prompt_default_yes: bool,
-    fish_language_choice: u8, // 1,2,3
-    terminal_choice: u8,      // 1=kitty, 2=alacritty
+    shell_language_choice: u8, // 1,2,3
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -93,8 +101,8 @@ struct PreflightConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreflightField {
     EnvPromptDefaultYn,
-    EnvFishLanguageChoiceOverride,
-    EnvTerminalChoice,
+    EnvShellLanguageChoiceOverride,
+    Applications,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
     EnvMonitorConfig,
@@ -117,6 +125,8 @@ enum EditKind {
     ConfirmReboot,
     ConfirmEnableMonitorSetup,
     ConfirmStartInstall,
+    SelectApplications,
+    SelectRole,
     SelectPacman,
     SelectAur,
 }
@@ -127,12 +137,101 @@ struct MonitorInfo {
     modes: Vec<String>,
 }
 
+const OUTPUT_HISTORY_LIMIT: usize = 5000;
+
+#[derive(Default)]
+struct OutputLog {
+    detailed: Vec<String>,
+    compact: Vec<String>,
+    show_details: bool,
+    in_summary: bool,
+}
+
+impl OutputLog {
+    fn lines(&self) -> &[String] {
+        if self.show_details {
+            &self.detailed
+        } else {
+            &self.compact
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.lines().len()
+    }
+
+    fn clear(&mut self) {
+        self.detailed.clear();
+        self.compact.clear();
+    }
+
+    // Keep separate histories so build chatter cannot evict compact status messages.
+    fn push(&mut self, stored: String, raw: &str) -> usize {
+        if raw == "Install started" {
+            self.in_summary = false;
+        }
+        if raw.contains("========= Installation Summary =========")
+            || raw.contains("Final Setup Report")
+            || raw.starts_with("[DRY-RUN SUMMARY]")
+        {
+            self.in_summary = true;
+        }
+        let compact = self.in_summary || is_compact_output(raw);
+        self.detailed.push(stored.clone());
+        if compact {
+            self.compact.push(stored);
+        }
+        let detailed_drop = self.detailed.len().saturating_sub(OUTPUT_HISTORY_LIMIT);
+        let compact_drop = self.compact.len().saturating_sub(OUTPUT_HISTORY_LIMIT);
+        self.detailed.drain(..detailed_drop);
+        self.compact.drain(..compact_drop);
+        if self.show_details {
+            detailed_drop
+        } else {
+            compact_drop
+        }
+    }
+}
+
+fn is_compact_output(raw: &str) -> bool {
+    let message = raw.trim();
+    output_line_severity(message) != StepSeverity::None
+        || (message.starts_with("===") && message.ends_with("==="))
+        || [
+            "[*]",
+            "[DRY-RUN]",
+            "$ ",
+            "Install started",
+            "Install aborted",
+            "setup.sh ",
+            "Hyprland Setup TUI",
+            "Keys:",
+            "Use Arrow",
+        ]
+        .iter()
+        .any(|prefix| message.starts_with(prefix))
+}
+
+#[derive(Default)]
+struct OutputViewport {
+    area: Rect,
+    body: Rect,
+    scrollbar: Rect,
+    follow_button: Rect,
+    mode_button: Rect,
+    total_rows: usize,
+    focused: bool,
+    dragging: bool,
+}
+
 struct AppState {
     list_state: ListState,
-    logs: Vec<String>,
+    logs: OutputLog,
     last_tick: Instant,
-    scroll: u16,
+    scroll: usize,
     follow_tail: bool,
+    log_viewport_lines: usize,
+    output: OutputViewport,
     rx: Receiver<String>,
     tx: Sender<String>,
     setup_script: Option<PathBuf>,
@@ -155,12 +254,13 @@ struct AppState {
     install_started_at: Option<Instant>,
     // Live sections parsed from setup.sh output
     sections: Vec<SetupSection>,
+    planned_section_count: usize,
     current_section: Option<usize>,
     // Packages data and selections
     pacman_cats: Vec<(String, Vec<String>)>,
     aur_cats: Vec<(String, Vec<String>)>,
-    pacman_sel_map: HashMap<String, bool>,
-    aur_sel_map: HashMap<String, bool>,
+    pacman_sel_map: BTreeMap<String, bool>,
+    aur_sel_map: BTreeMap<String, bool>,
     ms_cursor: usize,
     // Right-pane focus and cursor for live category filter in package selector
     ms_focus_right: bool,
@@ -176,6 +276,14 @@ struct AppState {
     // User-added packages and their resolved source
     user_added: Vec<String>,
     user_added_src: HashMap<String, String>, // name -> "pacman" | "aur"
+    // Package registry and derived selection state
+    package_registry: Option<PackagesRoot>,
+    package_load_error: Option<String>,
+    role_selection: Option<RoleSelection>,
+    application_cursor: usize,
+    role_cursor: usize,
+    required_pacman: BTreeSet<String>,
+    required_aur: BTreeSet<String>,
     // Package descriptions loaded from packages.json
     pkg_descs: HashMap<String, String>,
     // Generic lines for warning popups (e.g., Add Packages validation)
@@ -187,19 +295,6 @@ struct AppState {
     monitor_setup_available: bool,
     // If true, Add Packages editor acts as append-only (opened via Enter)
     add_packages_append_mode: bool,
-}
-
-fn sync_terminal_package_selection(app: &mut AppState) {
-    // `packages.json` includes both terminals. Preflight "terminal choice" determines which one is
-    // enabled by default, while still allowing manual overrides in the package selector.
-    let want_kitty = app.preflight.terminal_choice == 1;
-    let want_alacritty = app.preflight.terminal_choice == 2;
-
-    if app.pacman_sel_map.contains_key("kitty") || app.pacman_sel_map.contains_key("alacritty") {
-        app.pacman_sel_map.insert("kitty".to_string(), want_kitty);
-        app.pacman_sel_map
-            .insert("alacritty".to_string(), want_alacritty);
-    }
 }
 
 impl AppState {
@@ -229,12 +324,16 @@ impl AppState {
             Vec::new()
         };
 
+        let planned_section_count = sections_init.len();
+
         let mut s = Self {
             list_state,
-            logs: Vec::new(),
+            logs: OutputLog::default(),
             last_tick: Instant::now(),
             scroll: 0,
             follow_tail: true,
+            log_viewport_lines: 1,
+            output: OutputViewport::default(),
             rx,
             tx,
             setup_script,
@@ -242,8 +341,7 @@ impl AppState {
             ui_mode: UiMode::Preflight,
             preflight: PreflightConfig {
                 prompt_default_yes: true,
-                fish_language_choice: 1,
-                terminal_choice: 1, // Default to kitty
+                shell_language_choice: 1,
                 wallpaper_dir: default_wallpaper,
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
@@ -265,11 +363,12 @@ impl AppState {
             child: None,
             install_started_at: None,
             sections: sections_init,
+            planned_section_count,
             current_section: None,
             pacman_cats: Vec::new(),
             aur_cats: Vec::new(),
-            pacman_sel_map: HashMap::new(),
-            aur_sel_map: HashMap::new(),
+            pacman_sel_map: BTreeMap::new(),
+            aur_sel_map: BTreeMap::new(),
             ms_cursor: 0,
             ms_focus_right: false,
             ms_cursor_filter: 0,
@@ -279,6 +378,13 @@ impl AppState {
             aur_filter_working: HashSet::new(),
             user_added: Vec::new(),
             user_added_src: HashMap::new(),
+            package_registry: None,
+            package_load_error: None,
+            role_selection: None,
+            application_cursor: 0,
+            role_cursor: 0,
+            required_pacman: BTreeSet::new(),
+            required_aur: BTreeSet::new(),
             pkg_descs: HashMap::new(),
             warning_lines: Vec::new(),
             info_title: "Info".to_string(),
@@ -286,23 +392,37 @@ impl AppState {
             monitor_setup_available: true,
             add_packages_append_mode: false,
         };
-        // Load packages.json if present
-        if let Some((pac_cats, aur_cats, descs)) = load_packages_json_categorized() {
-            s.pacman_cats = pac_cats;
-            s.aur_cats = aur_cats;
-            s.pkg_descs = descs;
-            // default select all
-            for (_, pkgs) in &s.pacman_cats {
-                for p in pkgs {
-                    s.pacman_sel_map.insert(p.clone(), true);
+        match load_package_registry(s.setup_script.as_deref()) {
+            Ok(registry) => {
+                s.pacman_cats = registry.categorized(PackageSource::Pacman);
+                s.aur_cats = registry.categorized(PackageSource::Aur);
+                s.pkg_descs = registry.package_descriptions.clone().into_iter().collect();
+                s.required_pacman = registry
+                    .required_set(PackageSource::Pacman)
+                    .into_iter()
+                    .collect();
+                s.required_aur = registry
+                    .required_set(PackageSource::Aur)
+                    .into_iter()
+                    .collect();
+                for (_, packages) in &s.pacman_cats {
+                    for package in packages {
+                        s.pacman_sel_map.insert(package.clone(), true);
+                    }
                 }
-            }
-            for (_, pkgs) in &s.aur_cats {
-                for p in pkgs {
-                    s.aur_sel_map.insert(p.clone(), true);
+                for (_, packages) in &s.aur_cats {
+                    for package in packages {
+                        s.aur_sel_map.insert(package.clone(), true);
+                    }
                 }
+                s.role_selection = Some(RoleSelection::defaults(&registry));
+                s.package_registry = Some(registry);
+                sync_role_package_selection(&mut s);
+                force_required_selected(&mut s);
             }
-            sync_terminal_package_selection(&mut s);
+            Err(error) => {
+                s.package_load_error = Some(format!("{error:#}"));
+            }
         }
         // Check monitor setup availability early (before Hyprland is installed/running).
         let mut startup_warnings: Vec<String> = Vec::new();
@@ -330,7 +450,7 @@ impl AppState {
     }
 
     fn push_log_line(&mut self, line: impl Into<String>) {
-        let raw: String = line.into();
+        let raw = strip_ansi_sequences(&line.into());
         if raw.trim().is_empty() {
             return;
         }
@@ -338,8 +458,19 @@ impl AppState {
         update_sections_from_line(self, &raw);
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let s = format!("[{}] {}", ts, raw);
-        self.logs.push(s.clone());
-        // Append to file
+        let evicted_rows = if !self.follow_tail && self.logs.len() == OUTPUT_HISTORY_LIMIT {
+            self.logs.lines().first().map_or(0, |line| {
+                wrap_output_line(
+                    live_output_line(self.theme, line, self.logs.show_details),
+                    self.output.body.width,
+                )
+                .len()
+            })
+        } else {
+            0
+        };
+        let dropped = self.logs.push(s.clone(), &raw);
+        // Append all output, independent of the selected display mode.
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
             .append(true)
@@ -347,14 +478,158 @@ impl AppState {
         {
             let _ = writeln!(f, "{}", s);
         }
-        if self.logs.len() > 5000 {
-            let drop = self.logs.len() - 5000;
-            self.logs.drain(0..drop);
+        if !self.follow_tail && dropped > 0 {
+            self.scroll = self.scroll.saturating_sub(evicted_rows);
         }
-        if self.follow_tail {
-            self.scroll = self.logs.len().saturating_sub(1) as u16;
+        // The next render computes visual-row offsets using the current viewport width.
+    }
+}
+
+const OUTPUT_SCROLL_STEP: usize = 8;
+const OUTPUT_MESSAGES_PER_TICK: usize = 128;
+
+fn output_tail_start(total_lines: usize, visible_lines: usize) -> usize {
+    total_lines.saturating_sub(visible_lines)
+}
+
+fn scroll_output_up(
+    scroll: &mut usize,
+    follow_tail: &mut bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    if *follow_tail {
+        *scroll = output_tail_start(total_lines, visible_lines);
+    }
+    *follow_tail = false;
+    *scroll = scroll.saturating_sub(OUTPUT_SCROLL_STEP);
+}
+
+fn scroll_output_down(scroll: &mut usize, total_lines: usize, visible_lines: usize) {
+    let max_scroll = output_tail_start(total_lines, visible_lines);
+    *scroll = scroll.saturating_add(OUTPUT_SCROLL_STEP).min(max_scroll);
+}
+
+fn resume_output_follow(
+    scroll: &mut usize,
+    follow_tail: &mut bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    *follow_tail = true;
+    *scroll = output_tail_start(total_lines, visible_lines);
+}
+
+fn sync_output_scroll_after_append(
+    scroll: &mut usize,
+    follow_tail: bool,
+    total_lines: usize,
+    visible_lines: usize,
+) {
+    if follow_tail {
+        *scroll = output_tail_start(total_lines, visible_lines);
+    }
+}
+
+fn scroll_live_output(app: &mut AppState, delta: isize) {
+    let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+    if app.follow_tail {
+        app.scroll = end;
+    }
+    app.follow_tail = false;
+    app.output.focused = true;
+    app.scroll = app.scroll.saturating_add_signed(delta).min(end);
+}
+
+fn follow_live_output(app: &mut AppState) {
+    resume_output_follow(
+        &mut app.scroll,
+        &mut app.follow_tail,
+        app.output.total_rows,
+        app.log_viewport_lines,
+    );
+    app.output.dragging = false;
+}
+
+fn toggle_live_output_mode(app: &mut AppState) {
+    app.logs.show_details = !app.logs.show_details;
+    follow_live_output(app);
+}
+
+fn mouse_inside(area: Rect, mouse: MouseEvent) -> bool {
+    mouse.column >= area.x
+        && mouse.column < area.right()
+        && mouse.row >= area.y
+        && mouse.row < area.bottom()
+}
+
+fn seek_output_scrollbar(app: &mut AppState, row: u16) {
+    let bar = app.output.scrollbar;
+    let track = usize::from(bar.height.saturating_sub(1));
+    let position = usize::from(row.saturating_sub(bar.y)).min(track);
+    let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+    app.scroll = position.saturating_mul(end).checked_div(track).unwrap_or(0);
+    app.follow_tail = false;
+}
+
+fn handle_mouse_event(app: &mut AppState, mouse: MouseEvent) {
+    if app.ui_mode != UiMode::Menu || app.editing {
+        app.output.dragging = false;
+        return;
+    }
+    match mouse.kind {
+        MouseEventKind::Up(_) => app.output.dragging = false,
+        MouseEventKind::Drag(MouseButton::Left) if app.output.dragging => {
+            seek_output_scrollbar(app, mouse.row);
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            app.output.focused = mouse_inside(app.output.area, mouse);
+            app.output.dragging = false;
+            if mouse_inside(app.output.follow_button, mouse) {
+                follow_live_output(app);
+            } else if mouse_inside(app.output.mode_button, mouse) {
+                toggle_live_output_mode(app);
+            } else if mouse_inside(app.output.scrollbar, mouse) {
+                app.output.dragging = true;
+                seek_output_scrollbar(app, mouse.row);
+            }
+        }
+        MouseEventKind::ScrollUp if mouse_inside(app.output.area, mouse) => {
+            scroll_live_output(app, -3)
+        }
+        MouseEventKind::ScrollDown if mouse_inside(app.output.area, mouse) => {
+            scroll_live_output(app, 3)
+        }
+        _ => {}
+    }
+}
+
+fn drain_output_events(app: &mut AppState) -> usize {
+    for count in 0..OUTPUT_MESSAGES_PER_TICK {
+        match app.rx.try_recv() {
+            Ok(line) => app.push_log_line(line),
+            Err(_) => return count,
         }
     }
+    OUTPUT_MESSAGES_PER_TICK
+}
+
+struct TerminalSession;
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        restore_terminal();
+    }
+}
+
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        io::stdout(),
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+        crossterm::cursor::Show
+    );
 }
 
 fn main() -> Result<()> {
@@ -365,8 +640,10 @@ fn main() -> Result<()> {
 
     install_panic_hook();
     enable_raw_mode().context("enable raw mode")?;
+    let terminal_session = TerminalSession;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).context("enter alt screen")?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("enter interactive terminal")?;
     // (Windows) Avoid duplicate raw mode enabling
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
@@ -374,7 +651,9 @@ fn main() -> Result<()> {
     let mut app = AppState::new(rx, app_tx, setup_script);
     app.push_log_line("Hyprland Setup TUI - ratatui + crossterm");
     app.push_log_line("Use Arrow Up/Down to select, Enter to run");
-    app.push_log_line("Keys: q=quit, c=clear log, k=kill process, PgUp/PgDn=scroll");
+    app.push_log_line(
+        "Keys: click/wheel=scroll output, v=compact/details, PgUp/PgDn=scroll, Home=oldest, End=follow, q=quit",
+    );
     if app.setup_script.is_none() {
         app.push_log_line(
             "setup.sh not found automatically. Set $HYPR_SETUP_PATH or run from repo root.",
@@ -385,10 +664,7 @@ fn main() -> Result<()> {
 
     let res = run_app(&mut terminal, &mut app, tick_rate);
 
-    disable_raw_mode().ok();
-    let mut out = io::stdout();
-    execute!(out, LeaveAlternateScreen).ok();
-    terminal.show_cursor().ok();
+    drop(terminal_session);
 
     if let Err(e) = res {
         eprintln!("Error: {e:#}");
@@ -403,12 +679,11 @@ fn run_app<B: ratatui::backend::Backend>(
     tick_rate: Duration,
 ) -> Result<()> {
     loop {
-        while let Ok(line) = app.rx.try_recv() {
-            app.push_log_line(line);
-        }
+        let drained = drain_output_events(app);
 
-        // Detect setup.sh completion and report once
-        if let Some(child) = app.child.as_mut()
+        // Keep input responsive between batches and drain queued output before reporting completion.
+        if drained < OUTPUT_MESSAGES_PER_TICK
+            && let Some(child) = app.child.as_mut()
             && let Ok(Some(status)) = child.try_wait()
         {
             let code = status.code().unwrap_or(-1);
@@ -419,7 +694,8 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 String::new()
             };
-            if status.success() {
+            let setup_succeeded = status.success();
+            if setup_succeeded {
                 app.push_log_line(format!(
                     "setup.sh finished successfully (exit {code}){}",
                     elapsed_msg
@@ -427,9 +703,7 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 app.push_log_line(format!("setup.sh exited with status {code}{}", elapsed_msg));
             }
-            // Ensure the Output pane follows the tail to show the final lines
-            app.follow_tail = true;
-            app.scroll = app.logs.len().saturating_sub(1) as u16;
+            // Preserve a user-selected scroll position when the process ends.
             // Mark the final section as done when the process ends
             if let Some(idx) = app.current_section.take()
                 && let Some(sec) = app.sections.get_mut(idx)
@@ -437,15 +711,23 @@ fn run_app<B: ratatui::backend::Backend>(
                 sec.done = true;
             }
             app.child = None;
-            // Show reboot confirmation popup
-            app.ui_mode = UiMode::Menu; // ensure popup on main view
-            app.editing = true;
-            app.edit_kind = EditKind::ConfirmReboot;
+            app.ui_mode = UiMode::Menu;
+            if setup_succeeded {
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmReboot;
+            } else {
+                app.editing = false;
+                app.edit_kind = EditKind::None;
+            }
         }
 
         terminal.draw(|f| draw_ui(f, app)).context("draw ui")?;
 
-        let timeout = tick_rate.saturating_sub(app.last_tick.elapsed());
+        let timeout = if drained == OUTPUT_MESSAGES_PER_TICK {
+            Duration::ZERO
+        } else {
+            tick_rate.saturating_sub(app.last_tick.elapsed())
+        };
         if event::poll(timeout).context("poll events")? {
             match event::read().context("read event")? {
                 Event::Key(key) => {
@@ -454,11 +736,9 @@ fn run_app<B: ratatui::backend::Backend>(
                         break;
                     }
                 }
-                Event::Mouse(_)
-                | Event::Resize(_, _)
-                | Event::FocusGained
-                | Event::FocusLost
-                | Event::Paste(_) => {}
+                Event::Mouse(mouse) => handle_mouse_event(app, mouse),
+                Event::FocusLost => app.output.dragging = false,
+                Event::Resize(_, _) | Event::FocusGained | Event::Paste(_) => {}
             }
         }
 
@@ -480,8 +760,377 @@ fn draw_ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     match app.ui_mode {
         UiMode::Menu => draw_menu_ui(f, app, area),
-        UiMode::Preflight => draw_preflight_ui(f, app, area),
+        UiMode::Preflight => {
+            app.output = OutputViewport::default();
+            draw_preflight_ui(f, app, area);
+        }
     }
+    draw_completion_popup(f, app, area);
+}
+
+const SPINNER_FRAME_MS: u128 = 150;
+const SPINNER_FRAMES: [&str; 4] = ["|", "/", "-", "\\"];
+
+fn spinner_frame(elapsed: Duration) -> &'static str {
+    let index = (elapsed.as_millis() / SPINNER_FRAME_MS) as usize % SPINNER_FRAMES.len();
+    SPINNER_FRAMES[index]
+}
+
+fn installation_step_progress(
+    sections: &[SetupSection],
+    planned_section_count: usize,
+) -> (usize, usize) {
+    let completed = sections
+        .iter()
+        .take(planned_section_count)
+        .filter(|section| section.done)
+        .count();
+    (completed, planned_section_count)
+}
+
+fn installation_percent(completed: usize, total: usize) -> u16 {
+    completed
+        .min(total)
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(0) as u16
+}
+
+fn ascii_progress_bar(completed: usize, total: usize, width: usize) -> String {
+    if width == 0 {
+        return "[]".to_string();
+    }
+
+    let filled = completed
+        .min(total)
+        .saturating_mul(width)
+        .checked_div(total)
+        .unwrap_or(0);
+    let complete = total > 0 && completed >= total;
+    let mut bar = String::with_capacity(width + 2);
+    bar.push('[');
+    for index in 0..width {
+        let symbol = if index < filled {
+            '='
+        } else if !complete && index == filled {
+            '>'
+        } else {
+            '-'
+        };
+        bar.push(symbol);
+    }
+    bar.push(']');
+    bar
+}
+
+fn setup_section_style(theme: Theme, section: &SetupSection, is_current: bool) -> Style {
+    let color = match section.severity {
+        StepSeverity::Error => Color::Red,
+        // Use terminal palette colors here: Linux virtual consoles may ignore RGB colors.
+        StepSeverity::Warning => Color::Yellow,
+        StepSeverity::None if is_current => Color::Blue,
+        StepSeverity::None if section.done => Color::Green,
+        StepSeverity::None => theme.text,
+    };
+    let style = Style::default().fg(color);
+    if is_current {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
+fn setup_section_marker(section: &SetupSection, is_current: bool) -> &'static str {
+    if is_current {
+        ">"
+    } else if !section.done {
+        " "
+    } else {
+        match section.severity {
+            StepSeverity::None => "x",
+            StepSeverity::Warning => "!",
+            StepSeverity::Error => "X",
+        }
+    }
+}
+
+fn timestamp_prefix_end(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    if bytes.len() >= 22
+        && bytes[0] == b'['
+        && bytes[5] == b'-'
+        && bytes[8] == b'-'
+        && bytes[11] == b' '
+        && bytes[14] == b':'
+        && bytes[17] == b':'
+        && bytes[20] == b']'
+        && bytes[21] == b' '
+    {
+        Some(22)
+    } else {
+        None
+    }
+}
+
+fn output_line_severity(line: &str) -> StepSeverity {
+    let clean = strip_ansi_sequences(line);
+    let message = timestamp_prefix_end(&clean)
+        .and_then(|end| clean.get(end..))
+        .unwrap_or(&clean)
+        .trim();
+    let lower = message.to_lowercase();
+
+    if lower.contains("[error]")
+        || lower.contains("error:")
+        || lower.contains("fehler:")
+        || lower.starts_with("failed ")
+        || lower.starts_with("failed:")
+        || lower.contains("fehlgeschlagen")
+        || lower.starts_with("fatal:")
+        || lower.starts_with("x [")
+        || lower.starts_with("✗ [")
+        || lower.starts_with("hard failures (")
+        || lower.starts_with("setup.sh exited with status")
+    {
+        StepSeverity::Error
+    } else if lower.contains("[!]")
+        || lower.contains("[warning]")
+        || lower.contains("warning:")
+        || lower.contains("warnung:")
+        || lower.starts_with("! [")
+        || lower.starts_with("○ [")
+        || lower.starts_with("o [")
+        || lower.starts_with("soft errors (")
+        || lower.starts_with("skipped steps (")
+    {
+        StepSeverity::Warning
+    } else {
+        StepSeverity::None
+    }
+}
+
+fn live_output_line(theme: Theme, stored_line: &str, show_details: bool) -> Line<'static> {
+    let clean = strip_ansi_sequences(stored_line);
+    let severity = output_line_severity(&clean);
+    let message_style = match severity {
+        StepSeverity::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        StepSeverity::Warning => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        StepSeverity::None => Style::default().fg(theme.subtext0),
+    };
+
+    if let Some(end) = timestamp_prefix_end(&clean) {
+        if !show_details {
+            let message = clean[end..].trim();
+            let message = if message.starts_with("===") && message.ends_with("===") {
+                message.trim_matches('=').trim()
+            } else {
+                message
+            };
+            return Line::from(Span::styled(message.to_string(), message_style));
+        }
+        Line::from(vec![
+            Span::styled(
+                clean[..end].to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(clean[end..].to_string(), message_style),
+        ])
+    } else {
+        Line::from(Span::styled(clean, message_style))
+    }
+}
+
+fn wrap_output_line(line: Line<'static>, width: u16) -> Vec<Line<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let style = line.style;
+    let mut rows = Vec::new();
+    let mut row = Line::default().style(style);
+    let mut row_width = 0;
+    for span in line.spans {
+        let content = span.content.as_ref();
+        let mut start = 0;
+        for (index, ch) in content.char_indices() {
+            let glyph_width = Span::raw(&content[index..index + ch.len_utf8()]).width();
+            let newline = ch == '\n';
+            if newline || (row_width > 0 && row_width + glyph_width > usize::from(width)) {
+                if start < index {
+                    row.spans
+                        .push(Span::styled(content[start..index].to_string(), span.style));
+                }
+                rows.push(std::mem::replace(&mut row, Line::default().style(style)));
+                row_width = 0;
+                start = if newline {
+                    index + ch.len_utf8()
+                } else {
+                    index
+                };
+            }
+            if !newline {
+                row_width += glyph_width;
+            }
+        }
+        if start < content.len() {
+            row.spans
+                .push(Span::styled(content[start..].to_string(), span.style));
+        }
+    }
+    rows.push(row);
+    rows
+}
+
+fn output_scrollbar_thumb(total: usize, visible: usize, height: u16, scroll: usize) -> (u16, u16) {
+    if height == 0 {
+        return (0, 0);
+    }
+    let length = if total <= visible {
+        usize::from(height)
+    } else {
+        (usize::from(height).saturating_mul(visible) / total).max(1)
+    }
+    .min(usize::from(height));
+    let end = output_tail_start(total, visible);
+    let offset = scroll
+        .min(end)
+        .saturating_mul(usize::from(height) - length)
+        .checked_div(end)
+        .unwrap_or(0);
+    (offset as u16, length as u16)
+}
+
+fn draw_output_panel(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
+    let mode = if app.logs.show_details {
+        "detailed"
+    } else {
+        "compact"
+    };
+    let focus = if app.output.focused { " [focused]" } else { "" };
+    let block = Block::default()
+        .title(format!("Output: {mode}{focus}"))
+        .borders(Borders::ALL)
+        .style(
+            Style::default()
+                .bg(app.theme.surface0)
+                .fg(app.theme.subtext0),
+        )
+        .border_style(Style::default().fg(if app.output.focused {
+            app.theme.blue
+        } else {
+            app.theme.surface1
+        }));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let toolbar_height = inner.height.min(1);
+    let toolbar = Rect {
+        height: toolbar_height,
+        ..inner
+    };
+    let body = Rect {
+        x: inner.x,
+        y: inner.y + toolbar_height,
+        width: inner.width.saturating_sub(1),
+        height: inner.height.saturating_sub(toolbar_height),
+    };
+    app.output.area = area;
+    app.output.body = body;
+    app.output.scrollbar = Rect {
+        x: body.right(),
+        width: inner.width.min(1),
+        ..body
+    };
+    app.output.follow_button = Rect {
+        width: inner.width.min(8),
+        ..toolbar
+    };
+    let mode_offset = inner.width.min(9);
+    app.output.mode_button = Rect {
+        x: inner.x + mode_offset,
+        width: inner.width.saturating_sub(mode_offset).min(9),
+        ..toolbar
+    };
+
+    let rendered: Vec<Line> = app
+        .logs
+        .lines()
+        .iter()
+        .flat_map(|line| {
+            wrap_output_line(
+                live_output_line(app.theme, line, app.logs.show_details),
+                body.width,
+            )
+        })
+        .collect();
+    app.output.total_rows = rendered.len();
+    app.log_viewport_lines = usize::from(body.height);
+    sync_output_scroll_after_append(
+        &mut app.scroll,
+        app.follow_tail,
+        rendered.len(),
+        app.log_viewport_lines,
+    );
+    app.scroll = app
+        .scroll
+        .min(output_tail_start(rendered.len(), app.log_viewport_lines));
+    let end = app
+        .scroll
+        .saturating_add(app.log_viewport_lines)
+        .min(rendered.len());
+    f.render_widget(Paragraph::new(rendered[app.scroll..end].to_vec()), body);
+
+    let button_style = Style::default()
+        .fg(app.theme.blue)
+        .add_modifier(Modifier::BOLD);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "[Follow]",
+                if app.follow_tail {
+                    button_style.add_modifier(Modifier::REVERSED)
+                } else {
+                    button_style
+                },
+            ),
+            Span::raw(" "),
+            Span::styled(
+                if app.logs.show_details {
+                    "[Compact]"
+                } else {
+                    "[Details]"
+                },
+                button_style,
+            ),
+            Span::raw(format!(
+                "  {} {end}/{}",
+                if app.follow_tail { "Live" } else { "Paused" },
+                rendered.len()
+            )),
+        ])),
+        toolbar,
+    );
+
+    let (thumb_start, thumb_length) = output_scrollbar_thumb(
+        rendered.len(),
+        app.log_viewport_lines,
+        body.height,
+        app.scroll,
+    );
+    let track: Vec<Line> = (0..body.height)
+        .map(|index| {
+            let in_thumb = index >= thumb_start && index < thumb_start + thumb_length;
+            Line::from(Span::styled(
+                if in_thumb { "█" } else { "│" },
+                Style::default().fg(if in_thumb {
+                    app.theme.blue
+                } else {
+                    app.theme.surface1
+                }),
+            ))
+        })
+        .collect();
+    f.render_widget(Paragraph::new(track), app.output.scrollbar);
 }
 
 fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
@@ -517,37 +1166,15 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .split(left_inner);
 
     if !app.sections.is_empty() {
-        // Render sections with color: green=done, white/palette text=pending, blue=current
         let mut lines: Vec<Line> = Vec::new();
-        for (idx, sec) in app.sections.iter().enumerate() {
-            // Determine color priority: Error > Warning > Blue(current) > Green(done) > default
-            let style = if Some(idx) == app.current_section {
-                match sec.severity {
-                    StepSeverity::Error => {
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                    }
-                    StepSeverity::Warning => Style::default()
-                        .fg(app.theme.yellow)
-                        .add_modifier(Modifier::BOLD),
-                    StepSeverity::None => Style::default()
-                        .fg(app.theme.blue)
-                        .add_modifier(Modifier::BOLD),
-                }
-            } else if sec.done {
-                match sec.severity {
-                    StepSeverity::Error => Style::default().fg(Color::Red),
-                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
-                    StepSeverity::None => Style::default().fg(Color::Green),
-                }
-            } else {
-                // Pending
-                match sec.severity {
-                    StepSeverity::Error => Style::default().fg(Color::Red),
-                    StepSeverity::Warning => Style::default().fg(app.theme.yellow),
-                    StepSeverity::None => Style::default().fg(app.theme.text),
-                }
-            };
-            lines.push(Line::from(Span::styled(format!("• {}", sec.title), style)));
+        for (idx, section) in app.sections.iter().enumerate() {
+            let is_current = Some(idx) == app.current_section;
+            let style = setup_section_style(app.theme, section, is_current);
+            let marker = setup_section_marker(section, is_current);
+            lines.push(Line::from(Span::styled(
+                format!("[{marker}] {}", section.title),
+                style,
+            )));
         }
         let left_widget = Paragraph::new(Text::from(lines));
         f.render_widget(left_widget, left_chunks[0]);
@@ -569,40 +1196,36 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     // Legend row at bottom of the Actions pane
     let legend = Paragraph::new(Text::from(vec![Line::from(vec![
         Span::styled("Legend: ", Style::default().fg(app.theme.subtext0)),
-        Span::styled("Current", Style::default().fg(app.theme.blue)),
+        Span::styled("> Current", Style::default().fg(Color::Blue)),
         Span::raw("  "),
-        Span::styled("Done", Style::default().fg(Color::Green)),
+        Span::styled("x Done", Style::default().fg(Color::Green)),
         Span::raw("  "),
-        Span::styled("Warning", Style::default().fg(app.theme.yellow)),
+        Span::styled("! Warning", Style::default().fg(Color::Yellow)),
         Span::raw("  "),
-        Span::styled("Error", Style::default().fg(Color::Red)),
+        Span::styled("X Error", Style::default().fg(Color::Red)),
     ])]))
     .style(Style::default().fg(app.theme.subtext0));
     f.render_widget(legend, left_chunks[1]);
 
-    let desc = "Execute setup.sh with full flow";
+    let install_running = app.child.is_some();
+    let right_constraints = if install_running {
+        vec![
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![Constraint::Length(3), Constraint::Min(1)]
+    };
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .constraints(right_constraints)
         .split(chunks[1]);
 
-    let script_path_text = app
-        .setup_script
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "<not found>".to_string());
-
-    let header = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Selected: ", Style::default().fg(app.theme.yellow)),
-            Span::raw(desc),
-        ]),
-        Line::from(vec![
-            Span::styled("Script: ", Style::default().fg(app.theme.yellow)),
-            Span::raw(script_path_text),
-        ]),
-        Line::from("q quit  Enter run  ↑↓ navigate  PgUp/PgDn scroll"),
-    ])
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("Full log: ", Style::default().fg(app.theme.yellow)),
+        Span::raw(app.logfile_path.display().to_string()),
+    ]))
     .block(
         Block::default()
             .title("Info")
@@ -613,43 +1236,61 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     .wrap(Wrap { trim: false });
     f.render_widget(header, right_chunks[0]);
 
-    // Calculate visible slice to avoid cloning thousands of lines every frame
-    let visible_lines = right_chunks[1].height.saturating_sub(2) as usize; // approx border lines
-    let total_lines = app.logs.len();
-    let mut start_idx = app.scroll as usize;
-    if app.follow_tail {
-        start_idx = total_lines.saturating_sub(visible_lines);
-    } else {
-        let max_scroll = total_lines.saturating_sub(1);
-        if start_idx > max_scroll {
-            start_idx = max_scroll;
-        }
-    }
-    let end_idx = (start_idx.saturating_add(visible_lines)).min(total_lines);
-    let log_text: Vec<Line> = app.logs[start_idx..end_idx]
-        .iter()
-        .map(|l| Line::from(l.clone()))
-        .collect();
+    draw_output_panel(f, app, right_chunks[1]);
 
-    let logs = Paragraph::new(log_text)
+    if install_running {
+        let progress_area = right_chunks[2];
+        let elapsed = app
+            .install_started_at
+            .as_ref()
+            .map(Instant::elapsed)
+            .unwrap_or_default();
+        let (completed, total) =
+            installation_step_progress(&app.sections, app.planned_section_count);
+        let percent = installation_percent(completed, total);
+        // The ASCII bar and reverse-video status remain visible on a 16-color Linux TTY.
+        let bar_width = usize::from(progress_area.width)
+            .saturating_sub(48)
+            .clamp(8, 32);
+        let bar = ascii_progress_bar(completed, total, bar_width);
+        let progress_label = if total == 0 {
+            format!(
+                "{bar} progress unavailable  elapsed {}",
+                format_duration(elapsed)
+            )
+        } else {
+            format!(
+                "{bar} {percent:>3}% ({completed}/{total} steps)  elapsed {}",
+                format_duration(elapsed)
+            )
+        };
+        let progress = Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" RUNNING {} ", spinner_frame(elapsed)),
+                Style::default()
+                    .fg(app.theme.text)
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::REVERSED),
+            ),
+            Span::raw(" "),
+            Span::styled(progress_label, Style::default().fg(app.theme.text)),
+        ]))
         .block(
             Block::default()
-                .title("Output")
+                .title("Installation progress")
                 .borders(Borders::ALL)
-                .style(
-                    Style::default()
-                        .bg(app.theme.surface0)
-                        .fg(app.theme.subtext0),
-                )
-                .border_style(Style::default().fg(app.theme.surface1)),
-        )
-        .wrap(Wrap { trim: false });
-    f.render_widget(logs, right_chunks[1]);
+                .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+                .border_style(Style::default().fg(app.theme.mauve)),
+        );
+        f.render_widget(progress, progress_area);
+    }
 
     // Footer with keybind help
-    let footer = Paragraph::new(Text::from(vec![Line::from(
-        "Enter: preflight   PgUp/PgDn: scroll   Home/End: follow   c: clear   k: kill   q: quit",
-    )]))
+    let footer = Paragraph::new(Text::from(vec![
+        Line::from("Click output: focus   Wheel: scroll   Drag right scrollbar: seek   ↑/↓: scroll focused output"),
+        Line::from("PgUp/PgDn: scroll   Home: oldest   End/[Follow]: live   v/[Details]: change view"),
+        Line::from("Esc: unfocus   Enter: preflight when unfocused   c: clear   k: kill   q: quit"),
+    ]))
     .block(
         Block::default()
             .borders(Borders::ALL)
@@ -661,6 +1302,420 @@ fn draw_menu_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(app.theme.surface1)),
     );
     f.render_widget(footer, vchunks[1]);
+}
+
+fn preflight_row_style(theme: Theme, selected: bool) -> Style {
+    if selected {
+        // Reverse video remains visible when the Linux console ignores RGB colors.
+        Style::default()
+            .fg(theme.blue)
+            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default().fg(theme.text)
+    }
+}
+
+fn role_selection_summary(app: &AppState, role_name: &str) -> String {
+    let Some(selection) = app.role_selection.as_ref() else {
+        return "[!] unavailable".to_string();
+    };
+    let Some(members) = selection.selected_packages(role_name) else {
+        return "[!] unavailable".to_string();
+    };
+    if members.is_empty() {
+        return "<none>".to_string();
+    }
+    let primary = selection.selected_package(role_name);
+    members
+        .iter()
+        .map(|package| {
+            if primary == Some(package.as_str()) {
+                format!("{package} (primary)")
+            } else {
+                package.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn application_type_description(role: &str) -> &'static str {
+    match role {
+        "browser" => {
+            "Opens websites and web apps. The primary browser is used by this setup's shortcuts."
+        }
+        "shell" => {
+            "Interprets commands inside a terminal. The primary choice becomes your login shell."
+        }
+        "terminal" => {
+            "Provides the window for shells and text-based apps; separate from the shell itself."
+        }
+        "multiplexer" => {
+            "Keeps terminal workspaces and sessions organized or persistent. The primary choice drives the multiplexer shortcut."
+        }
+        "file_manager" => {
+            "Browses files and folders. The selected file manager opens with Super+E."
+        }
+        "tui_file_manager" => {
+            "Optional terminal file managers alongside the required graphical file manager. Select any combination."
+        }
+        "notifications" => {
+            "Displays desktop alerts. Some providers also offer history and do-not-disturb controls."
+        }
+        "tui_editor" => {
+            "Edits text and code inside a terminal. The primary choice supplies EDITOR and VISUAL."
+        }
+        "gui_editor" => {
+            "Edits text and code in a graphical window. Optional; None uses the terminal editor for editor shortcuts."
+        }
+        "bar" => "Displays desktop status, workspaces and controls, usually along a screen edge.",
+        "dock" => {
+            "Provides an optional strip of pinned or running apps for launching and switching windows."
+        }
+        "calendar" => {
+            "Views and manages dates, appointments and tasks through the desktop calendar action."
+        }
+        "bluetooth" => {
+            "Pairs and manages Bluetooth devices. GUI and terminal choices use the same BlueZ backend."
+        }
+        "network" => "Connects to networks and edits connection settings through NetworkManager.",
+        "audio" => {
+            "Controls sound volume and devices. Stream mixers manage apps; ALSA mixers manage hardware."
+        }
+        "launcher" => {
+            "Searches for and starts apps from a keyboard menu, without opening a terminal first."
+        }
+        "agent" => {
+            "Installs optional terminal coding agents from approved official scripts. Choose one primary for troubleshooting integration."
+        }
+        _ => "Select the applications used for this desktop role.",
+    }
+}
+
+fn wrap_choice_description(text: &str, width: u16) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if !line.is_empty()
+            && Line::from(line.as_str()).width() + 1 + Line::from(word).width() > width as usize
+        {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        for ch in word.chars() {
+            if !line.is_empty()
+                && Line::from(line.as_str()).width() + Line::from(ch.to_string()).width()
+                    > width as usize
+            {
+                lines.push(std::mem::take(&mut line));
+            }
+            line.push(ch);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+fn choice_popup_width(area: Rect) -> u16 {
+    area.width.saturating_sub(4).max(50).min(area.width)
+}
+
+fn choice_popup_layout(area: Rect, row_counts: [usize; 3], tallest_item: u16) -> (Rect, [Rect; 3]) {
+    let width = choice_popup_width(area);
+    let height = (row_counts.iter().sum::<usize>() + 2).min(area.height as usize) as u16;
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    let inner = Block::default().borders(Borders::ALL).inner(popup);
+    // On short screens, keep a complete highlighted item before allocating help rows.
+    let list_min = tallest_item.min(inner.height);
+    let spare = inner.height.saturating_sub(list_min) as usize;
+    let footer_height = row_counts[2].min(spare);
+    let intro_height = row_counts[0].min(spare.saturating_sub(footer_height));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(intro_height as u16),
+            Constraint::Min(list_min),
+            Constraint::Length(footer_height as u16),
+        ])
+        .split(inner);
+    (popup, [rows[0], rows[1], rows[2]])
+}
+
+fn draw_applications_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
+    let width = choice_popup_width(area).saturating_sub(2);
+    let role_name = selected_application_role(app).unwrap_or("browser");
+    let detail_lines = wrap_choice_description(application_type_description(role_name), width);
+    let detail_height = ROLE_ORDER
+        .iter()
+        .map(|role| wrap_choice_description(application_type_description(role), width).len())
+        .max()
+        .unwrap_or(0);
+    let (popup, rows) = choice_popup_layout(area, [1, ROLE_ORDER.len(), detail_height + 1], 1);
+    let block = Block::default()
+        .title("Applications")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+        .border_style(Style::default().fg(app.theme.mauve));
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    f.render_widget(
+        Paragraph::new("↑/↓: select group   Enter: open   Esc/q: back")
+            .style(Style::default().fg(app.theme.subtext0)),
+        rows[0],
+    );
+    let items: Vec<ListItem> = ROLE_ORDER
+        .iter()
+        .map(|role_name| {
+            let label = app
+                .package_registry
+                .as_ref()
+                .and_then(|registry| registry.roles.get(*role_name))
+                .map(|role| role.label.as_str())
+                .unwrap_or(role_name);
+            ListItem::new(format!(
+                "{label:<16} {}",
+                role_selection_summary(app, role_name)
+            ))
+        })
+        .collect();
+    let mut state = ListState::default();
+    state.select(Some(app.application_cursor));
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(
+                Style::default()
+                    .fg(app.theme.blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ "),
+        rows[1],
+        &mut state,
+    );
+    let mut details = vec![Line::from(format!(
+        "Group {}/{} | ↑/↓ scroll",
+        app.application_cursor + 1,
+        ROLE_ORDER.len()
+    ))];
+    details.extend(detail_lines.into_iter().map(Line::from));
+    f.render_widget(
+        Paragraph::new(details).style(Style::default().fg(app.theme.subtext0)),
+        rows[2],
+    );
+}
+
+fn role_choice_column_widths(area: Rect) -> [u16; 2] {
+    // Account for both frames, the selection marker and the column gap.
+    let available = choice_popup_width(area).saturating_sub(8);
+    let name = (available / 3).clamp(22, 36).min(available / 2);
+    [name, available.saturating_sub(name)]
+}
+
+fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
+    let Some(role_name) = selected_application_role(app) else {
+        return;
+    };
+    let Some(registry) = app.package_registry.as_ref() else {
+        return;
+    };
+    let role = &registry.roles[role_name];
+    let selected = app
+        .role_selection
+        .as_ref()
+        .and_then(|s| s.selected_packages(role_name));
+    let primary = app
+        .role_selection
+        .as_ref()
+        .and_then(|s| s.selected_package(role_name));
+    let inner_width = choice_popup_width(area).saturating_sub(2);
+    let intro = wrap_choice_description(
+        application_type_description(role_name),
+        inner_width.saturating_sub(4),
+    );
+    let [name_width, description_width] = role_choice_column_widths(area);
+    let mut items = Vec::new();
+    let mut total_rows = 0;
+    let mut tallest_item = 1;
+    let mut add_choice = |name: String, description: &str| {
+        let name_lines = wrap_choice_description(&name, name_width);
+        let description_lines = wrap_choice_description(description, description_width);
+        let height = name_lines.len().max(description_lines.len()).max(1);
+        total_rows += height;
+        tallest_item = tallest_item.max(height as u16);
+        items.push(
+            Row::new(vec![
+                Cell::from(Text::from(
+                    name_lines.into_iter().map(Line::from).collect::<Vec<_>>(),
+                )),
+                Cell::from(Text::from(
+                    description_lines
+                        .into_iter()
+                        .map(Line::from)
+                        .collect::<Vec<_>>(),
+                )),
+            ])
+            .height(height as u16),
+        );
+    };
+    if !role.required {
+        let marker = if selected.is_some_and(BTreeSet::is_empty) {
+            "[*]"
+        } else {
+            "[ ]"
+        };
+        let description = match role_name {
+            "gui_editor" => {
+                "Skip GUI editors; editor shortcuts use the primary terminal editor. No editor is autostarted."
+            }
+            "agent" => {
+                "Do not install or integrate a coding agent. Existing agent installations are not removed."
+            }
+            "tui_file_manager" => {
+                "Skip TUI file managers; keep the required graphical file manager."
+            }
+            _ => "Do not start a dock. The selected bar remains enabled.",
+        };
+        add_choice(format!("{marker} None"), description);
+    }
+    for option in &role.options {
+        let marker = if primary == Some(option.package.as_str()) {
+            "[*]"
+        } else if selected.is_some_and(|members| members.contains(&option.package)) {
+            "[x]"
+        } else {
+            "[ ]"
+        };
+        let terminal = if option.terminal { " [TUI]" } else { "" };
+        let name = format!(
+            "{marker} {} [{}]{terminal}",
+            option.package,
+            option.source.as_str()
+        );
+        add_choice(
+            name,
+            app.pkg_descs
+                .get(&option.package)
+                .map(String::as_str)
+                .unwrap_or("No description available."),
+        );
+    }
+    let count = items.len();
+    let available_height = area.height.saturating_sub(2);
+    // A short terminal may need an unframed table to keep one complete row readable.
+    let framed_table = available_height >= tallest_item.saturating_add(4);
+    let table_overhead = if framed_table { 3 } else { 1 };
+    let minimum_table_height = tallest_item.saturating_add(table_overhead);
+    let framed_intro_height = intro.len() + 3; // two borders and a blank separator row
+    let intro_height = if available_height.saturating_sub(minimum_table_height + 2) as usize
+        >= framed_intro_height
+    {
+        framed_intro_height
+    } else {
+        0
+    };
+    let (popup, rows) = choice_popup_layout(
+        area,
+        [intro_height, total_rows + table_overhead as usize, 2],
+        minimum_table_height,
+    );
+    let cardinality = match role.selection {
+        SelectionKind::Single => "single choice",
+        SelectionKind::Multiple => "multiple choices",
+    };
+    let optional = if role.required {
+        "required"
+    } else {
+        "optional"
+    };
+    let block = Block::default()
+        .title(format!("{} — {cardinality}, {optional}", role.label))
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.surface0).fg(app.theme.text))
+        .border_style(Style::default().fg(app.theme.mauve));
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    if intro_height > 0 {
+        let about = Rect {
+            height: rows[0].height.saturating_sub(1),
+            ..rows[0]
+        };
+        let description = Paragraph::new(
+            intro
+                .into_iter()
+                .map(|line| Line::from(format!(" {line}")))
+                .collect::<Vec<_>>(),
+        )
+        .style(Style::default().fg(app.theme.subtext0))
+        .block(
+            Block::default()
+                .title(format!("About {}", role.label))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(app.theme.surface1)),
+        );
+        f.render_widget(description, about);
+    }
+    let table_block = if framed_table {
+        Block::default().title("Choices").borders(Borders::ALL)
+    } else {
+        Block::default()
+    };
+    let mut state = TableState::default();
+    state.select(Some(app.role_cursor.min(count.saturating_sub(1))));
+    f.render_stateful_widget(
+        Table::new(
+            items,
+            [
+                Constraint::Length(name_width),
+                Constraint::Length(description_width),
+            ],
+        )
+        .header(
+            Row::new(["App", "Description"]).style(
+                Style::default()
+                    .fg(app.theme.mauve)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .column_spacing(2)
+        .row_highlight_style(
+            Style::default()
+                .fg(app.theme.blue)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ")
+        .block(table_block.border_style(Style::default().fg(app.theme.surface1))),
+        rows[1],
+        &mut state,
+    );
+    let keys = if role.selection == SelectionKind::Multiple {
+        "Space: toggle   p: primary   [*]: primary"
+    } else {
+        "Space: choose/clear   [*]: selected"
+    };
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(format!(
+                "{}/{} | ↑/↓ scroll | Enter/Esc: back",
+                app.role_cursor + 1,
+                count
+            )),
+            Line::from(keys),
+        ])
+        .style(Style::default().fg(app.theme.subtext0)),
+        rows[2],
+    );
 }
 
 fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
@@ -690,15 +1745,14 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     let mut rows: Vec<Row> = Vec::new();
     let sel = |field: PreflightField| app.preflight_focus == field;
     let mk = |action: &str, name: &str, value: String, selected: bool| {
-        let base = if selected {
-            Style::default()
-                .fg(app.theme.blue)
-                .add_modifier(Modifier::BOLD)
+        let base = preflight_row_style(app.theme, selected);
+        let name = if selected {
+            format!("> {name}")
         } else {
-            Style::default().fg(app.theme.text)
+            format!("  {name}")
         };
         Row::new(vec![
-            Cell::from(name.to_string()).style(base),
+            Cell::from(name).style(base),
             Cell::from(action.to_string()).style(base),
             Cell::from(value).style(base),
         ])
@@ -712,15 +1766,15 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     rows.push(mk(
         "1/2/3",
-        "Fish language",
-        format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
-        sel(PreflightField::EnvFishLanguageChoiceOverride),
+        "Shell language",
+        format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.shell_language_choice),
+        sel(PreflightField::EnvShellLanguageChoiceOverride),
     ));
     rows.push(mk(
-        "1/2",
-        "Terminal",
-        format!("{} (1=kitty,2=alacritty)", pf.terminal_choice),
-        sel(PreflightField::EnvTerminalChoice),
+        "Enter",
+        "Applications",
+        format!("{} groups", ROLE_ORDER.len()),
+        sel(PreflightField::Applications),
     ));
     rows.push(mk(
         "Edit",
@@ -809,7 +1863,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     rows.push(mk(
         "Enter",
         "Start unattended install",
-        "".to_string(),
+        package_start_blocker(app)
+            .map(|reason| format!("disabled: {reason}"))
+            .unwrap_or_default(),
         sel(PreflightField::Start),
     ));
 
@@ -1121,6 +2177,18 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         );
         f.render_widget(bottom_help, rows[3]);
     }
+    if app.editing
+        && matches!(
+            app.edit_kind,
+            EditKind::SelectApplications | EditKind::SelectRole
+        )
+    {
+        draw_applications_menu(f, app, area);
+    }
+    if app.editing && app.edit_kind == EditKind::SelectRole {
+        draw_role_menu(f, app, area);
+    }
+
     // Package multiselect popups (categorized)
     if app.editing
         && (app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur)
@@ -1171,7 +2239,7 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(rows[1]);
 
-        let help = Paragraph::new(Text::from(vec![Line::from("Space toggle   a all   n none   Tab switch pane   changes apply live   Enter save   Esc cancel   j/k/↑/↓ move")]))
+        let help = Paragraph::new(Text::from(vec![Line::from("[!] required/locked   Space toggle   a all   n none   Tab switch pane   changes apply live   Enter save   Esc cancel   j/k/↑/↓ move")]))
             .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(help, rows[0]);
 
@@ -1201,7 +2269,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.pacman_sel_map.get(p).unwrap_or(&false);
-                    let mark = if chosen { "[x]" } else { "[ ]" };
+                    let mark = if app.required_pacman.contains(p) {
+                        "[!]"
+                    } else if chosen {
+                        "[x]"
+                    } else {
+                        "[ ]"
+                    };
                     let desc = app
                         .pkg_descs
                         .get(p)
@@ -1233,7 +2307,13 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
                 flat.push((true, format!("[{}]", cat), None));
                 for p in pkgs {
                     let chosen = *app.aur_sel_map.get(p).unwrap_or(&false);
-                    let mark = if chosen { "[x]" } else { "[ ]" };
+                    let mark = if app.required_aur.contains(p) {
+                        "[!]"
+                    } else if chosen {
+                        "[x]"
+                    } else {
+                        "[ ]"
+                    };
                     let desc = app
                         .pkg_descs
                         .get(p)
@@ -1553,7 +2633,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
         .style(Style::default().fg(app.theme.subtext0));
         f.render_widget(tip, rows[1]);
     }
-    // Confirm reboot popup
+}
+
+fn draw_completion_popup(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
     if app.editing && app.edit_kind == EditKind::ConfirmReboot {
         let area_w = area.width as i32;
         let popup_w = (area_w * 3 / 5).max(40) as u16;
@@ -1604,33 +2686,33 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
 // removed: old line-based preflight rendering helper; replaced by Table-based layout
 
 fn handle_key_event(app: &mut AppState, key: KeyEvent) -> Result<bool> {
+    // Completion is modal over either screen, including the live output view.
+    if app.editing && app.edit_kind == EditKind::ConfirmReboot {
+        return handle_preflight_keys(app, key);
+    }
     match app.ui_mode {
         UiMode::Menu => match key.code {
             KeyCode::Char('q') => return Ok(true),
-            KeyCode::Enter => {
-                app.ui_mode = UiMode::Preflight;
+            KeyCode::Enter if !app.output.focused => app.ui_mode = UiMode::Preflight,
+            KeyCode::Esc => {
+                app.output.focused = false;
+                app.output.dragging = false;
             }
-            KeyCode::PageUp => {
-                app.follow_tail = false;
-                app.scroll = app.scroll.saturating_sub(8);
-            }
-            KeyCode::PageDown => {
-                let max = app.logs.len().saturating_sub(1) as u16;
-                app.scroll = (app.scroll.saturating_add(8)).min(max);
-                if app.scroll >= max {
-                    app.follow_tail = true;
-                }
-            }
+            KeyCode::Up if app.output.focused => scroll_live_output(app, -1),
+            KeyCode::Down if app.output.focused => scroll_live_output(app, 1),
+            KeyCode::PageUp => scroll_live_output(app, -(OUTPUT_SCROLL_STEP as isize)),
+            KeyCode::PageDown => scroll_live_output(app, OUTPUT_SCROLL_STEP as isize),
             KeyCode::Home => {
+                app.output.focused = true;
                 app.follow_tail = false;
                 app.scroll = 0;
             }
-            KeyCode::End => {
-                app.follow_tail = true;
-            }
+            KeyCode::End => follow_live_output(app),
+            KeyCode::Char('v') => toggle_live_output_mode(app),
             KeyCode::Char('c') => {
                 app.logs.clear();
                 app.scroll = 0;
+                app.output.total_rows = 0;
             }
             KeyCode::Char('k') => {
                 if let Some(mut child) = app.child.take() {
@@ -1655,7 +2737,9 @@ fn move_selection(_app: &mut AppState, _delta: isize) {}
 // run_selected_action no longer needed; start directly from Preflight
 
 fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
-    // No concurrent run guard needed in the simplified flow
+    if let Some(reason) = package_start_blocker(app) {
+        bail!("setup cannot start: {reason}");
+    }
 
     let script = match &app.setup_script {
         Some(p) => p.clone(),
@@ -1687,6 +2771,7 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         // script -q (quiet) -f (flush) -c "<cmd>" /dev/null
         cmd = Command::new("script");
         cmd.arg("-q")
+            .arg("-e")
             .arg("-f")
             .arg("-c")
             .arg(cmdline)
@@ -1755,10 +2840,9 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         if pf.prompt_default_yes { "y" } else { "n" },
     );
     cmd.env(
-        "FISH_LANGUAGE_CHOICE_OVERRIDE",
-        pf.fish_language_choice.to_string(),
+        "SHELL_LANGUAGE_CHOICE_OVERRIDE",
+        pf.shell_language_choice.to_string(),
     );
-    cmd.env("TERMINAL_CHOICE_OVERRIDE", pf.terminal_choice.to_string());
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -1779,11 +2863,14 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
             "false"
         },
     );
-    if !selected_pacman.is_empty() {
-        cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone());
-    }
-    if !selected_aur.is_empty() {
-        cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone());
+    cmd.env("SELECTED_PACMAN_PACKAGES", selected_pacman.clone());
+    cmd.env("SELECTED_AUR_PACKAGES", selected_aur.clone());
+    if let (Some(registry), Some(selection)) =
+        (app.package_registry.as_ref(), app.role_selection.as_ref())
+    {
+        for (name, value) in selection.export_env(registry)? {
+            cmd.env(name, value);
+        }
     }
     // Also pass user-added splits explicitly for setup.sh merging
     let mut user_pac = Vec::new();
@@ -1823,12 +2910,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
     app.child = Some(child);
     // Reset sections and pre-load expected steps from script so the full list is visible from the start
     app.sections = preload_sections_from_script(&script);
+    app.planned_section_count = app.sections.len();
     app.current_section = None;
     app.install_started_at = Some(Instant::now());
     app.push_log_line("Install started");
-    // Auto-follow output from the start of the run
-    app.follow_tail = true;
-    app.scroll = app.logs.len().saturating_sub(1) as u16;
     let tx_out = app.tx.clone();
     if let Some(mut stdout) = stdout {
         thread::spawn(move || {
@@ -1916,56 +3001,167 @@ fn resolve_setup_script_path() -> Option<PathBuf> {
     candidates.into_iter().find(|c| c.exists())
 }
 
-#[derive(Deserialize)]
-struct PackagesRoot {
-    hyprland_packages: HashMap<String, Vec<String>>,
-    aur_packages: HashMap<String, Vec<String>>,
-    package_descriptions: Option<HashMap<String, String>>,
+fn load_package_registry(setup_script: Option<&Path>) -> Result<PackagesRoot> {
+    let setup_script = setup_script
+        .context("setup.sh was not resolved, so packages.json cannot be located relative to it")?;
+    let resolved = fs::canonicalize(setup_script)
+        .with_context(|| format!("resolve setup script {}", setup_script.display()))?;
+    let root = resolved
+        .parent()
+        .context("resolved setup.sh path has no parent directory")?;
+    PackagesRoot::load(&root.join("packages.json"))
 }
 
-type PackagesCategorized = (
-    Vec<(String, Vec<String>)>,
-    Vec<(String, Vec<String>)>,
-    HashMap<String, String>,
-);
+fn selected_application_role(app: &AppState) -> Option<&'static str> {
+    ROLE_ORDER.get(app.application_cursor).copied()
+}
 
-fn load_packages_json_categorized() -> Option<PackagesCategorized> {
-    let candidates = [
-        PathBuf::from("./packages.json"),
-        PathBuf::from("../packages.json"),
-        PathBuf::from("../../packages.json"),
-        PathBuf::from("../../../packages.json"),
-    ];
-    let path = candidates.into_iter().find(|p| p.exists())?;
-    let data = fs::read_to_string(path).ok()?;
-    let parsed: PackagesRoot = serde_json::from_str(&data).ok()?;
-    let mut pac_cats: Vec<(String, Vec<String>)> = parsed
-        .hyprland_packages
+fn sync_role_package_selection(app: &mut AppState) {
+    let Some(registry) = app.package_registry.as_ref() else {
+        return;
+    };
+    let Some(selection) = app.role_selection.as_ref() else {
+        return;
+    };
+    let selected_pacman = selection.selected_install_packages(registry, PackageSource::Pacman);
+    let selected_aur = selection.selected_install_packages(registry, PackageSource::Aur);
+    let updates: Vec<(PackageSource, String, bool)> = [PackageSource::Pacman, PackageSource::Aur]
         .into_iter()
-        .map(|(k, mut v)| {
-            v.sort();
-            (k, v)
+        .flat_map(|source| {
+            let selected = match source {
+                PackageSource::Pacman => &selected_pacman,
+                PackageSource::Aur => &selected_aur,
+                PackageSource::Official => {
+                    unreachable!("official packages are not generic selections")
+                }
+            };
+            registry
+                .role_controlled_packages(source)
+                .into_iter()
+                .map(move |package| (source, package.to_string(), selected.contains(package)))
         })
         .collect();
-    pac_cats.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut aur_cats: Vec<(String, Vec<String>)> = parsed
-        .aur_packages
-        .into_iter()
-        .map(|(k, mut v)| {
-            v.sort();
-            (k, v)
-        })
-        .collect();
-    aur_cats.sort_by(|a, b| a.0.cmp(&b.0));
-    let descs = parsed.package_descriptions.unwrap_or_default();
-    Some((pac_cats, aur_cats, descs))
+    for (source, package, selected) in updates {
+        match source {
+            PackageSource::Pacman => {
+                app.pacman_sel_map.insert(package, selected);
+            }
+            PackageSource::Aur => {
+                app.aur_sel_map.insert(package, selected);
+            }
+            PackageSource::Official => unreachable!("official packages are not generic selections"),
+        }
+    }
+}
+
+fn force_required_selected(app: &mut AppState) {
+    enforce_required(&app.required_pacman, &mut app.pacman_sel_map);
+    enforce_required(&app.required_aur, &mut app.aur_sel_map);
+}
+
+fn is_role_controlled_package(app: &AppState, package: &str) -> bool {
+    app.package_registry
+        .as_ref()
+        .is_some_and(|registry| registry.is_role_controlled_package(package))
+}
+
+fn toggle_package_selection(app: &mut AppState, source: PackageSource, package: &str) {
+    let required = match source {
+        PackageSource::Pacman => app.required_pacman.contains(package),
+        PackageSource::Aur => app.required_aur.contains(package),
+        PackageSource::Official => return,
+    };
+    if required {
+        return;
+    }
+
+    match source {
+        PackageSource::Pacman => {
+            toggle_with_required(&app.required_pacman, &mut app.pacman_sel_map, package)
+        }
+        PackageSource::Aur => {
+            toggle_with_required(&app.required_aur, &mut app.aur_sel_map, package)
+        }
+        PackageSource::Official => return,
+    }
+    force_required_selected(app);
+}
+
+fn set_all_package_selections(app: &mut AppState, source: PackageSource, selected: bool) {
+    match source {
+        PackageSource::Pacman => {
+            set_all_with_required(&app.required_pacman, &mut app.pacman_sel_map, selected)
+        }
+        PackageSource::Aur => {
+            set_all_with_required(&app.required_aur, &mut app.aur_sel_map, selected)
+        }
+        PackageSource::Official => return,
+    }
+    sync_role_package_selection(app);
+    force_required_selected(app);
+}
+
+fn visible_package_rows(app: &AppState, source: PackageSource) -> Vec<Option<String>> {
+    let (categories, filter) = match source {
+        PackageSource::Pacman => (&app.pacman_cats, &app.pacman_filter_working),
+        PackageSource::Aur => (&app.aur_cats, &app.aur_filter_working),
+        PackageSource::Official => return Vec::new(),
+    };
+    let mut rows = Vec::new();
+    for (category, packages) in categories {
+        if !filter.is_empty() && !filter.contains(category) {
+            continue;
+        }
+        rows.push(None);
+        rows.extend(packages.iter().cloned().map(Some));
+    }
+    rows
+}
+
+fn package_start_blocker(app: &AppState) -> Option<String> {
+    if let Some(error) = &app.package_load_error {
+        return Some(format!("Package registry error: {error}"));
+    }
+    match (&app.package_registry, &app.role_selection) {
+        (Some(registry), Some(selection)) => ROLE_ORDER.into_iter().find_map(|role_name| {
+            let role = &registry.roles[role_name];
+            let missing = role.required
+                && selection
+                    .selected_packages(role_name)
+                    .is_none_or(BTreeSet::is_empty);
+            missing.then(|| match role.selection {
+                SelectionKind::Single => format!("Select exactly one {}", role.label),
+                SelectionKind::Multiple => format!("Select at least one {}", role.label),
+            })
+        }),
+        _ => Some("Package registry is unavailable".to_string()),
+    }
+}
+
+fn classify_package(name: &str) -> Option<PackageSource> {
+    let available = |program: &str| {
+        Command::new(program)
+            .arg("-Si")
+            .arg("--")
+            .arg(name)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    if available("pacman") {
+        Some(PackageSource::Pacman)
+    } else if available("yay") {
+        Some(PackageSource::Aur)
+    } else {
+        None
+    }
 }
 
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
-        let _ = disable_raw_mode();
-        let mut stdout = std::io::stdout();
-        let _ = execute!(stdout, LeaveAlternateScreen);
+        restore_terminal();
         eprintln!("Application panicked: {info}");
     }));
 }
@@ -2140,29 +3336,120 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                 _ => {}
             }
             return Ok(false);
+        } else if app.edit_kind == EditKind::SelectApplications {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    app.editing = false;
+                    app.edit_kind = EditKind::None;
+                }
+                KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
+                    app.application_cursor = (app.application_cursor + 1) % ROLE_ORDER.len();
+                }
+                KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
+                    app.application_cursor =
+                        (app.application_cursor + ROLE_ORDER.len() - 1) % ROLE_ORDER.len();
+                }
+                KeyCode::Home => app.application_cursor = 0,
+                KeyCode::End => app.application_cursor = ROLE_ORDER.len() - 1,
+                KeyCode::PageDown => {
+                    app.application_cursor = (app.application_cursor + 5).min(ROLE_ORDER.len() - 1)
+                }
+                KeyCode::PageUp => {
+                    app.application_cursor = app.application_cursor.saturating_sub(5)
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    app.edit_kind = EditKind::SelectRole;
+                    app.role_cursor = 0;
+                }
+                _ => {}
+            }
+            return Ok(false);
+        } else if app.edit_kind == EditKind::SelectRole {
+            let Some(role_name) = selected_application_role(app) else {
+                app.editing = false;
+                app.edit_kind = EditKind::None;
+                return Ok(false);
+            };
+            let option_count = app
+                .package_registry
+                .as_ref()
+                .map(|registry| {
+                    let role = &registry.roles[role_name];
+                    role.options.len() + usize::from(!role.required)
+                })
+                .unwrap_or(0);
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                    app.edit_kind = EditKind::SelectApplications;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if option_count > 0 {
+                        app.role_cursor = (app.role_cursor + 1) % option_count;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if option_count > 0 {
+                        app.role_cursor = if app.role_cursor == 0 {
+                            option_count - 1
+                        } else {
+                            app.role_cursor - 1
+                        };
+                    }
+                }
+                KeyCode::Home => app.role_cursor = 0,
+                KeyCode::End => app.role_cursor = option_count.saturating_sub(1),
+                KeyCode::PageDown => {
+                    app.role_cursor = (app.role_cursor + 5).min(option_count.saturating_sub(1))
+                }
+                KeyCode::PageUp => app.role_cursor = app.role_cursor.saturating_sub(5),
+                KeyCode::Char(' ') | KeyCode::Char('p') => {
+                    let choice = app.package_registry.as_ref().and_then(|registry| {
+                        let role = &registry.roles[role_name];
+                        if !role.required && app.role_cursor == 0 {
+                            Some(None)
+                        } else {
+                            let offset = usize::from(!role.required);
+                            role.options
+                                .get(app.role_cursor.saturating_sub(offset))
+                                .map(|option| Some(option.package.clone()))
+                        }
+                    });
+                    if let (Some(registry), Some(selection), Some(choice)) = (
+                        app.package_registry.as_ref(),
+                        app.role_selection.as_mut(),
+                        choice,
+                    ) {
+                        if let Some(package) = choice {
+                            if key.code == KeyCode::Char('p') {
+                                let _ = selection.set_primary(registry, role_name, &package);
+                            } else {
+                                selection.toggle_member(registry, role_name, &package)?;
+                            }
+                        } else {
+                            selection.clear(registry, role_name)?;
+                        }
+                    }
+                    sync_role_package_selection(app);
+                    force_required_selected(app);
+                }
+                _ => {}
+            }
+            return Ok(false);
         } else if app.edit_kind == EditKind::SelectPacman || app.edit_kind == EditKind::SelectAur {
             // Multiselect handling (categorized) — headers are not selectable
             let is_pacman = app.edit_kind == EditKind::SelectPacman;
-            let len: usize = if is_pacman {
-                app.pacman_cats.iter().map(|(_, pkgs)| 1 + pkgs.len()).sum()
+            let source = if is_pacman {
+                PackageSource::Pacman
             } else {
-                app.aur_cats.iter().map(|(_, pkgs)| 1 + pkgs.len()).sum()
+                PackageSource::Aur
             };
-            // Compute header indices to skip
-            let mut header_idx: Vec<usize> = Vec::new();
-            if is_pacman {
-                let mut idx = 0usize;
-                for (_, pkgs) in &app.pacman_cats {
-                    header_idx.push(idx);
-                    idx += 1 + pkgs.len();
-                }
-            } else {
-                let mut idx = 0usize;
-                for (_, pkgs) in &app.aur_cats {
-                    header_idx.push(idx);
-                    idx += 1 + pkgs.len();
-                }
-            }
+            let visible_rows = visible_package_rows(app, source);
+            let len = visible_rows.len();
+            let header_idx: Vec<usize> = visible_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, package)| package.is_none().then_some(index))
+                .collect();
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => {
                     app.editing = false;
@@ -2256,43 +3543,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                                 app.aur_filter_working.insert(cat.clone());
                             }
                         }
-                    } else {
-                        // Toggle selected package if not a header
-                        let mut idx = 0usize;
-                        if is_pacman {
-                            'outerp: for (_, pkgs) in &app.pacman_cats {
-                                if app.ms_cursor == idx {
-                                    idx += 1;
-                                    continue;
-                                } // header row
-                                idx += 1;
-                                for p in pkgs {
-                                    if app.ms_cursor == idx {
-                                        let e =
-                                            app.pacman_sel_map.entry(p.clone()).or_insert(false);
-                                        *e = !*e;
-                                        break 'outerp;
-                                    }
-                                    idx += 1;
-                                }
-                            }
-                        } else {
-                            'outera: for (_, pkgs) in &app.aur_cats {
-                                if app.ms_cursor == idx {
-                                    idx += 1;
-                                    continue;
-                                } // header row
-                                idx += 1;
-                                for p in pkgs {
-                                    if app.ms_cursor == idx {
-                                        let e = app.aur_sel_map.entry(p.clone()).or_insert(false);
-                                        *e = !*e;
-                                        break 'outera;
-                                    }
-                                    idx += 1;
-                                }
-                            }
-                        }
+                    } else if let Some(Some(package)) = visible_rows.get(app.ms_cursor) {
+                        toggle_package_selection(app, source, package);
                     }
                 }
                 KeyCode::Char('a') => {
@@ -2309,14 +3561,16 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         } else {
                             app.aur_filter_working = cats.into_iter().collect();
                         }
-                    } else if is_pacman {
-                        for v in app.pacman_sel_map.values_mut() {
-                            *v = true;
-                        }
                     } else {
-                        for v in app.aur_sel_map.values_mut() {
-                            *v = true;
-                        }
+                        set_all_package_selections(
+                            app,
+                            if is_pacman {
+                                PackageSource::Pacman
+                            } else {
+                                PackageSource::Aur
+                            },
+                            true,
+                        );
                     }
                 }
                 KeyCode::Char('n') => {
@@ -2327,14 +3581,16 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                         } else {
                             app.aur_filter_working.clear();
                         }
-                    } else if is_pacman {
-                        for v in app.pacman_sel_map.values_mut() {
-                            *v = false;
-                        }
                     } else {
-                        for v in app.aur_sel_map.values_mut() {
-                            *v = false;
-                        }
+                        set_all_package_selections(
+                            app,
+                            if is_pacman {
+                                PackageSource::Pacman
+                            } else {
+                                PackageSource::Aur
+                            },
+                            false,
+                        );
                     }
                 }
                 _ => {}
@@ -2369,32 +3625,20 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     names.dedup();
                     let mut warnings: Vec<String> = Vec::new();
                     for name in &names {
+                        if is_role_controlled_package(app, name) {
+                            warnings.push(format!(
+                                "Managed by its application role; use the role selector: {name}"
+                            ));
+                            continue;
+                        }
                         if app.pacman_sel_map.contains_key(name)
                             || app.aur_sel_map.contains_key(name)
                             || app.user_added.contains(name)
                         {
-                            warnings.push(format!("Already selected: {}", name));
+                            warnings.push(format!("Already selected: {name}"));
                             continue;
                         }
-                        let is_repo = Command::new("bash")
-                            .arg("-lc")
-                            .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                            .status()
-                            .ok()
-                            .map(|s| s.success())
-                            .unwrap_or(false);
-                        let is_aur = if is_repo {
-                            false
-                        } else {
-                            Command::new("bash")
-                                .arg("-lc")
-                                .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                                .status()
-                                .ok()
-                                .map(|s| s.success())
-                                .unwrap_or(false)
-                        };
-                        if !is_repo && !is_aur {
+                        if classify_package(name).is_none() {
                             warnings.push(format!("Not found in pacman or AUR: {}", name));
                         }
                     }
@@ -2421,23 +3665,20 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 
     match key.code {
         KeyCode::Char('q') => return Ok(true),
-        KeyCode::Home => {
-            app.follow_tail = false;
-            app.scroll = 0;
-        }
-        KeyCode::End => {
-            app.follow_tail = true;
-        }
-        KeyCode::PageUp => {
-            app.follow_tail = false;
-            app.scroll = app.scroll.saturating_sub(8);
-        }
+        KeyCode::Home | KeyCode::End => resume_output_follow(
+            &mut app.scroll,
+            &mut app.follow_tail,
+            app.logs.len(),
+            app.log_viewport_lines,
+        ),
+        KeyCode::PageUp => scroll_output_up(
+            &mut app.scroll,
+            &mut app.follow_tail,
+            app.logs.len(),
+            app.log_viewport_lines,
+        ),
         KeyCode::PageDown => {
-            let max = app.logs.len().saturating_sub(1) as u16;
-            app.scroll = (app.scroll.saturating_add(8)).min(max);
-            if app.scroll >= max {
-                app.follow_tail = true;
-            }
+            scroll_output_down(&mut app.scroll, app.logs.len(), app.log_viewport_lines)
         }
         KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => preflight_focus_next(app),
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => preflight_focus_prev(app),
@@ -2452,6 +3693,10 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
             // Enter: start only if Start is focused; otherwise, begin editing if field is editable
             match app.preflight_focus {
                 PreflightField::Start => {
+                    if let Some(reason) = package_start_blocker(app) {
+                        show_info(app, "Setup cannot start", vec![reason]);
+                        return Ok(false);
+                    }
                     if app.preflight.password.is_empty() {
                         // Show small info popup instead of only logging
                         show_info(
@@ -2469,6 +3714,10 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
                     app.editing = true;
                     app.edit_kind = EditKind::ConfirmStartInstall;
                     return Ok(false);
+                }
+                PreflightField::Applications => {
+                    app.editing = true;
+                    app.edit_kind = EditKind::SelectApplications;
                 }
                 PreflightField::EnvWallpaperDirOverride => begin_editing(app),
                 PreflightField::EnvMonitorConfig => begin_editing(app),
@@ -2503,9 +3752,9 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
-        PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvTerminalChoice,
-        PreflightField::EnvTerminalChoice => PreflightField::EnvWallpaperDirOverride,
+        PreflightField::EnvPromptDefaultYn => PreflightField::EnvShellLanguageChoiceOverride,
+        PreflightField::EnvShellLanguageChoiceOverride => PreflightField::Applications,
+        PreflightField::Applications => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
         PreflightField::EnvMonitorConfig => PreflightField::EnvAutoContinueOnWarnings,
@@ -2522,9 +3771,9 @@ fn preflight_focus_next(app: &mut AppState) {
 fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::EnvTerminalChoice => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvWallpaperDirOverride => PreflightField::EnvTerminalChoice,
+        PreflightField::EnvShellLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
+        PreflightField::Applications => PreflightField::EnvShellLanguageChoiceOverride,
+        PreflightField::EnvWallpaperDirOverride => PreflightField::Applications,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvAutoContinueOnWarnings => PreflightField::EnvMonitorConfig,
@@ -2539,26 +3788,15 @@ fn preflight_focus_prev(app: &mut AppState) {
 
 fn adjust_preflight_field(app: &mut AppState, delta: i32) {
     match app.preflight_focus {
-        PreflightField::EnvFishLanguageChoiceOverride => {
-            let mut v = app.preflight.fish_language_choice as i32 + delta;
+        PreflightField::EnvShellLanguageChoiceOverride => {
+            let mut v = app.preflight.shell_language_choice as i32 + delta;
             if v < 1 {
                 v = 3;
             }
             if v > 3 {
                 v = 1;
             }
-            app.preflight.fish_language_choice = v as u8;
-        }
-        PreflightField::EnvTerminalChoice => {
-            let mut v = app.preflight.terminal_choice as i32 + delta;
-            if v < 1 {
-                v = 2;
-            }
-            if v > 2 {
-                v = 1;
-            }
-            app.preflight.terminal_choice = v as u8;
-            sync_terminal_package_selection(app);
+            app.preflight.shell_language_choice = v as u8;
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
@@ -2571,10 +3809,10 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
 }
 
 fn set_language_choice(app: &mut AppState, choice: u8) {
-    if app.preflight_focus == PreflightField::EnvFishLanguageChoiceOverride
+    if app.preflight_focus == PreflightField::EnvShellLanguageChoiceOverride
         && (1..=3).contains(&choice)
     {
-        app.preflight.fish_language_choice = choice;
+        app.preflight.shell_language_choice = choice;
     }
 }
 
@@ -2677,6 +3915,12 @@ fn apply_edit_buffer(app: &mut AppState) {
                     if app.user_added.contains(&name) {
                         continue;
                     }
+                    if is_role_controlled_package(app, &name) {
+                        app.push_log_line(format!(
+                            "Package '{name}' is managed by its application role; ignored"
+                        ));
+                        continue;
+                    }
                     if app.pacman_sel_map.contains_key(&name) {
                         if let Some(v) = app.pacman_sel_map.get_mut(&name) {
                             *v = true;
@@ -2697,34 +3941,15 @@ fn apply_edit_buffer(app: &mut AppState) {
                         ));
                         continue;
                     }
-                    let mut src = String::from("unknown");
-                    if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "pacman".to_string();
-                    } else if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "aur".to_string();
-                    }
-                    if src == "unknown" {
+                    let Some(source) = classify_package(&name) else {
                         app.push_log_line(format!(
                             "Skipping unknown package '{}': not found in pacman or AUR",
                             name
                         ));
                         continue;
-                    }
-                    app.user_added_src.insert(name.clone(), src);
+                    };
+                    app.user_added_src
+                        .insert(name.clone(), source.as_str().to_string());
                     app.user_added.push(name);
                 }
             } else {
@@ -2732,6 +3957,12 @@ fn apply_edit_buffer(app: &mut AppState) {
                 let mut new_user_added: Vec<String> = Vec::new();
                 let mut new_user_added_src: HashMap<String, String> = HashMap::new();
                 for name in names {
+                    if is_role_controlled_package(app, &name) {
+                        app.push_log_line(format!(
+                            "Package '{name}' is managed by its application role; ignored"
+                        ));
+                        continue;
+                    }
                     if app.pacman_sel_map.contains_key(&name) {
                         if let Some(v) = app.pacman_sel_map.get_mut(&name) {
                             *v = true;
@@ -2752,34 +3983,14 @@ fn apply_edit_buffer(app: &mut AppState) {
                         ));
                         continue;
                     }
-                    let mut src = String::from("unknown");
-                    if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("pacman -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "pacman".to_string();
-                    } else if Command::new("bash")
-                        .arg("-lc")
-                        .arg(format!("yay -Si -- {} >/dev/null 2>&1", name))
-                        .status()
-                        .ok()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                    {
-                        src = "aur".to_string();
-                    }
-                    if src == "unknown" {
+                    let Some(source) = classify_package(&name) else {
                         app.push_log_line(format!(
                             "Skipping unknown package '{}': not found in pacman or AUR",
                             name
                         ));
                         continue;
-                    }
-                    new_user_added_src.insert(name.clone(), src);
+                    };
+                    new_user_added_src.insert(name.clone(), source.as_str().to_string());
                     new_user_added.push(name);
                 }
                 app.user_added = new_user_added;
@@ -2930,6 +4141,9 @@ fn startup_prereq_warnings(app: &AppState) -> Vec<String> {
 
     if app.setup_script.is_none() {
         missing.push("setup.sh (not found)".to_string());
+    }
+    if let Some(error) = &app.package_load_error {
+        missing.push(format!("packages.json ({error})"));
     }
 
     if missing.is_empty() {
@@ -3165,25 +4379,43 @@ fn ratio_priority(r: &str) -> u32 {
     }
 }
 
-// Very small ANSI/CSI escape stripper to keep logs readable while respecting carriage returns
 fn strip_ansi_sequences(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let mut iter = s.chars();
+    let mut iter = s.chars().peekable();
     while let Some(ch) = iter.next() {
         if ch == '\u{1b}' {
-            // ESC
-            if let Some('[') = iter.next() {
-                // consume until final byte (0x40-0x7E)
-                for c in iter.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
+            match iter.next() {
+                Some('[') => {
+                    for c in iter.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
                     }
                 }
-                continue;
+                // OSC includes sudo/systemd session metadata, not printable output.
+                Some(']' | 'P' | '^' | '_') => {
+                    while let Some(c) = iter.next() {
+                        if c == '\u{7}' {
+                            break;
+                        }
+                        if c == '\u{1b}' && iter.peek() == Some(&'\\') {
+                            iter.next();
+                            break;
+                        }
+                    }
+                }
+                Some(' '..='/') => {
+                    for c in iter.by_ref() {
+                        if ('0'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
             }
-            continue;
+        } else if !ch.is_control() || matches!(ch, '\t' | '\n' | '\r') {
+            out.push(ch);
         }
-        out.push(ch);
     }
     out
 }
@@ -3203,9 +4435,18 @@ fn format_duration(d: Duration) -> String {
     }
 }
 
+fn normalized_section_title(title: &str) -> String {
+    title
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     // Detect headings like "=== Step ===" or "========= Step ========="
-    let trimmed = raw_line.trim();
+    let clean_line = strip_ansi_sequences(raw_line);
+    let trimmed = clean_line.trim();
     let is_heading = (trimmed.starts_with("=== ") && trimmed.ends_with(" ==="))
         || (trimmed.starts_with("=========") && trimmed.ends_with("========="));
     if is_heading {
@@ -3217,8 +4458,14 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         {
             prev.done = true;
         }
-        // If we preloaded, try to move focus to matching title; otherwise append
-        if let Some(pos) = app.sections.iter().position(|s| s.title == title) {
+        // Match case- and whitespace-insensitively so display-only shell changes do not
+        // create a new progress step and change the denominator during a run.
+        let normalized_title = normalized_section_title(&title);
+        if let Some(pos) = app
+            .sections
+            .iter()
+            .position(|section| normalized_section_title(&section.title) == normalized_title)
+        {
             app.current_section = Some(pos);
         } else {
             app.sections.push(SetupSection {
@@ -3231,22 +4478,14 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
         return;
     }
 
-    // Check for warnings/errors and annotate current section
-    let clean = strip_ansi_sequences(trimmed);
-    let lower = clean.to_lowercase();
-    let mut sev: Option<StepSeverity> = None;
-    if lower.contains("[error]") || lower.starts_with("error: ") {
-        sev = Some(StepSeverity::Error);
-    } else if lower.contains("[!]") || lower.contains("[warning]") || lower.starts_with("warning: ")
-    {
-        sev = Some(StepSeverity::Warning);
-    }
-    if let Some(sev_val) = sev
+    // Check for warnings/errors and annotate current section.
+    let sev = output_line_severity(trimmed);
+    if sev != StepSeverity::None
         && let Some(idx) = app.current_section
         && let Some(sec) = app.sections.get_mut(idx)
     {
         // Upgrade severity if needed (Error overrides Warning)
-        match (sec.severity, sev_val) {
+        match (sec.severity, sev) {
             (StepSeverity::Error, _) => {}
             (StepSeverity::Warning, StepSeverity::Error) => sec.severity = StepSeverity::Error,
             (StepSeverity::None, s) => sec.severity = s,
@@ -3266,132 +4505,1321 @@ fn update_sections_from_line(app: &mut AppState, raw_line: &str) {
     }
 }
 
+fn shell_function_name(line: &str) -> Option<String> {
+    let declaration = line.trim().strip_suffix('{')?.trim_end();
+    let name = declaration.strip_suffix("()")?.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+fn literal_step_title(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    for prefix in ["announce_step \"", "extended_announce_step \""] {
+        if let Some(rest) = trimmed.strip_prefix(prefix)
+            && let Some(end) = rest.find('"')
+        {
+            return Some(rest[..end].to_string());
+        }
+    }
+
+    // Some legacy steps, such as Installation Summary, print the same heading directly.
+    let heading_start = trimmed.find("========= ")? + "========= ".len();
+    let rest = &trimmed[heading_start..];
+    let heading_end = rest.find(" =========")?;
+    let title = rest[..heading_end].trim();
+    (!title.is_empty()).then(|| title.to_string())
+}
+
+fn push_unique_section(sections: &mut Vec<SetupSection>, title: String) {
+    if sections.iter().any(|section| section.title == title) {
+        return;
+    }
+    sections.push(SetupSection {
+        title,
+        done: false,
+        severity: StepSeverity::None,
+    });
+}
+
 fn preload_sections_from_script(script_path: &PathBuf) -> Vec<SetupSection> {
-    // Strategy: derive order from the main() call sequence.
-    // 1) Collect function definitions present in the script.
-    // 2) Scan the main() block, extract called function names in order.
-    // 3) For each called function, look up the first announce_step title in its body.
-    // 4) Build the sections vector in that order, and append the final marker.
-    let mut out: Vec<SetupSection> = Vec::new();
     let Ok(content) = fs::read_to_string(script_path) else {
-        return out;
+        return Vec::new();
     };
-
     let lines: Vec<&str> = content.lines().collect();
+    let function_starts: Vec<(String, usize)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| shell_function_name(line).map(|name| (name, index)))
+        .collect();
 
-    // 1) Find function definitions: pattern "name() {"
     use std::collections::HashMap;
-    let mut fn_starts: HashMap<String, usize> = HashMap::new();
-    for (i, raw) in lines.iter().enumerate() {
-        let t = raw.trim();
-        if let Some(paren) = t.find("(){") {
-            // rough; many functions are formatted as "name() {"
-            let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
-                fn_starts.insert(name.to_string(), i);
-            }
-        } else if let Some(paren) = t.find("() {") {
-            let name = t[..paren].trim();
-            if !name.is_empty() && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
-                fn_starts.insert(name.to_string(), i);
-            }
-        }
-    }
+    let function_ranges: HashMap<String, (usize, usize)> = function_starts
+        .iter()
+        .enumerate()
+        .map(|(position, (name, start))| {
+            let end = function_starts
+                .get(position + 1)
+                .map(|(_, next_start)| *next_start)
+                .unwrap_or(lines.len());
+            (name.clone(), (*start + 1, end))
+        })
+        .collect();
 
-    // Helper: extract first announce title inside a function body starting at index
-    let mut title_cache: HashMap<String, String> = HashMap::new();
-    let mut get_title_for_fn = |fname: &str| -> Option<String> {
-        if let Some(t) = title_cache.get(fname) {
-            return Some(t.clone());
-        }
-        let start = *fn_starts.get(fname)?;
-        // find body range by brace counting from the line containing "{" forward
-        let mut depth: i32 = 0;
-        let mut in_body = false;
-        for raw in &lines[start..] {
-            let s = *raw;
-            if !in_body {
-                if s.contains('{') {
-                    in_body = true;
-                    depth = 1;
-                }
-                continue;
-            }
-            // check for announce_step
-            let t = s.trim();
-            if let Some(rest) = t
-                .strip_prefix("announce_step \"")
-                .or_else(|| t.strip_prefix("extended_announce_step \""))
-                && let Some(end) = rest.find('"')
-            {
-                let title = rest[..end].to_string();
-                title_cache.insert(fname.to_string(), title.clone());
-                return Some(title);
-            }
-            if s.contains('{') {
-                depth += 1;
-            }
-            if s.contains('}') {
-                depth -= 1;
-                if depth <= 0 {
-                    break;
-                }
-            }
-        }
-        None
+    let Some(&(main_start, main_end)) = function_ranges.get("main") else {
+        return Vec::new();
     };
+    let mut sections = Vec::new();
+    for line in &lines[main_start..main_end] {
+        let trimmed = line.trim();
+        if let Some(title) = literal_step_title(trimmed) {
+            push_unique_section(&mut sections, title);
+            continue;
+        }
 
-    // 2) Extract the main() block lines
-    let mut main_start = None;
-    for (i, raw) in lines.iter().enumerate() {
-        if raw.trim_start().starts_with("main() {") {
-            main_start = Some(i);
-            break;
+        let called_function = trimmed.split_whitespace().next().unwrap_or("");
+        let Some(&(function_start, function_end)) = function_ranges.get(called_function) else {
+            continue;
+        };
+        if let Some(title) = lines[function_start..function_end]
+            .iter()
+            .find_map(|function_line| literal_step_title(function_line))
+        {
+            push_unique_section(&mut sections, title);
         }
     }
-    if let Some(start_idx) = main_start {
-        let mut depth: i32 = 0;
-        let mut in_body = false;
-        let mut called: Vec<String> = Vec::new();
-        for raw in &lines[start_idx..] {
-            let s = *raw;
-            if !in_body {
-                if s.contains('{') {
-                    in_body = true;
-                    depth = 1;
-                }
-                continue;
-            }
-            let t = s.trim();
-            // stop at end of main
-            if t.contains('}') {
-                depth -= 1;
-                if depth <= 0 {
-                    break;
-                }
-            }
-            if t.contains('{') {
-                depth += 1; // nested blocks inside main (if/else)
-            }
-            // very simple call detection for shell: a line starting with a known function name
-            // (functions are invoked as plain identifiers like: update_pacman)
-            let token = t.split_whitespace().next().unwrap_or("");
-            if fn_starts.contains_key(token) {
-                called.push(token.to_string());
+    sections
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_prompt_renders_without_input_and_handles_keys_over_either_screen() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+
+        for mode in [UiMode::Menu, UiMode::Preflight] {
+            for cancel in [KeyCode::Char('n'), KeyCode::Esc, KeyCode::Char('q')] {
+                app.ui_mode = mode;
+                app.editing = true;
+                app.edit_kind = EditKind::ConfirmReboot;
+                terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+                let screen: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(screen.contains("Setup Complete"));
+                assert!(screen.contains("Do you want to Reboot to finish the Setup?"));
+                assert!(screen.contains("Enter/Y: reboot   N/Esc: cancel"));
+
+                // An unrelated key must not reach the underlying installer screen.
+                let key = KeyEvent::new(KeyCode::Char('v'), event::KeyModifiers::NONE);
+                assert!(!handle_key_event(&mut app, key).unwrap());
+                assert!(!app.logs.show_details);
+                assert_eq!(app.edit_kind, EditKind::ConfirmReboot);
+
+                let key = KeyEvent::new(cancel, event::KeyModifiers::NONE);
+                assert!(!handle_key_event(&mut app, key).unwrap());
+                assert!(!app.editing);
+                assert_eq!(app.edit_kind, EditKind::None);
+                assert_eq!(app.ui_mode, mode);
+                terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+                let screen: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                assert!(!screen.contains("Setup Complete"));
             }
         }
-        // 3) Map to titles and build sections
-        for fname in called {
-            if let Some(title) = get_title_for_fn(&fname)
-                && !out.iter().any(|s| s.title == title)
+    }
+
+    fn open_application_role(app: &mut AppState, role: &str) {
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        if !app.editing {
+            app.preflight_focus = PreflightField::Applications;
+            handle_preflight_keys(app, key(KeyCode::Enter)).unwrap();
+        }
+        assert_eq!(app.edit_kind, EditKind::SelectApplications);
+        handle_preflight_keys(app, key(KeyCode::Home)).unwrap();
+        for _ in 0..ROLE_ORDER.iter().position(|name| *name == role).unwrap() {
+            handle_preflight_keys(app, key(KeyCode::Down)).unwrap();
+        }
+        handle_preflight_keys(app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.edit_kind, EditKind::SelectRole);
+    }
+
+    fn render_app_screen(app: &mut AppState, width: u16, height: u16) -> String {
+        let mut terminal =
+            Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| draw_ui(frame, app)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn preflight_shows_one_applications_entry_instead_of_individual_roles() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        let screen = render_app_screen(&mut app, 120, 24);
+        assert_eq!(screen.matches("Applications").count(), 1);
+        assert!(screen.contains("17 groups"));
+        assert!(screen.contains("Start unattended install"));
+        for label in [
+            "Browser",
+            "Notifications",
+            "TUI editor",
+            "GUI editor",
+            "Launcher",
+        ] {
+            assert!(!screen.contains(label));
+        }
+        assert!(!screen.contains("zen-browser-bin"));
+        assert!(!screen.contains("(primary)"));
+
+        assert!(screen.contains("Shell language"));
+        assert!(!screen.contains("Fish language"));
+        app.preflight_focus = PreflightField::EnvShellLanguageChoiceOverride;
+        preflight_focus_next(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::Applications);
+        preflight_focus_next(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::EnvWallpaperDirOverride);
+        preflight_focus_prev(&mut app);
+        assert_eq!(app.preflight_focus, PreflightField::Applications);
+        preflight_focus_prev(&mut app);
+        assert_eq!(
+            app.preflight_focus,
+            PreflightField::EnvShellLanguageChoiceOverride
+        );
+    }
+
+    #[test]
+    fn applications_submenu_reaches_every_role_and_returns_one_level_at_a_time() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        app.preflight_focus = PreflightField::Applications;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        let screen = render_app_screen(&mut app, 120, 30);
+        assert!(screen.contains("Browser"));
+        assert!(screen.contains("Launcher"));
+        assert!(screen.contains("zen-browser-bin (primary)"));
+        let original = app.role_selection.clone();
+
+        for (index, role) in ROLE_ORDER.into_iter().enumerate() {
+            assert_eq!(selected_application_role(&app), Some(role));
+            handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+            assert_eq!(app.edit_kind, EditKind::SelectRole);
+            let label = app.package_registry.as_ref().unwrap().roles[role]
+                .label
+                .clone();
+            assert!(render_app_screen(&mut app, 120, 30).contains(&label));
+            let back = [KeyCode::Esc, KeyCode::Enter, KeyCode::Char('q')][index % 3];
+            handle_preflight_keys(&mut app, key(back)).unwrap();
+            assert!(app.editing);
+            assert_eq!(app.edit_kind, EditKind::SelectApplications);
+            assert_eq!(app.application_cursor, index);
+            handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        }
+        assert_eq!(app.application_cursor, 0);
+        assert_eq!(app.role_selection, original);
+        handle_preflight_keys(&mut app, key(KeyCode::Up)).unwrap();
+        assert_eq!(app.application_cursor, ROLE_ORDER.len() - 1);
+        for back in [KeyCode::Esc, KeyCode::Char('q')] {
+            handle_preflight_keys(&mut app, key(back)).unwrap();
+            assert!(!app.editing);
+            assert_eq!(app.edit_kind, EditKind::None);
+            assert_eq!(app.preflight_focus, PreflightField::Applications);
+            handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+            assert_eq!(app.application_cursor, ROLE_ORDER.len() - 1);
+        }
+    }
+
+    #[test]
+    fn applications_submenu_scrolls_selected_groups_into_small_viewports() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Preflight;
+        app.preflight_focus = PreflightField::Applications;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        for role in ROLE_ORDER {
+            let label = app.package_registry.as_ref().unwrap().roles[role]
+                .label
+                .clone();
+            assert!(render_app_screen(&mut app, 60, 10).contains(&label));
+            handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        }
+        handle_preflight_keys(&mut app, key(KeyCode::End)).unwrap();
+        assert_eq!(selected_application_role(&app), Some("agent"));
+        handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+        assert_eq!(selected_application_role(&app), Some("browser"));
+    }
+
+    fn render_choice_lines(
+        app: &AppState,
+        width: u16,
+        height: u16,
+        group_list: bool,
+    ) -> Vec<String> {
+        let mut terminal =
+            Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| {
+                if group_list {
+                    draw_applications_menu(frame, app, frame.area());
+                } else {
+                    draw_role_menu(frame, app, frame.area());
+                }
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(usize::from(width.max(1)))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    fn render_choice_screen(app: &AppState, width: u16, height: u16, group_list: bool) -> String {
+        let rows = render_choice_lines(app, width, height, group_list);
+        let mut text = rows.join(" ");
+        if !group_list
+            && let Some((header_y, header)) = rows
+                .iter()
+                .enumerate()
+                .find(|(_, row)| row.contains("Description"))
+        {
+            let column = header[..header.find("Description").unwrap()]
+                .chars()
+                .count();
+            // Read wrapped descriptions vertically, without interleaving wrapped app-name cells.
+            for row in rows
+                .iter()
+                .skip(header_y + 1)
+                .take_while(|row| !row.contains('└') && !row.contains("Enter/Esc"))
             {
-                out.push(SetupSection {
-                    title,
-                    done: false,
-                    severity: StepSeverity::None,
-                });
+                text.push(' ');
+                text.extend(row.chars().skip(column));
+            }
+        }
+        text.chars()
+            .map(|ch| match ch {
+                '│' | '─' | '┌' | '┐' | '└' | '┘' | '▶' => ' ',
+                ch => ch,
+            })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn role_menu_separates_type_help_and_aligns_name_description_columns() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.application_cursor = ROLE_ORDER
+            .iter()
+            .position(|role| *role == "gui_editor")
+            .unwrap();
+        app.role_cursor = 1;
+        let rows = render_choice_lines(&app, 120, 32, false);
+        let about_y = rows
+            .iter()
+            .position(|row| row.contains("About GUI editor"))
+            .unwrap();
+        assert!(rows[about_y].contains('┌') && rows[about_y].contains('┐'));
+        assert!(rows[about_y + 1].contains("Edits text and code in a graphical window."));
+        let about_bottom = rows
+            .iter()
+            .enumerate()
+            .skip(about_y + 1)
+            .find(|(_, row)| row.contains('└'))
+            .unwrap()
+            .0;
+        assert!(rows[about_bottom].contains('┘'));
+        assert!(
+            rows[about_bottom + 1]
+                .chars()
+                .all(|ch| ch == ' ' || ch == '│')
+        );
+        assert!(rows[about_bottom + 2].contains("Choices"));
+        let header_y = rows
+            .iter()
+            .position(|row| row.contains("Description"))
+            .unwrap();
+        assert_eq!(header_y, about_bottom + 3);
+        let column = |row: &str, word: &str| row[..row.find(word).unwrap()].chars().count();
+        let name_x = column(&rows[header_y], "App");
+        let description_x = column(&rows[header_y], "Description");
+        assert!(description_x > name_x + 20);
+        let zed_row = rows
+            .iter()
+            .find(|row| row.contains("zed [pacman]"))
+            .unwrap();
+        assert_eq!(column(zed_row, "[ ] zed"), name_x);
+        assert_eq!(column(zed_row, "GPU-rendered"), description_x);
+        assert!(zed_row.contains('▶'));
+        let none_row = rows.iter().find(|row| row.contains("[ ] None")).unwrap();
+        assert_eq!(column(none_row, "Skip GUI editors"), description_x);
+    }
+
+    #[test]
+    fn every_application_type_and_package_has_descriptive_help() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+            app.application_cursor = index;
+            let description = application_type_description(role_name);
+            assert!(description.len() > 40);
+            assert!(!description.starts_with("Select the applications"));
+            let screen = render_choice_screen(&app, 100, 24, true);
+            assert!(
+                screen.contains(description),
+                "type description hidden for {role_name}: {screen}"
+            );
+            for option in &app.package_registry.as_ref().unwrap().roles[role_name].options {
+                let description = &app.pkg_descs[&option.package];
+                assert!(
+                    description.len() >= 50 && description.len() <= 160,
+                    "{} needs a concise differentiating description",
+                    option.package
+                );
             }
         }
     }
-    out
+
+    #[test]
+    fn all_choices_and_descriptions_fit_when_terminal_height_permits() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        for (width, height) in [(80, 40), (120, 24)] {
+            for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+                app.application_cursor = index;
+                let role = &app.package_registry.as_ref().unwrap().roles[role_name];
+                let screen = render_choice_screen(&app, width, height, false);
+                assert!(screen.contains(application_type_description(role_name)));
+                if !role.required {
+                    assert!(screen.contains("None"));
+                }
+                for option in &role.options {
+                    assert!(
+                        screen.contains(&option.package),
+                        "choice {} clipped at {width}x{height}",
+                        option.package
+                    );
+                    assert!(
+                        screen.contains(&app.pkg_descs[&option.package]),
+                        "description for {} clipped at {width}x{height}: {screen}",
+                        option.package
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn short_choosers_keep_every_focused_choice_description_visible() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.editing = true;
+        app.edit_kind = EditKind::SelectRole;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        for (index, role_name) in ROLE_ORDER.into_iter().enumerate() {
+            app.application_cursor = index;
+            let role = &app.package_registry.as_ref().unwrap().roles[role_name];
+            let optional = !role.required;
+            let packages: Vec<_> = role.options.iter().map(|o| o.package.clone()).collect();
+            app.role_cursor = usize::from(optional);
+            for package in &packages {
+                let screen = render_choice_screen(&app, 60, 10, false);
+                assert!(screen.contains(package));
+                assert!(
+                    screen.contains(&app.pkg_descs[package]),
+                    "focused description for {package} clipped: {screen}"
+                );
+                assert!(screen.contains("scroll"));
+                handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+            }
+            handle_preflight_keys(&mut app, key(KeyCode::End)).unwrap();
+            assert_eq!(app.role_cursor, packages.len() - 1 + usize::from(optional));
+            assert!(render_choice_screen(&app, 60, 10, false).contains(packages.last().unwrap()));
+            handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+            assert_eq!(app.role_cursor, 0);
+            if optional {
+                assert!(render_choice_screen(&app, 60, 10, false).contains("None"));
+            }
+        }
+    }
+
+    #[test]
+    fn choice_layout_stays_within_tiny_terminal_bounds() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let app = AppState::new(rx, tx, Some(script));
+        for (width, height) in [(0, 0), (1, 1), (20, 4), (40, 8)] {
+            let area = Rect::new(0, 0, width, height);
+            let (popup, rows) = choice_popup_layout(area, [3, 18, 2], 4);
+            assert!(popup.right() <= area.right() && popup.bottom() <= area.bottom());
+            assert!(
+                rows.iter()
+                    .all(|row| row.right() <= popup.right() && row.bottom() <= popup.bottom())
+            );
+            render_choice_screen(&app, width, height, false);
+            render_choice_screen(&app, width, height, true);
+        }
+    }
+
+    #[test]
+    fn choice_descriptions_wrap_long_words_without_losing_text() {
+        assert_eq!(
+            wrap_choice_description("abcdefghij next", 4),
+            ["abcd", "efgh", "ij", "next"]
+        );
+        assert!(wrap_choice_description("text", 0).is_empty());
+        assert_eq!(
+            wrap_choice_description("a  short   sentence", 40),
+            ["a short sentence"]
+        );
+    }
+
+    #[test]
+    fn role_popup_edits_membership_primary_and_single_choice_independently() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+
+        open_application_role(&mut app, "terminal");
+        assert_eq!(app.edit_kind, EditKind::SelectRole);
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char('p'))).unwrap();
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("terminal"), Some("alacritty"));
+        assert_eq!(
+            selection.selected_packages("terminal").unwrap(),
+            &BTreeSet::from(["alacritty".to_string(), "kitty".to_string()])
+        );
+        assert!(app.pacman_sel_map["alacritty"]);
+        assert!(app.pacman_sel_map["kitty"]);
+
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "launcher");
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("launcher"), Some("rofi"));
+        assert_eq!(
+            selection.selected_packages("launcher").unwrap(),
+            &BTreeSet::from(["rofi".to_string()])
+        );
+        assert!(!app.pacman_sel_map["wofi"]);
+        assert!(app.pacman_sel_map["rofi"]);
+    }
+
+    #[test]
+    fn file_manager_popup_requires_exactly_one_choice() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        open_application_role(&mut app, "file_manager");
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert!(screen.contains("File manager — single choice, required"));
+        assert!(!screen.contains("[*] None"));
+        for package in ["dolphin", "thunar", "nautilus", "nemo", "pcmanfm-qt"] {
+            assert!(screen.contains(package));
+        }
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert!(!app.pacman_sel_map["dolphin"]);
+        assert!(app.pacman_sel_map["thunar"]);
+        assert_eq!(
+            app.role_selection
+                .as_ref()
+                .unwrap()
+                .selected_packages("file_manager")
+                .unwrap(),
+            &BTreeSet::from(["thunar".to_string()])
+        );
+        assert!(package_start_blocker(&app).is_none());
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert_eq!(
+            package_start_blocker(&app).as_deref(),
+            Some("Select exactly one File manager")
+        );
+    }
+
+    #[test]
+    fn optional_tui_file_manager_popup_supports_multiple_choices_and_a_primary() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        open_application_role(&mut app, "tui_file_manager");
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert!(screen.contains("TUI file manager — multiple choices, optional"));
+        assert!(screen.contains("[*] None"));
+        assert!(screen.contains("Skip TUI file managers"));
+        for package in ["yazi", "ranger", "lf", "nnn", "mc", "vifm"] {
+            assert!(screen.contains(package));
+            assert!(!app.pacman_sel_map[package]);
+        }
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert!(app.pacman_sel_map["yazi"]);
+        assert!(app.pacman_sel_map["dolphin"]);
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char('p'))).unwrap();
+        assert!(app.pacman_sel_map["yazi"] && app.pacman_sel_map["ranger"]);
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(
+            selection.selected_package("tui_file_manager"),
+            Some("ranger")
+        );
+        assert_eq!(
+            selection.selected_packages("tui_file_manager").unwrap(),
+            &BTreeSet::from(["ranger".to_string(), "yazi".to_string()])
+        );
+
+        handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        for package in ["yazi", "ranger", "lf", "nnn", "mc", "vifm"] {
+            assert!(!app.pacman_sel_map[package]);
+        }
+        assert!(app.pacman_sel_map["dolphin"]);
+        assert!(package_start_blocker(&app).is_none());
+    }
+
+    #[test]
+    fn optional_role_popup_exposes_none_and_required_empty_blocks_launch() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        open_application_role(&mut app, "dock");
+
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(screen.contains("Dock — single choice, optional"));
+        assert!(screen.contains("[*] None"));
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Enter)).unwrap();
+        open_application_role(&mut app, "notifications");
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert_eq!(
+            package_start_blocker(&app).as_deref(),
+            Some("Select exactly one Notifications")
+        );
+    }
+
+    #[test]
+    fn generic_bulk_changes_preserve_role_membership_and_shared_package_union() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        {
+            let registry = app.package_registry.as_ref().unwrap();
+            let selection = app.role_selection.as_mut().unwrap();
+            selection
+                .toggle_member(registry, "bar", "nwg-panel")
+                .unwrap();
+            selection
+                .toggle_member(registry, "dock", "nwg-panel")
+                .unwrap();
+        }
+        sync_role_package_selection(&mut app);
+        set_all_package_selections(&mut app, PackageSource::Pacman, false);
+        set_all_package_selections(&mut app, PackageSource::Aur, true);
+
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(selection.selected_package("bar"), Some("nwg-panel"));
+        assert_eq!(selection.selected_package("dock"), Some("nwg-panel"));
+        assert_eq!(
+            selection.selected_packages("browser").unwrap(),
+            &BTreeSet::from(["zen-browser-bin".to_string()])
+        );
+        assert_eq!(
+            selection.selected_packages("gui_editor").unwrap(),
+            &BTreeSet::from(["visual-studio-code-bin".to_string()])
+        );
+        assert!(app.pacman_sel_map["nwg-panel"]);
+        assert!(!app.aur_sel_map["brave-bin"]);
+        assert!(!app.aur_sel_map["cursor-bin"]);
+    }
+
+    #[test]
+    fn compact_output_hides_package_chatter_but_retains_detailed_history() {
+        let lines = [
+            "Install started",
+            "========= Install AUR extras =========",
+            "[*] Installing selected AUR packages",
+            "(4/8) Installiert wird meson [########] 100%",
+            "Optionale Abhängigkeiten für python-mako",
+            "    python-beaker: for caching support",
+            "==> Erstelle Paket: wlogout 1.2.2-0",
+            "[!] Optional package skipped",
+            "==> FEHLER: Ein Fehler ist aufgetreten",
+            "Warnung: package is out of date",
+            "error: could not build package",
+        ];
+        let mut log = OutputLog::default();
+        for line in lines {
+            log.push(format!("[2026-09-19 13:08:42] {line}"), line);
+        }
+        assert!(!log.show_details);
+        assert_eq!(log.len(), 7);
+        assert!(!log.lines().iter().any(|line| line.contains("100%")));
+        assert!(log.lines().iter().any(|line| line.contains("FEHLER")));
+        assert!(log.lines().iter().any(|line| line.contains("Warnung")));
+        log.show_details = true;
+        assert_eq!(log.len(), lines.len());
+        assert!(log.lines()[3].ends_with("100%"));
+    }
+
+    #[test]
+    fn compact_output_preserves_summary_details_and_resets_for_next_run() {
+        let mut log = OutputLog::default();
+        for line in [
+            "========= Installation Summary =========",
+            "Failed packages:",
+            "  - example-package",
+            "Configuration Status:",
+            "NetworkManager: configured",
+            "Recommendations:",
+            "  1. Re-run failed installs",
+        ] {
+            log.push(line.to_string(), line);
+        }
+        assert_eq!(log.len(), 7);
+        log.clear();
+        log.push("summary continues".into(), "summary continues");
+        assert_eq!(log.len(), 1);
+        log.push("Install started".into(), "Install started");
+        log.push("build chatter".into(), "build chatter");
+        assert_eq!(log.len(), 2);
+        log.show_details = true;
+        assert_eq!(log.len(), 3);
+        log.clear();
+        assert_eq!(log.len(), 0);
+        log.show_details = false;
+        assert_eq!(log.len(), 0);
+    }
+
+    #[test]
+    fn detailed_chatter_cannot_evict_compact_status_and_histories_are_bounded() {
+        let mut log = OutputLog::default();
+        log.push("[*] Starting".into(), "[*] Starting");
+        for _ in 0..=OUTPUT_HISTORY_LIMIT {
+            assert_eq!(log.push("build output".into(), "build output"), 0);
+        }
+        assert_eq!(log.lines(), &["[*] Starting"]);
+        log.show_details = true;
+        assert_eq!(log.len(), OUTPUT_HISTORY_LIMIT);
+        assert_eq!(log.push("more output".into(), "more output"), 1);
+        log.show_details = false;
+        for _ in 1..OUTPUT_HISTORY_LIMIT {
+            assert_eq!(log.push("[*] Status".into(), "[*] Status"), 0);
+        }
+        assert_eq!(log.push("[!] Warning".into(), "[!] Warning"), 1);
+        assert_eq!(log.len(), OUTPUT_HISTORY_LIMIT);
+    }
+
+    #[test]
+    fn compact_rendering_omits_timestamps_and_heading_decoration() {
+        let theme = Theme::catppuccin_mocha();
+        let heading = "[2026-09-19 13:08:42] ========= Install AUR extras =========";
+        assert_eq!(
+            live_output_line(theme, heading, false).to_string(),
+            "Install AUR extras"
+        );
+        assert_eq!(live_output_line(theme, heading, true).to_string(), heading);
+        let warning = live_output_line(theme, "[2026-09-19 13:08:42] [!] skipped", false);
+        assert_eq!(warning.to_string(), "[!] skipped");
+        assert_eq!(warning.spans[0].style.fg, Some(Color::Yellow));
+
+        let backend = ratatui::backend::TestBackend::new(40, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let output = Paragraph::new(vec![
+                    live_output_line(theme, heading, false),
+                    warning.clone(),
+                ]);
+                frame.render_widget(output, frame.area());
+            })
+            .unwrap();
+        let mut expected = ratatui::buffer::Buffer::with_lines([
+            "Install AUR extras                      ",
+            "[!] skipped                             ",
+            "                                        ",
+            "                                        ",
+        ]);
+        expected.set_style(Rect::new(0, 0, 18, 1), Style::default().fg(theme.subtext0));
+        expected.set_style(
+            Rect::new(0, 1, 11, 1),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        terminal.backend().assert_buffer(&expected);
+    }
+
+    #[test]
+    fn terminal_metadata_is_removed_without_losing_neighboring_output() {
+        for terminator in ["\u{7}", "\u{1b}\\"] {
+            let raw = format!(
+                "before\u{1b}]3008;start=session;user=test{terminator}\u{1b}[31m[ERROR] failed\u{1b}[0m"
+            );
+            assert_eq!(strip_ansi_sequences(&raw), "before[ERROR] failed");
+        }
+        assert_eq!(
+            strip_ansi_sequences("\u{1b}]8;;https://example.org\u{1b}\\link\u{1b}]8;;\u{1b}\\"),
+            "link"
+        );
+        assert_eq!(strip_ansi_sequences("safe\u{1b}]3008;unterminated"), "safe");
+        assert_eq!(strip_ansi_sequences("\u{1b}(Bplain text"), "plain text");
+        assert_eq!(
+            strip_ansi_sequences("hello\u{7}\u{8}\tworld"),
+            "hello\tworld"
+        );
+        assert_eq!(
+            strip_ansi_sequences("before\u{1b}Ppayload\u{1b}\\after"),
+            "beforeafter"
+        );
+    }
+
+    #[test]
+    fn selected_preflight_row_has_color_independent_highlight() {
+        let theme = Theme::catppuccin_mocha();
+        let selected = preflight_row_style(theme, true);
+        let idle = preflight_row_style(theme, false);
+
+        assert!(selected.add_modifier.contains(Modifier::BOLD));
+        assert!(selected.add_modifier.contains(Modifier::REVERSED));
+        assert!(!idle.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn spinner_advances_at_a_visible_rate() {
+        assert_eq!(spinner_frame(Duration::from_millis(0)), "|");
+        assert_eq!(spinner_frame(Duration::from_millis(150)), "/");
+        assert_eq!(spinner_frame(Duration::from_millis(300)), "-");
+        assert_eq!(spinner_frame(Duration::from_millis(450)), "\\");
+        assert_eq!(spinner_frame(Duration::from_millis(600)), "|");
+    }
+
+    #[test]
+    fn section_progress_counts_only_completed_steps() {
+        let sections = vec![
+            SetupSection {
+                title: "Done".to_string(),
+                done: true,
+                severity: StepSeverity::None,
+            },
+            SetupSection {
+                title: "Running".to_string(),
+                done: false,
+                severity: StepSeverity::None,
+            },
+        ];
+
+        assert_eq!(installation_step_progress(&sections, 2), (1, 2));
+
+        let mut sections_with_unplanned_output = sections.clone();
+        sections_with_unplanned_output.push(SetupSection {
+            title: "Unexpected diagnostic heading".to_string(),
+            done: true,
+            severity: StepSeverity::None,
+        });
+        assert_eq!(
+            installation_step_progress(&sections_with_unplanned_output, 2),
+            (1, 2)
+        );
+        assert_eq!(installation_percent(1, 2), 50);
+        assert_eq!(ascii_progress_bar(1, 2, 5), "[==>--]");
+        assert_eq!(ascii_progress_bar(2, 2, 5), "[=====]");
+    }
+
+    #[test]
+    fn setup_progress_plan_contains_the_complete_main_flow() {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let titles: Vec<String> = preload_sections_from_script(&script)
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+
+        assert_eq!(
+            titles,
+            vec![
+                "Updating Arch mirrors",
+                "Updating pacman packages",
+                "Updating AUR packages",
+                "Removing pacman cache",
+                "Install pacman packages",
+                "Install AUR extras",
+                "Verifying selected packages",
+                "Install selected coding agents",
+                "Update configs",
+                "Configuring selected application roles",
+                "Configuring selected shell",
+                "Configuring Environment",
+                "Configuring NetworkManager",
+                "Configuring WiFi",
+                "Configuring Bluetooth",
+                "Configuring gnome-keyring",
+                "Configuring filepicker",
+                "Configuring Pacman Color",
+                "Setting up Timeshift",
+                "Configuring grub-btrfsd",
+                "Configuring monitor",
+                "Enabling SDDM display manager",
+                "Configuring SDDM Theme",
+                "Installation Summary",
+                "Hyprland setup completed successfully!",
+            ]
+        );
+    }
+
+    #[test]
+    fn completed_non_success_sections_have_tty_visible_states() {
+        let theme = Theme::catppuccin_mocha();
+        let warning = SetupSection {
+            title: "Skipped step".to_string(),
+            done: true,
+            severity: StepSeverity::Warning,
+        };
+        let error = SetupSection {
+            title: "Failed step".to_string(),
+            done: true,
+            severity: StepSeverity::Error,
+        };
+
+        assert_eq!(setup_section_marker(&warning, false), "!");
+        assert_eq!(
+            setup_section_style(theme, &warning, false).fg,
+            Some(Color::Yellow)
+        );
+        assert_eq!(setup_section_marker(&error, false), "X");
+        assert_eq!(
+            setup_section_style(theme, &error, false).fg,
+            Some(Color::Red)
+        );
+    }
+
+    #[test]
+    fn live_output_detects_structured_warnings_and_errors() {
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] [ERROR] package failed"),
+            StepSeverity::Error
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] X [install] hard failure"),
+            StepSeverity::Error
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] [!] skipped optional step"),
+            StepSeverity::Warning
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] Skipped Steps (2):"),
+            StepSeverity::Warning
+        );
+        assert_eq!(
+            output_line_severity("[2026-08-29 10:59:08] package installation complete"),
+            StepSeverity::None
+        );
+    }
+
+    fn output_test_app(lines: usize) -> AppState {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        app.ui_mode = UiMode::Menu;
+        app.editing = false;
+        app.edit_kind = EditKind::None;
+        app.logs.show_details = true;
+        // Exercise the in-memory view without writing to the user's installation log.
+        app.logfile_path = PathBuf::new();
+        for index in 0..lines {
+            let line = format!("[*] output {index:04}");
+            app.logs.push(line.clone(), &line);
+        }
+        app
+    }
+
+    fn output_mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: event::KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn output_mouse_focus_wheel_follow_and_details_survive_incoming_logs() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        let tail = app.scroll;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), body.x, body.y),
+        );
+        assert!(app.output.focused && app.follow_tail);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail - 3);
+        assert!(!app.follow_tail);
+        let reading = app.scroll;
+        app.tx.send("[*] another message".into()).unwrap();
+        assert_eq!(drain_output_events(&mut app), 1);
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.scroll, reading);
+        assert!(screen.contains("Paused"));
+        let follow = app.output.follow_button;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), follow.x, follow.y),
+        );
+        assert!(app.follow_tail);
+        assert_eq!(
+            app.scroll,
+            output_tail_start(app.output.total_rows, app.log_viewport_lines)
+        );
+        let mode = app.output.mode_button;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), mode.x, mode.y),
+        );
+        assert!(!app.logs.show_details);
+        assert!(render_app_screen(&mut app, 120, 40).contains("[Details]"));
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollDown, body.x, body.y),
+        );
+        assert!(!app.follow_tail);
+    }
+
+    #[test]
+    fn output_scrollbar_clicks_and_drag_clamp_without_resuming_follow() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let bar = app.output.scrollbar;
+        let end = output_tail_start(app.output.total_rows, app.log_viewport_lines);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), bar.x, bar.y),
+        );
+        assert!(app.output.dragging && app.output.focused);
+        assert_eq!(app.scroll, 0);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(
+                MouseEventKind::Drag(MouseButton::Left),
+                0,
+                bar.bottom() + 10,
+            ),
+        );
+        assert_eq!(app.scroll, end);
+        assert!(!app.follow_tail);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Drag(MouseButton::Left), 0, 0),
+        );
+        assert_eq!(app.scroll, 0);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Up(MouseButton::Left), 0, 0),
+        );
+        assert!(!app.output.dragging);
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Drag(MouseButton::Left), bar.x, bar.bottom()),
+        );
+        assert_eq!(app.scroll, 0);
+        assert_eq!(output_scrollbar_thumb(100, 20, 10, 80), (8, 2));
+        assert_eq!(output_scrollbar_thumb(100, 20, 0, 80), (0, 0));
+        assert_eq!(output_scrollbar_thumb(0, 0, 10, 0), (0, 10));
+    }
+
+    #[test]
+    fn output_mouse_cannot_operate_through_modals_or_other_screens() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        let tail = app.scroll;
+        handle_mouse_event(&mut app, output_mouse(MouseEventKind::ScrollUp, 0, 0));
+        assert_eq!(app.scroll, tail);
+        app.output.focused = true;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), 0, 0),
+        );
+        assert!(!app.output.focused);
+        app.editing = true;
+        app.edit_kind = EditKind::ConfirmReboot;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail);
+        app.editing = false;
+        app.ui_mode = UiMode::Preflight;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        assert_eq!(app.scroll, tail);
+        render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.output.area, Rect::default());
+    }
+
+    #[test]
+    fn focused_output_keyboard_navigation_preserves_explicit_follow_control() {
+        let mut app = output_test_app(100);
+        render_app_screen(&mut app, 120, 40);
+        app.output.focused = true;
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        let tail = app.scroll;
+        handle_key_event(&mut app, key(KeyCode::Up)).unwrap();
+        assert_eq!(app.scroll, tail - 1);
+        handle_key_event(&mut app, key(KeyCode::Home)).unwrap();
+        assert_eq!(app.scroll, 0);
+        assert!(!app.follow_tail);
+        handle_key_event(&mut app, key(KeyCode::End)).unwrap();
+        assert_eq!(app.scroll, tail);
+        assert!(app.follow_tail);
+        handle_key_event(&mut app, key(KeyCode::PageUp)).unwrap();
+        assert_eq!(app.scroll, tail - OUTPUT_SCROLL_STEP);
+        handle_key_event(&mut app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.ui_mode, UiMode::Menu);
+        handle_key_event(&mut app, key(KeyCode::Esc)).unwrap();
+        assert!(!app.output.focused);
+        handle_key_event(&mut app, key(KeyCode::Enter)).unwrap();
+        assert_eq!(app.ui_mode, UiMode::Preflight);
+    }
+
+    #[test]
+    fn wrapped_output_tail_and_styles_use_visual_rows() {
+        let original = Line::from(vec![
+            Span::styled("timestamp ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "warning: abc界defghijklmnop",
+                Style::default().fg(Color::Yellow),
+            ),
+        ]);
+        let text = original.to_string();
+        let rows = wrap_output_line(original, 12);
+        assert!(rows.len() > 1);
+        assert!(rows.iter().all(|line| line.width() <= 12));
+        assert_eq!(
+            rows.iter().map(ToString::to_string).collect::<String>(),
+            text
+        );
+        assert_eq!(
+            rows.last().unwrap().spans.last().unwrap().style.fg,
+            Some(Color::Yellow)
+        );
+        assert!(wrap_output_line(Line::from("text"), 0).is_empty());
+
+        let mut app = output_test_app(0);
+        render_app_screen(&mut app, 80, 14);
+        let text = format!(
+            "[*] {}TAIL-END",
+            "x".repeat(usize::from(app.output.body.width) * 8)
+        );
+        app.logs.push(text.clone(), &text);
+        let screen = render_app_screen(&mut app, 80, 14);
+        assert!(screen.contains("TAIL-END"));
+        assert!(app.output.total_rows > app.logs.len());
+        scroll_live_output(&mut app, -3);
+        render_app_screen(&mut app, 100, 20);
+        assert!(!app.follow_tail);
+        assert!(app.scroll <= output_tail_start(app.output.total_rows, app.log_viewport_lines));
+    }
+
+    #[test]
+    fn history_eviction_adjusts_browsing_by_wrapped_rows() {
+        let mut app = output_test_app(0);
+        app.logs.push(
+            "abcdefghijklmnopqrstuvwx".into(),
+            "abcdefghijklmnopqrstuvwx",
+        );
+        for _ in 1..OUTPUT_HISTORY_LIMIT {
+            app.logs.push("short".into(), "short");
+        }
+        app.output.body.width = 8;
+        app.follow_tail = false;
+        app.scroll = 10;
+        app.push_log_line("[*] new output");
+        assert_eq!(app.logs.len(), OUTPUT_HISTORY_LIMIT);
+        assert_eq!(app.scroll, 7);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn output_mouse_remains_active_while_a_setup_process_is_running() {
+        struct RunningOutput(AppState);
+        impl Drop for RunningOutput {
+            fn drop(&mut self) {
+                if let Some(mut child) = self.0.child.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let mut running = RunningOutput(output_test_app(100));
+        running.0.child = Some(
+            Command::new("/usr/bin/sleep")
+                .arg("60")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        running.0.install_started_at = Some(Instant::now());
+        let app = &mut running.0;
+        let screen = render_app_screen(app, 120, 40);
+        assert!(screen.contains("RUNNING"));
+        let body = app.output.body;
+        handle_mouse_event(app, output_mouse(MouseEventKind::ScrollUp, body.x, body.y));
+        assert!(app.output.focused && !app.follow_tail);
+        let position = app.scroll;
+        app.tx.send("[*] installer progress".into()).unwrap();
+        assert_eq!(drain_output_events(app), 1);
+        render_app_screen(app, 120, 40);
+        assert_eq!(app.scroll, position);
+        let button = app.output.follow_button;
+        handle_mouse_event(
+            app,
+            output_mouse(MouseEventKind::Down(MouseButton::Left), button.x, button.y),
+        );
+        assert!(app.follow_tail);
+        assert!(app.child.as_mut().unwrap().try_wait().unwrap().is_none());
+    }
+
+    #[test]
+    fn output_batches_leave_interaction_opportunities_without_dropping_messages() {
+        let mut app = output_test_app(0);
+        for index in 0..OUTPUT_MESSAGES_PER_TICK + 15 {
+            app.tx.send(format!("[*] queued {index}")).unwrap();
+        }
+        assert_eq!(drain_output_events(&mut app), OUTPUT_MESSAGES_PER_TICK);
+        assert_eq!(app.logs.len(), OUTPUT_MESSAGES_PER_TICK);
+        render_app_screen(&mut app, 120, 40);
+        let body = app.output.body;
+        handle_mouse_event(
+            &mut app,
+            output_mouse(MouseEventKind::ScrollUp, body.x, body.y),
+        );
+        let reading = app.scroll;
+        assert!(!app.follow_tail);
+        assert_eq!(drain_output_events(&mut app), 15);
+        assert_eq!(drain_output_events(&mut app), 0);
+        render_app_screen(&mut app, 120, 40);
+        assert_eq!(app.scroll, reading);
+        assert_eq!(app.logs.len(), OUTPUT_MESSAGES_PER_TICK + 15);
+        assert!(
+            app.logs
+                .lines()
+                .last()
+                .unwrap()
+                .ends_with(&format!("queued {}", OUTPUT_MESSAGES_PER_TICK + 14))
+        );
+    }
+
+    #[test]
+    fn manual_output_scroll_stays_detached_until_follow_is_resumed() {
+        let mut scroll = output_tail_start(100, 20);
+        let mut follow_tail = true;
+
+        scroll_output_up(&mut scroll, &mut follow_tail, 100, 20);
+        assert_eq!(scroll, 72);
+        assert!(!follow_tail);
+
+        sync_output_scroll_after_append(&mut scroll, follow_tail, 120, 20);
+        assert_eq!(scroll, 72);
+        assert!(!follow_tail);
+
+        for _ in 0..10 {
+            scroll_output_down(&mut scroll, 120, 20);
+        }
+        assert_eq!(scroll, 100);
+        assert!(!follow_tail);
+
+        resume_output_follow(&mut scroll, &mut follow_tail, 120, 20);
+        assert_eq!(scroll, 100);
+        assert!(follow_tail);
+
+        sync_output_scroll_after_append(&mut scroll, follow_tail, 121, 20);
+        assert_eq!(scroll, 101);
+    }
+
+    #[test]
+    fn live_output_uses_tty_colors_and_strips_ansi() {
+        let theme = Theme::catppuccin_mocha();
+        let error = live_output_line(
+            theme,
+            "[2026-08-29 10:59:08] \u{1b}[31m[ERROR] package failed\u{1b}[0m",
+            true,
+        );
+        let warning = live_output_line(theme, "\u{1b}[33m[!] skipped optional step\u{1b}[0m", true);
+
+        assert_eq!(error.spans.len(), 2);
+        assert_eq!(error.spans[0].style.fg, Some(Color::DarkGray));
+        assert_eq!(error.spans[1].style.fg, Some(Color::Red));
+        assert!(error.spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert!(!error.spans[1].content.contains('\u{1b}'));
+        assert_eq!(warning.spans[0].style.fg, Some(Color::Yellow));
+        assert!(warning.spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(!warning.spans[0].content.contains('\u{1b}'));
+    }
 }

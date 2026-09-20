@@ -3,9 +3,11 @@
 }
 
 window {
-	/* TODO: Add background image correctly */
-	/* background-image: url("path/to/Wallpaper/Forest_01.png"); */
-	background-color: rgb(31, 83, 161);
+	background-image: url("../../.cache/wlogout/current-wallpaper");
+	background-color: rgb(17, 17, 27);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: cover;
 }
 
 button {

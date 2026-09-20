@@ -47,6 +47,9 @@
 - [Environment Setup](#environment-setup)
 - [Prerequisites](#prerequisites)
 - [Setup Script Execution](#setup-script-execution)
+  - [Application roles](#application-roles)
+  - [Run history, logs, and rollback](#run-history-logs-and-rollback)
+  - [Testing](#testing)
 - [Package Installations](#package-installations)
   - [Pacman Packages](#pacman-packages)
   - [AUR Packages](#aur-packages)
@@ -96,7 +99,7 @@ It sets up the following Components/Apps:
 - Screenshot Tool (Hyprshot with Satty)
 - Calculator (Qalculate-gtk)
 - Firewall (Firewalld)
-- Browser (User-selectable: zen-browser or Vivaldi)
+- Browser choices: Firefox, Chromium, Vivaldi, Zen Browser, and Brave
 
 **CLI Applications**
 - Custom Stow (Stow - Custom Script for easy Config Management)
@@ -106,14 +109,12 @@ It sets up the following Components/Apps:
 - Shell Configuration (Fish Shell - with useful aliases)
 - CLI Tools for a more convenient terminal experience
 
-**Waybar Applications**
-- Bluetooth (In Waybar) (Bluetooth-Manager)
-- Network (In Waybar) (Network-Manager)
-- Power Button (In Waybar)
-- Update Button (In Waybar) (waybar-module-pacman-updates-git)
-- Temperatur Sensor (In Waybar) (psensor)¨
-- Power Profiles (In Waybar)
-- Weather (In Waybar) (Swiss Specific - Needs adjustments for other countries)
+**Waybar applications**
+- Audio controls with Pavucontrol Qt and QasMixer
+- Bluetooth and network controls through KDE settings modules
+- Power screen and quick power actions
+- Package, firmware, `.pacnew`, and cache maintenance actions
+- CPU temperature status with detailed sensor tooltips
 
 **Additional Applications**
 - Keybindings (Extensive Keybinds with App for Overview)
@@ -222,12 +223,14 @@ HYPR_SETUP_PATH=~/Hyprland-Simple-Setup/setup.sh cargo run --release
 Usage (Preflight screen):
 - Navigate: Tab/Shift-Tab or j/k or ↑/↓
 - Change booleans: Space or ←/→
-- Change language (1/2/3): ←/→
+- Change shell language (1/2/3): ←/→. Applies to every shell selected in Applications, including additional shells.
 - Edit text fields (wallpaper dir, monitor config): press e or Enter; Enter saves; Esc cancels
 - Start: focus “Start unattended install (Enter)” and press Enter
 
 Notes:
-- The TUI sets environment variables for a non-interactive run (e.g., `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, `AUTO_CONTINUE_ON_WARNINGS`).
+- The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `SHELL_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
+- Shell language updates `LANG` and `LANGUAGE` in the selected Bash, Fish, and Zsh startup files. `FISH_LANGUAGE_CHOICE_OVERRIDE` remains a fallback for older unattended commands; `SHELL_LANGUAGE_CHOICE_OVERRIDE` takes precedence.
+- It also passes the selected packages and primary app for each application role. See [Application roles](#application-roles).
 - The installer will still use `sudo` for privileged operations when needed.
 
 ## Environment Setup
@@ -248,7 +251,7 @@ Notes:
 - **Supported:** Arch Linux, EndeavourOS (other distros may require manual adaptation)
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
-- **Logging:** All actions logged to `~/Hyprland-Simple-Setup.log`
+- **Logging:** Each run writes its own log under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The installer no longer writes `~/Hyprland-Simple-Setup.log`.
 - **Release notes:** See `Documents/RELEASE_v*.md` and `CHANGELOG.md`
 
 ## Project Structure
@@ -257,8 +260,9 @@ Notes:
 - `dotfiles/`
   - `.config/`
     - `hypr/` – Hyprland configs and scripts
-      - `hyprland.conf` – Main config
-      - `sources_example/` – Example modular configs (keybindings, monitors, autostart, etc.)
+      - `hyprland.lua` – Active Hyprland config
+      - `hyprland.conf` – Retained pre-Lua backup
+      - `sources_example/` – Example Lua modules with retained `.conf` backups
       - `scripts/` – Helper scripts (wallpaper, sunset, dolphin fix, etc.)
     - `waybar/` – Status bar config, style, and scripts (weather, updates)
     - `wofi/` – Application launcher config and style
@@ -281,6 +285,78 @@ cd ~/Hyprland-Simple-Setup
 ./setup.sh
 ```
 
+### Application roles
+
+Choose applications independently in 15 groups:
+
+| Selection | Groups |
+| --- | --- |
+| One or more | Browser, shell, terminal, multiplexer, terminal text editor |
+| Zero or more | TUI file manager, GUI text editor, coding agents |
+| Exactly one | File manager, app launcher, notifications, audio interface, network interface, Bluetooth interface, calendar, bar |
+| Zero or one | Dock |
+
+Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. Optional groups offer None. Installation is blocked when a required group is empty.
+
+Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
+
+File manager requires exactly one choice: Dolphin, Thunar, Nautilus, Nemo, or PCManFM-Qt. Dolphin is selected by default. Super+E opens the selected file manager.
+
+The optional **TUI file manager** group offers Yazi, Ranger, lf, nnn, Midnight Commander (`mc`), and Vifm. Select any combination with Space and choose a primary with `p`; it defaults to None. Run each app by its command in a terminal, or launch the primary with `~/.config/hypr/scripts/role_exec.sh tui_file_manager`. Super+E still opens the graphical file manager.
+
+Multiplexers are required and allow multiple selections: tmux, Zellij, and Herdr. Herdr is selected and primary by default, installed through AUR `herdr-bin`; tmux and Zellij use pacman. Ctrl+Y opens the primary multiplexer in the primary terminal.
+
+Coding agents are optional, with Pi selected by default. Available choices are Pi, OpenCode, Claude Code, Codex CLI and Cursor CLI. Setup uses their official installers for missing selections; authentication remains manual. See [Coding agents](Documents/agents.md) for installation and rollback limits.
+
+Startup failures can offer a **Troubleshoot with your primary agent** notification action. No agent starts until you click it. Triage tries the primary multiplexer, then other selected multiplexers, then the primary terminal. Herdr requires an existing compatible default session. See [Startup checks and triage](Documents/startup-triage.md) for diagnostic privacy and behavior.
+
+See [Application selections](Documents/app-selections.md) for direct-installer environment variables, compatibility, and runtime details.
+
+### Run history, logs, and rollback
+
+Run state lives in:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/
+```
+
+Each directory under `runs/` contains a `meta` file, `manifest.tsv`, backups for changed files, and that run's `log`. `latest-run` contains the most recently finalized run ID. To inspect recent runs and the latest log:
+
+```bash
+./setup.sh --list-runs
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup"
+latest_run=$(cat "$state_root/latest-run")
+less "$state_root/runs/$latest_run/log"
+```
+
+Restore the setup-managed files recorded for one run with:
+
+```bash
+./setup.sh --rollback <run-id>
+```
+
+Rollback validates the run ID, manifest, backups, paths, and file digests before writing. A non-interactive rollback stops if a file changed after the recorded run. Rollback covers only files in that run's manifest. It does not uninstall packages, reverse service changes, remove Stow links, restore copied directory trees, or replace `~/.config` or `~/dotfiles` as a whole.
+
+### Testing
+
+The shell suite uses disposable homes and command stubs. It exercises guarded `HSS_TEST_MODE=1` scenarios and source-safe functions, never the unrestricted installer. Its dependencies include Bash, jq, Fish, a Lua interpreter, Python 3, and the usual GNU utilities. CI also provisions ShellCheck and desktop-file utilities:
+
+Run these checks from the repository root; they do not install packages:
+
+```bash
+tests/run.sh
+tests/check_packages_json.sh
+tests/verify_hypr_config.sh
+```
+
+`tests/check_packages_json.sh` performs offline structural and schema checks by default. The release-only lookup checks pacman and AUR availability with bounded requests:
+
+```bash
+HSS_LIVE_PACKAGE_CHECK=1 tests/check_packages_json.sh
+```
+
+The live package lookup needs network access and is intentionally excluded from CI. `tests/verify_hypr_config.sh` exits `3` with a `SKIPPED` message when Hyprland is unavailable. A skip is not a release pass.
+
 ## Package Installations
 
 ### Pacman Packages
@@ -296,7 +372,7 @@ cd ~/Hyprland-Simple-Setup
 - hyprpicker (Color picker)
 - wl-clipboard & wl-clip-persist (Clipboard managers)
 - hyprgraphics (Graphics utilities)
-- hyprland-qtutils (Qt integration)
+- hyprland-guiutils (Hyprland GUI utilities)
 - hyprland-qt-support (Qt support)
 - hyprwayland-scanner (Wayland protocol scanner)
 - python-pyquery
@@ -308,7 +384,7 @@ cd ~/Hyprland-Simple-Setup
 - fd (Modern find)
 - fzf (Fuzzy finder)
 - stow (Dotfiles management)
-- nvim (Text editor)
+- neovim (Text editor)
 - xdg-user-dirs
 - onefetch
 - ark
@@ -340,10 +416,21 @@ cd ~/Hyprland-Simple-Setup
 - bluez
 - bluez-utils
 - blueman
+- bluedevil
+- kcmutils
+- plasma-nm
+- plasma-workspace
+- plasma-systemmonitor
 - pipewire
 - pipewire-pulse
 - pavucontrol
+- pavucontrol-qt
 - pulseaudio-qt
+- qastools
+- alsa-utils
+- fwupd
+- pacman-contrib
+- zenity
 
 **CLI Tools**
 - bat (Modern cat)
@@ -358,6 +445,9 @@ cd ~/Hyprland-Simple-Setup
 - duf
 - zellij
 - calcurse
+- curl
+- less
+- lm_sensors
 
 **Theming and Appearance**
 - ttf-jetbrains-mono-nerd
@@ -369,7 +459,8 @@ cd ~/Hyprland-Simple-Setup
 - qalculate-gtk
 
 ### AUR Packages
-- xwaylandvideobridge-git (Screen sharing)
+- xwaylandvideobridge (Screen sharing)
+- waybar-module-pacman-updates-git (Package update status)
 - hyprshot (Screenshot utility)
 - visual-studio-code-bin (Code editor)
 - lsplug (Plugin manager)
@@ -394,27 +485,21 @@ cd ~/Hyprland-Simple-Setup
 
 2. Update the following files with your system-specific details:
    - **Wallpaper Configuration:**  
-     Create or edit `~/.config/hypr/sources/change_wallpaper.conf` with:
-     ```bash
-     # Your wallpaper directory path
-     WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
-     
-     # Your monitor names (check with hyprctl monitors)
-     MONITORS=(
-         "DP-1"
-         "HDMI-A-1"
-         # Add more monitors as needed
-     )
+     Create or edit `~/.config/hypr/sources_specific/change_wallpaper.lua`:
+     ```lua
+     return {
+         wallpaper_dir = "$HOME/Pictures/Wallpapers",
+         monitors = { "DP-1", "HDMI-A-1" },
+     }
      ```
    - **Hyprlock Wallpaper Path:**  
      Update the `background` path in `~/.config/hypr/hyprlock.conf` to match your wallpaper directory.
      
    - **Display Configuration:**  
-     Create or edit `~/.config/hypr/sources/displays.conf` to match your monitor setup:
-     ```bash
-     monitor=DP-1,2560x1440@144,0x0,1
-     monitor=HDMI-A-1,1920x1080@60,2560x0,1
-     # Add more monitor configurations as needed
+     Create or edit `~/.config/hypr/sources_specific/monitors.lua` to match your monitor setup:
+     ```lua
+     hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })
+     hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "2560x0", scale = 1 })
      ```
 
    - **Environment Variables:**  
@@ -484,34 +569,32 @@ To run the script (Default Key Shortcut: Super(mainMod) + W):
   ```
 
 ### Window Rules
-- Add custom window rules in `~/.config/hypr/sources/windows_and_workspaces.conf`:
-  ```ini
-  # Example window rules
-  windowrulev2 = float,class:^(org\.pulseaudio\.pavucontrol)$
-  windowrulev2 = center,class:^(org\.pulseaudio\.pavucontrol)$
-  windowrule = workspace 2 silent, match:class zen
-  # Alternative: windowrule = workspace 2 silent, match:class vivaldi-stable
-  windowrule = opacity 0.95, ^(Code)$
+- Add custom window rules in `~/.config/hypr/sources/windows_and_workspaces.lua`:
+  ```lua
+  hl.window_rule({
+      match = { class = "org.pulseaudio.pavucontrol" },
+      float = true,
+      center = true,
+  })
+  hl.window_rule({ match = { class = "zen" }, workspace = "2 silent" })
   ```
 
 ### Keybindings
-- Customize shortcuts in `~/.config/hypr/sources/keybindings.conf`:
-  ```ini
-  # Media controls
-  bind = , XF86AudioPlay, exec, playerctl play-pause
-  bind = , XF86AudioNext, exec, playerctl next
-  
-  # Screenshot bindings
-  bind = , Print, exec, hyprshot -m output
-  bind = SHIFT, Print, exec, hyprshot -m region
+- Customize shortcuts in `~/.config/hypr/sources/keybindings.lua`:
+  ```lua
+  hl.bind("XF86AudioPlay", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
+  hl.bind("XF86AudioNext", hl.dsp.exec_cmd("playerctl next"), { locked = true })
+  hl.bind("Print", hl.dsp.exec_cmd("hyprshot --mode output"))
+  hl.bind("SHIFT + Print", hl.dsp.exec_cmd("hyprshot --mode region"))
   ```
 
 ### Autostart Applications
-- Add or modify autostart programs in `~/.config/hypr/sources/exec_once.conf`:
-  ```bash  
-  # User applications
-  exec-once = [workspace 2 silent] $browser
-  exec-once = [workspace 3] code
+- Add or modify autostart programs in `~/.config/hypr/sources/autostart.lua`:
+  ```lua
+  hl.on("hyprland.start", function()
+      hl.exec_cmd("zen-browser", { workspace = "2 silent" })
+      hl.exec_cmd("code", { workspace = "3" })
+  end)
   ```
 
 ### Monitor Configuration
@@ -531,21 +614,22 @@ The setup provides an interactive monitor configuration workflow:
      - Position (automatically calculated)
 
 3. Configuration Storage:
-   - Settings saved to `~/.config/hypr/sources/displays.conf`
+   - Settings are saved to `~/.config/hypr/sources_specific/monitors.lua`
    - Format example:
-     ```bash
-     monitor=DP-1,2560x1440@144,0x0,1
-     monitor=HDMI-A-1,1920x1080@60,2560x0,1
+     ```lua
+     hl.monitor({ output = "DP-1", mode = "2560x1440@144", position = "0x0", scale = 1 })
+     hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "2560x0", scale = 1 })
      ```
 
 ### Remove Default Tweaks
-- Configure misc options to remove default settings:
-  ```ini
-  misc {
-      vfr = true # Enable VFR (Variable Frame Rate) for Hyprland
-      force_default_wallpaper = 0 # Set to 0 or 1 to disable the anime mascot wallpapers
-      disable_hyprland_logo = true # If true disables the random hyprland logo / anime girl background. :(
-  }
+- Configure miscellaneous options in `sources/look_and_feel.lua`:
+  ```lua
+  hl.config({
+      misc = {
+          force_default_wallpaper = 0,
+          disable_hyprland_logo = true,
+      },
+  })
   ```
 
 For more customization options, refer to:
@@ -555,7 +639,7 @@ For more customization options, refer to:
 
 ## Troubleshooting
 
-- **Logs:** See `~/Hyprland-Simple-Setup.log`
+- **Logs:** Run `./setup.sh --list-runs`, then inspect the selected run's `log` under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The `latest-run` file points to the most recently finalized run.
 - **Package verification:** The setup script checks and reports missing packages
 - **Configuration issues:** Modular config makes it easy to isolate and fix problems
 - **Scripts:** Helper scripts for common issues (e.g., fix dolphin etc.)
@@ -571,7 +655,7 @@ For more customization options, refer to:
   ```
 - If monitors are not detected properly:
   1. Ensure your GPU drivers are properly installed
-  2. Try adding manual monitor configuration to `hyprland.conf`
+  2. Try adding manual monitor configuration to `sources_specific/monitors.lua`
   3. Check if your display cable is properly connected
 
 ### Wallpaper Management
@@ -617,7 +701,7 @@ For more customization options, refer to:
   nvidia-smi  # For NVIDIA GPUs
   radeontop   # For AMD GPUs
   ```
-- Reduce animation complexity in `~/.config/hypr/sources/look_and_feel.conf` if needed
+- Reduce animation complexity in `~/.config/hypr/sources/look_and_feel.lua` if needed
 
 ### Application Integration
 - XWayland applications not working:
@@ -665,7 +749,7 @@ For more customization options, refer to:
 - If Hyprland fails to start:
   1. Switch to another TTY (Ctrl+Alt+F2)
   2. Check logs: `less ~/.local/share/hyprland/hyprland.log`
-  3. Try with minimal config: `mv ~/.config/hypr/hyprland.conf ~/.config/hypr/hyprland.conf.bak`
+  3. Try with a minimal `~/.config/hypr/hyprland.lua`; the retained `hyprland.conf` is only a backup
 
 For persistent issues:
 - Check [Hyprland GitHub Issues](https://github.com/hyprwm/Hyprland/issues)

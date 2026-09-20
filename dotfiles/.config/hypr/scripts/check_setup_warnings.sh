@@ -1,33 +1,25 @@
 #!/usr/bin/env bash
 
-LOG_FILE="${HOME}/Hyprland-Simple-Setup.log"
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup"
+latest_pointer="$state_root/latest-run"
 
-# Give notification daemon a moment to start
-sleep 3
+sleep "${HSS_WARNING_DELAY:-3}"
+command -v notify-send >/dev/null 2>&1 || exit 0
+[[ -f $latest_pointer && ! -L $latest_pointer ]] || exit 0
 
-# If notify-send is unavailable, exit quietly
-if ! command -v notify-send >/dev/null 2>&1; then
-	exit 0
-fi
+run_id=$(cat -- "$latest_pointer")
+[[ $run_id =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$ ]] || exit 0
+run_dir="$state_root/runs/$run_id"
+canonical_runs=$(readlink -m -- "$state_root/runs")
+canonical_run=$(readlink -f -- "$run_dir" 2>/dev/null) || exit 0
+[[ $canonical_run == "$canonical_runs/$run_id" ]] || exit 0
+log_file="$canonical_run/log"
+[[ -f $log_file && ! -L $log_file ]] || exit 0
+canonical_log=$(readlink -f -- "$log_file" 2>/dev/null) || exit 0
+[[ $canonical_log == "$canonical_run/log" ]] || exit 0
 
-# If log doesn't exist, nothing to check
-[ -f "$LOG_FILE" ] || exit 0
-
-# Limit to warnings from the most recent run (after the last "Starting Hyprland Setup..." debug entry)
-start_line=$(grep -n '\[DEBUG\] Starting Hyprland Setup\.\.\.' "$LOG_FILE" | tail -n1 | cut -d: -f1)
-if [[ -n "$start_line" ]]; then
-	log_slice=$(tail -n +"$start_line" "$LOG_FILE")
-else
-	log_slice=$(cat "$LOG_FILE")
-fi
-
-# Extract all WARNING messages from the selected slice and notify once per unique message.
-# Log format: [YYYY-MM-DD HH:MM:SS] [WARNING] message...
-mapfile -t warnings < <(awk '/\[WARNING\]/ { sub(/^.*\[WARNING\] /,""); msg=$0; if (!seen[msg]++) print msg }' <<< "$log_slice")
-
-for w in "${warnings[@]}"; do
-	[ -n "$w" ] || continue
-	notify-send -u critical -t 0 "Hyprland Setup - Warning" "$w"
+mapfile -t warnings < <(awk '/\[WARNING\]/ { sub(/^.*\[WARNING\] /,""); if (!seen[$0]++) print }' "$log_file")
+for warning in "${warnings[@]}"; do
+    [[ -n $warning ]] || continue
+    notify-send -u critical -t 0 "Hyprland Setup - Warning" "$warning"
 done
-
-

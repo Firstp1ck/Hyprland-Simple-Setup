@@ -37,9 +37,9 @@ fastfetch --config hyde/*.jsonc
       "keyColor": "red",
     },
     {
-      "type": "packages",
+      "type": "command",
       "key": "  󰏗 Packages",
-      "format": "{1} (pacman: {2})",
+      "text": "~/.config/fastfetch/package-count.sh",
       "keyColor": "green",
     },
     {

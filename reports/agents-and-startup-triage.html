@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding agents and startup triage · implementation report</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121c2d;--panel-2:#18253a;--text:#e8eef8;--muted:#a9b7cb;--line:#2b3b55;--green:#50d890;--yellow:#f7c65c;--red:#ff7373;--blue:#65b5ff;--code:#07101c;--radius-lg:16px;--radius-md:12px;--shadow:0 14px 36px rgb(0 0 0 / 22%)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0%,#142848 0,transparent 35rem),var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{width:min(1120px,calc(100% - 32px));margin:36px auto 64px}header,section{padding:24px;margin:18px 0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow)}header{padding:30px}h1{font-size:clamp(1.9rem,5vw,3rem);line-height:1.2;margin-top:8px}h2{font-size:1.45rem;border-bottom:1px solid var(--line);padding-bottom:10px}h3{font-size:1.1rem}a{color:var(--blue)}a:focus-visible,summary:focus-visible{outline:3px solid var(--blue);outline-offset:4px}p{max-width:92ch}.muted{color:var(--muted)}.pass{color:var(--green)}.note{border-left:4px solid var(--yellow);padding-left:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.card{padding:16px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-md)}.card strong{display:block;font-size:1.65rem}nav{display:flex;flex-wrap:wrap;gap:16px}table{border-collapse:collapse;width:100%;font-size:.94rem}th,td{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid var(--line)}th{color:var(--blue)}.table-wrap{overflow-x:auto}code,pre{font-family:ui-monospace,monospace;background:var(--code);border-radius:4px}code{padding:2px 4px;overflow-wrap:anywhere}pre{padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding-left:22px}.flow li{padding:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:12px}figcaption{color:var(--muted);margin-top:12px}figure{margin:20px 0}summary{cursor:pointer}footer{padding:8px 4px;color:var(--muted)}
+@media(max-width:620px){main{width:calc(100% - 20px);margin:12px auto}header,section{padding:16px}.flow{grid-template-columns:1fr}th,td{padding:7px}table{font-size:.86rem}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+@media print{:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#fff;--text:#111;--muted:#333;--line:#aaa;--code:#eee;--blue:#17466b;--green:#174b2b}body{background:#fff}main{width:100%;margin:0}header,section{box-shadow:none;break-inside:avoid}nav{display:none}details{display:block}details::details-content{display:block}.table-wrap{overflow:visible}a{color:#17466b}}
+</style>
+</head>
+<body><main>
+<header>
+<p class="pass">Implementation verified · final review clear · 19 September 2026</p>
+<h1>Coding agents and startup triage</h1>
+<p>The setup now offers optional coding-agent installation and a click-to-troubleshoot action on startup failures. It adapts the latest authorized <code>~/.dotfiles</code> helper rather than copying personal paths or unrelated NAS, SSD and GPU jobs.</p>
+<div class="grid"><div class="card"><strong>5 agents</strong>Pi selected by default</div><div class="card"><strong>None allowed</strong>Multiple installations, one primary</div><div class="card"><strong>Click-only</strong>No automatic agent dispatch</div></div>
+<p class="note">No real vendor installer, product-agent authentication flow, notification action, multiplexer session or desktop configuration change was executed during development. Tests use isolated fixtures and mocks.</p>
+<nav aria-label="Report sections"><a href="#agents">Agent choices</a><a href="#runtime">Startup and triage</a><a href="#checks">Verification</a><a href="#reviews">Reviews</a><a href="#handoff">Handoff and limits</a></nav>
+</header>
+<section id="agents" class="report-section">
+<h2>Optional agent choices</h2>
+<p><strong>Applications → Coding agents</strong> is the fourteenth group. Space selects membership, <code>p</code> chooses the primary, and None clears the group. Existing agents are not uninstalled when deselected. The primary handles notification triage.</p>
+<div class="table-wrap"><table data-overview><thead><tr><th>Choice</th><th>Executable</th><th>Official installation source</th></tr></thead><tbody>
+<tr><td>Pi · default</td><td><code>pi</code></td><td><a href="https://pi.dev/install.sh">pi.dev/install.sh</a></td></tr>
+<tr><td>OpenCode</td><td><code>opencode</code></td><td><a href="https://opencode.ai/install">opencode.ai/install</a></td></tr>
+<tr><td>Claude Code</td><td><code>claude</code></td><td><a href="https://claude.ai/install.sh">claude.ai/install.sh</a></td></tr>
+<tr><td>Codex CLI</td><td><code>codex</code></td><td><a href="https://chatgpt.com/codex/install.sh">chatgpt.com/codex/install.sh</a></td></tr>
+<tr><td>Cursor CLI</td><td><code>cursor-agent</code></td><td><a href="https://cursor.com/install">cursor.com/install</a></td></tr>
+</tbody></table></div>
+<p>Endpoints and script interfaces were checked against official documentation and downloaded for inspection only. Agent IDs use a separate <code>official</code> source; they never become pacman/AUR package arguments. Only selected agents add their prerequisites. Pi requires Node.js 22.19.0 or newer and npm.</p>
+<p>The installer reuses existing executables, otherwise downloads to private run storage with HTTPS-only redirects, bounded retries/timeouts and ambient curl configuration disabled. Scripts run as the normal user with a minimal environment, no controlling TTY, and a 600-second timeout. A successful exit must also produce the expected executable. Optional failures are reported without aborting desktop setup.</p>
+<p>Resolved executable paths retain vendor-managed symlinks so self-updates do not pin triage to old versions. Agent PATH entries are managed for Fish and both shipped Hyprland configuration variants. Login, accounts and provider/model selection remain manual.</p>
+</section>
+<section id="runtime" class="report-section">
+<h2>Startup checks and notification flow</h2>
+<figure data-visual-kind="diagram" data-purpose="Show the explicit user-consent boundary before agent dispatch">
+<ol class="flow"><li><strong>Check readiness</strong><br>Expected daemons and current-session markers share a bounded polling deadline.</li><li><strong>Notify locally</strong><br>Freeze bounded, redacted evidence in a private incident file.</li><li><strong>User clicks</strong><br>Only the Troubleshoot action authorizes agent dispatch.</li><li><strong>Open triage</strong><br>Claim the incident once and start the primary agent in read-only/plan mode.</li></ol>
+<figcaption>No click means no agent. None or a missing agent produces an ordinary notification. Failed action notifications also receive a bounded plain fallback.</figcaption>
+</figure>
+<p>Routing follows the requested available tools: <strong>tmux → Zellij → usable Herdr default session → primary terminal</strong>. tmux and Zellij get unique incident sessions inside the selected terminal. Herdr gets a new workspace and its exact returned pane; focus happens after dispatch acknowledgement. Ambiguous submissions are not retried.</p>
+<p>The snapshot is consumed at most once. Prompt text is passed as data, not shell syntax. Pi uses a read-tool allowlist, Claude/OpenCode use plan modes, Codex uses its read-only sandbox, and Cursor uses ask mode. These controls are not a universal OS sandbox.</p>
+<p>Startup checks no longer mistake a closed browser/editor or on-demand launcher for a dead daemon. Shared nwg-panel instances are checked once. Numlock, wallpaper and Dolphin readiness use private current-session markers rather than stale global files. The checker does not restart services or attempt privileged recovery.</p>
+<div class="table-wrap"><table><thead><tr><th>Implementation area</th><th>Key files</th></tr></thead><tbody>
+<tr><td>Selection and catalog</td><td><code>packages.json</code>, <code>src/packages.rs</code>, <code>src/main.rs</code></td></tr>
+<tr><td>Official installation</td><td><code>scripts/lib/agent-installers.sh</code>, <code>setup.sh</code></td></tr>
+<tr><td>Click-only triage</td><td><code>dotfiles/.local/scripts/troubleshoot_with_agent.py</code> and shell adapter</td></tr>
+<tr><td>Health and session state</td><td><code>Startup_check.sh</code>, <code>startup_state.sh</code>, wallpaper/Dolphin producers and autostart templates</td></tr>
+<tr><td>Existing-install migration</td><td>Exact legacy numlock matching and managed agent PATH lines in Lua and Hyprlang; only named triage helper paths added to the atomic-write allowlist</td></tr>
+</tbody></table></div>
+</section>
+<section id="checks" class="report-section">
+<h2>Verification evidence</h2>
+<div class="table-wrap"><table><thead><tr><th>Check</th><th>Recorded result</th></tr></thead><tbody>
+<tr><td><code>cargo test --locked</code></td><td class="pass">49 passed, zero failed</td></tr>
+<tr><td><code>bash tests/run.sh</code></td><td class="pass">22 shell test programs passed at the integrated checkpoint</td></tr>
+<tr><td>Triage Python suite</td><td class="pass">17 passed, included in the shell wrapper</td></tr>
+<tr><td>After final exact-match migration fix</td><td class="pass">Three affected shell programs passed: legacy configs, role validation and reliability lifecycle</td></tr>
+<tr><td>Rust formatting, Clippy and release build</td><td class="pass">Pass</td></tr>
+<tr><td>Offline catalog schema and shell syntax</td><td class="pass">Pass</td></tr>
+<tr><td>Native Hyprland fixture verifier</td><td class="pass">Lua configuration: config ok</td></tr>
+<tr><td>Final expanded ShellCheck</td><td>Unavailable because of a local shared-library error. No environment repair attempted.</td></tr>
+</tbody></table></div>
+<p>Tests cover all five official installer endpoints, None/dry run, existing executable reuse, dependency normalization, root refusal, failure/timeout propagation, minimal environments, synthetic curlrc isolation, stable symlinks, notification failure fallback, redaction, snapshot ownership/bounds/expiry/replay, mux dispatch, marker isolation and rollback boundaries.</p>
+<p>Configuration regressions preserve custom commands, comments and no-match files byte-for-byte, including files without a final newline. Both old configuration variants receive their relevant migrations. No coverage percentage was measured.</p>
+<p class="muted">Local execution logs: <code>/tmp/hss-agent-triage-final-tests.log</code> and <code>/tmp/hss-agent-exact-migration-tests.log</code>. Live installations, account flows and compositor/multiplexer UI behavior remain untested.</p>
+</section>
+<section id="reviews" class="report-section">
+<h2>Independent review and dispositions</h2>
+<p>Two distinct implementation workers delivered the installer/selection and runtime-triage changes, with a parent inspection barrier between them. Fresh read-only reviewers assessed safety and integration independently. All reported findings were verified and dispositioned.</p>
+<div class="table-wrap"><table><thead><tr><th>Finding</th><th>Disposition</th><th>Resolution</th></tr></thead><tbody>
+<tr><td>R1-1 · P1: optional action failure hid ordinary warnings</td><td>Accepted, fixed</td><td>One bounded action-free fallback; dismissal and expiry stay quiet.</td></tr>
+<tr><td>R1-2 · P1: curl read ambient configuration</td><td>Accepted, fixed</td><td><code>--disable</code> is the first curl argument; synthetic curlrc regression added.</td></tr>
+<tr><td>R1-3 · P2: retention description implied scheduled purge</td><td>Accepted, clarified</td><td>Documentation states publication-triggered cleanup and expired-handoff rejection.</td></tr>
+<tr><td>R2-1 · P1: old Hyprlang numlock producer was not migrated</td><td>Accepted, fixed</td><td>Atomic, idempotent migration of the exact shipped legacy line.</td></tr>
+<tr><td>R2-2 · P1: agent PATH missing from Hyprlang</td><td>Accepted, fixed</td><td>Managed PATH insertion/removal for both config variants, including None.</td></tr>
+<tr><td>R2-3 · P1: broad migration could remove custom commands</td><td>Accepted, fixed</td><td>Full literal equality after outer-whitespace trimming; custom near-matches and no-match bytes preserved.</td></tr>
+</tbody></table></div>
+<p>Parent integration also corrected provider-prefixed API-key redaction, claimed-snapshot replay, snapshot bounds/expiry, Herdr focus and ambiguous handoff retention. Final safety review <code>88e06f6b-824f-40bd-a3e9-c87dea3e3abc</code> and migration review <code>c8afaed7-deb8-4a68-b3c7-588063d31418</code> both returned <strong class="pass">OK</strong>.</p>
+<p>Reviewers used OpenAI Codex GPT-6-Astra and GPT-5.6-Terra. A known Claude authentication failure justified the same-provider fallback; review independence was retained through separate fresh contexts.</p>
+<details><summary>Execution-process caveat</summary><p>A worker reported removing two generated Python cache files through an exact-file fallback after a cleanup command was blocked, before receiving the parent's queued prohibition. That was recorded as a process deviation, not hidden or treated as permission to bypass a guard. Ownership was not independently verified before removal. No further cleanup was authorized; subsequent tests disabled bytecode generation.</p></details>
+</section>
+<section id="handoff" class="report-section">
+<h2>Handoff and remaining limits</h2>
+<ol><li>Open <strong>Applications → Coding agents</strong>, keep Pi or select alternatives, and choose a primary. None disables integration.</li><li>Run setup when you intend to install the selected tools. Complete each agent's account/provider login manually.</li><li>On a startup failure, review the notification before clicking its Troubleshoot action. The click shares frozen diagnostic evidence with the chosen agent/provider.</li></ol>
+<p class="note">Redaction is best-effort, not a secrecy guarantee. Incident files are private and capped when another incident is published. An unconsumed or uncertain handoff may remain on disk beyond 24 hours until that cleanup occurs, but expired snapshots cannot launch an agent.</p>
+<p>Official scripts are mutable third-party code running with user permissions. HTTPS, an endpoint allowlist, cleared installer environments and timeouts do not create an OS sandbox or pinned supply-chain verification. Vendor-managed installations are outside configuration rollback; deselection does not uninstall them.</p>
+<p>Live notification actions, terminal/mux compatibility and provider authentication were intentionally not exercised. The report's responsive/print structure is validated, but no browser visual inspection was performed. Prior repository changes were preserved; no commit or publication was made.</p>
+<p>Acceptance: <strong class="pass">PASS for the tested implementation and handoff</strong>, with the above live-test and tooling limitations disclosed.</p>
+<p>Guides: <a href="../Documents/agents.md">Coding agents</a>, <a href="../Documents/startup-triage.md">Startup checks and triage</a>, <a href="../Documents/app-selections.md">Application selections</a>. Record: <a href="../plans/archive/agents-and-startup-triage.md">canonical plan</a>. Reference adaptation: authorized <code>~/.dotfiles</code> scripts at commit <code>3836833</code>; the source tree was read-only.</p>
+</section>
+<footer>Hyprland Simple Setup · optional agents and startup triage · local implementation record</footer>
+</main></body></html>

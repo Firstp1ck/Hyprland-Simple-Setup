@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Required multiplexer selection | Implementation report</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121c2d;--panel-2:#18253a;--text:#e8eef8;--muted:#a9b7cb;--line:#2b3b55;--green:#50d890;--yellow:#f7c65c;--blue:#65b5ff;--code:#07101c;--shadow:0 14px 36px rgb(0 0 0 / 22%)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#182b48,var(--bg) 60%);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{width:min(1120px,calc(100% - 32px));margin:36px auto 64px}header,section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:var(--shadow)}header{padding:30px}h1{font-size:clamp(1.9rem,5vw,3rem);line-height:1.15;margin:.5em 0}h2{font-size:1.45rem;border-bottom:1px solid var(--line);padding-bottom:10px}h3{font-size:1.05rem}a{color:var(--blue)}a:focus-visible{outline:2px solid var(--blue);outline-offset:4px}code{background:var(--code);border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}p,li,td{overflow-wrap:anywhere}.muted,figcaption{color:var(--muted)}.status{color:var(--green);font-weight:700}.warning{border-left:4px solid var(--yellow);padding:12px 16px;background:var(--panel-2)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.card{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}.card strong{display:block;font-size:1.8rem}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted)}caption{text-align:left;font-weight:600;padding:10px 0}figure{margin:20px 0}svg{width:100%;height:auto}svg rect{fill:var(--panel-2);stroke:var(--blue)}svg text{fill:var(--text);font-family:system-ui,sans-serif;font-size:16px}svg path{stroke:var(--blue);fill:none;stroke-width:2}nav{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0}footer{color:var(--muted);padding:8px}ul,ol{padding-left:24px}
+@media(max-width:620px){main{width:calc(100% - 20px);margin:16px auto}header,section{padding:16px}th,td{padding:8px;font-size:.9rem}.grid{grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+@media print{:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#fff;--text:#111;--muted:#444;--line:#bbb;--blue:#145488;--green:#176431;--code:#eee}body{background:#fff}main{width:100%;margin:0}header,section{box-shadow:none;border-radius:0;padding:16px}nav{display:none}figure,.card,tr{break-inside:avoid}a{color:#145488}}
+</style>
+</head>
+<body><main>
+<header>
+<span class="status">Implemented · repository checks passed</span>
+<h1>Choose your multiplexer</h1>
+<p>Applications now includes a required, multi-select Multiplexer group. Herdr is selected and primary by default. tmux and Zellij can be selected alongside it, with any selected option made primary.</p>
+<p class="muted">Scope: repository implementation and isolated fixtures. No packages were installed, no desktop settings changed, and no real multiplexer or coding agent was launched.</p>
+<nav aria-label="Report sections"><a href="#design">Design</a><a href="#checks">Checks</a><a href="#review">Reviews</a><a href="#usage">Usage and limits</a></nav>
+<table data-overview><caption>Delivered behavior</caption><thead><tr><th>Area</th><th>Result</th></tr></thead><tbody>
+<tr><td>Selection</td><td>15 application groups; Multiplexer requires at least one selection and has one primary.</td></tr>
+<tr><td>Installation</td><td>tmux and Zellij use pacman. Herdr uses AUR <code>herdr-bin</code>. Unselected Zellij is no longer implicitly installed from the generic list.</td></tr>
+<tr><td>Shortcut</td><td>Ctrl+Y opens the primary multiplexer through the primary terminal once.</td></tr>
+<tr><td>Click-only triage</td><td>Primary multiplexer, other selected multiplexers, then primary terminal. Legacy metadata keeps its former availability ordering.</td></tr>
+</tbody></table>
+</header>
+<section id="design"><h2>Design and implementation</h2>
+<figure data-visual-kind="diagram" data-purpose="Show how selection reaches shortcut and triage routing">
+<svg viewBox="0 0 860 115" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">Selection to runtime</title><desc id="flow-desc">The TUI or role environment variables select membership and a primary. Setup installs selected packages and writes schema-2 roles metadata. Shortcuts and click-only triage consume those choices.</desc><rect x="5" y="15" width="245" height="74" rx="12"/><text x="127" y="46" text-anchor="middle">TUI or role variables</text><text x="127" y="71" text-anchor="middle">Members + primary</text><path d="M255 52 H298 l-8 -6 M298 52 l-8 6"/><rect x="305" y="15" width="245" height="74" rx="12"/><text x="427" y="46" text-anchor="middle">setup.sh</text><text x="427" y="71" text-anchor="middle">Install + roles.json</text><path d="M555 52 H598 l-8 -6 M598 52 l-8 6"/><rect x="605" y="15" width="245" height="74" rx="12"/><text x="727" y="46" text-anchor="middle">Runtime consumers</text><text x="727" y="71" text-anchor="middle">Ctrl+Y + clicked triage</text></svg>
+<figcaption>Existing role infrastructure remains the source of selection and primary-choice behavior. No new installer backend or schema version was added.</figcaption></figure>
+<table><thead><tr><th>Implementation</th><th>Responsibility</th></tr></thead><tbody>
+<tr><td><a href="../packages.json">packages.json</a>, <a href="../src/packages.rs">src/packages.rs</a>, <a href="../src/main.rs">src/main.rs</a></td><td>Required membership, Herdr default, primary controls, source union and application navigation.</td></tr>
+<tr><td><a href="../setup.sh">setup.sh</a> and Hyprland templates</td><td>Role exports, schema-2 metadata, shell-quoted shortcut action and exact stock-binding migration.</td></tr>
+<tr><td><a href="../dotfiles/.local/scripts/troubleshoot_with_agent.py">troubleshoot_with_agent.py</a></td><td>Allowlisted metadata, selected-only routing, legacy fallback and Herdr mutation boundary.</td></tr>
+</tbody></table>
+<p>Herdr triage requires an existing compatible default session. Only a failed read-only probe permits fallback. Once workspace creation begins, an uncertain result stops dispatch. Existing incident privacy, redaction, click-only launch and at-most-once claims remain in place.</p>
+<p>Multiplexers are on-demand tools, not startup-health processes. Zellij's Alacritty example runs only with primary Alacritty and primary Zellij. Kitty retains its independent dashboard.</p>
+</section>
+<section id="checks"><h2>Validation evidence</h2>
+<div class="grid"><div class="card"><strong>51</strong>Rust tests passed</div><div class="card"><strong>23</strong>Shell programs passed</div><div class="card"><strong>23</strong>Python tests passed</div><div class="card"><strong>2</strong>Fresh reviews passed</div></div>
+<ul><li><code>cargo fmt --check</code>, <code>cargo test --locked</code>, <code>cargo clippy --all-targets -- -D warnings</code> and <code>cargo build --release --locked</code> passed.</li>
+<li>Offline package schema validation passed. Native Hyprland parsed the isolated configuration fixture successfully.</li>
+<li>The full shell suite and Python triage suite passed again after parent integration fixes. The shell matrix covers all 62 role options.</li>
+<li>Focused fixtures exercise all three primary multiplexers, literal argv with spaces in HOME, old stock shortcut migration, malformed metadata, unavailable choices and Herdr mutation uncertainty.</li>
+<li><code>git diff --check</code> passed. Line-coverage percentage was not measured; these counts do not claim a coverage percentage.</li></ul>
+<p class="muted">The worker's 300-second full-suite run timed out without a test failure. Parent reruns used a 900-second bound and completed with 23 programs passing. The final local log is <code>/tmp/hss-multiplexer-final-shell.log</code>.</p>
+</section>
+<section id="review"><h2>Review and integration record</h2>
+<p>Two sequential implementation workers delivered selection/install and runtime/triage changes. The parent inspected their actual diffs before acceptance. Two fresh read-only reviewers then inspected the integrated patch independently.</p>
+<table><thead><tr><th>Review or finding</th><th>Disposition and evidence</th></tr></thead><tbody>
+<tr><td>Parent: old stock shortcut could wrap the terminal twice</td><td>Accepted and fixed. Exact Lua and Hyprlang bindings migrate to direct execution of the generated action. The fixture now starts with the previous stock bindings.</td></tr>
+<tr><td>Parent: non-string package IDs could raise a Python TypeError</td><td>Accepted and fixed. Validate string type before allowlist membership. Ten malformed primary/member cases assert terminal fallback.</td></tr>
+<tr><td>Selection review <code>59fe2bdc-bb5f-4f79-a72c-992b174180e6</code></td><td>No findings. Merge verdict OK, confidence 90/100. Static review only.</td></tr>
+<tr><td>Runtime review <code>fc5767a2-61d0-4419-986a-cc95450a0eb5</code></td><td>No findings. Merge verdict OK, confidence 89/100. Static review only.</td></tr>
+</tbody></table>
+<p>Both reviewers used <code>openai-codex/gpt-6-astra</code> in separate fresh contexts. The known Claude CLI authentication failure was not retried for provider diversity. No review-count waiver was used.</p>
+</section>
+<section id="usage"><h2>Usage and remaining limits</h2>
+<ol><li>Open <strong>Applications → Multiplexer</strong>. Use Space to select members and <code>p</code> to make a selected member primary. Installation stays blocked while this required group is empty.</li><li>Run setup when you intend to install and apply the choices. Ctrl+Y then opens the selected primary multiplexer in the primary terminal.</li><li>For startup triage, configure your selected coding agent separately. Launch occurs only after clicking the notification action.</li></ol>
+<p class="warning">Custom bindings need attention if they prepend a terminal to <code>apps.multiplex</code> or <code>$multiplex</code>. These values now contain the full terminal action. Execute them directly. Setup migrates exact former stock bindings, but does not rewrite custom variants.</p>
+<ul><li>No live terminal/multiplexer, Herdr API session, agent provider or package installation was tested. AUR availability can change. See <a href="https://aur.archlinux.org/packages/herdr-bin">herdr-bin</a> for its package source.</li><li>ShellCheck was unavailable because of a host library error. The host was not repaired.</li><li>Two generated, untracked Python cache files remain after cleanup was denied: <code>dotfiles/.local/scripts/__pycache__/troubleshoot_with_agent.cpython-314.pyc</code> and <code>dotfiles/.local/scripts/tests/__pycache__/test_troubleshoot_with_agent.cpython-314.pyc</code>. They are not source deliverables and should not be committed. No cleanup bypass was attempted.</li><li>No commit, publication or installed-system migration was performed. HTML structure is validated locally; browser rendering and print preview are not visually verified.</li></ul>
+<p>Further guidance: <a href="../Documents/app-selections.md">application selections</a> and <a href="../Documents/startup-triage.md">startup triage</a>. Rollback should revert only this feature's changes and preserve unrelated work. Deselecting a package does not uninstall it.</p>
+</section>
+<footer><a href="../plans/archive/multiplexer-selection.md">Canonical implementation plan</a> · Repository baseline <code>0e21e7d</code> · Local validation, not a live deployment certification.</footer>
+</main></body></html>

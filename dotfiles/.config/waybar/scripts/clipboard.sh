@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# 1. Launch Alacritty with a unique class and track its PID
-alacritty --class alacritty-clipboard -t Clipboard -e sh -c 'wl-clipboard-history -l 376 | fzf --bind "ctrl-alt-y:execute-silent(echo {} | sed -E \"s/.*,(.*)/\1/\" | wl-copy)+abort"' &
-alacritty_pid=$!
+term_exec=${HSS_TERM_EXEC:-$HOME/.config/hypr/scripts/term_exec.sh}
+clipboard_command='wl-clipboard-history -l 376 | fzf --bind "ctrl-alt-y:execute-silent(echo {} | sed -E \"s/.*,(.*)/\1/\" | wl-copy)+abort"'
 
-# 2. Wait for window creation using Hyprland's IPC
-timeout=5  # max wait in seconds
-window_found=false
+"$term_exec" --app-id hss-clipboard --title Clipboard -- sh -c "$clipboard_command" &
+terminal_pid=$!
 
-for ((i=0; i<timeout*10; i++)); do
-    # Check for window with matching class and PID
-    if hyprctl clients -j | jq -e ".[] | select(.class == \"alacritty-clipboard\" and .pid == $alacritty_pid)" >/dev/null; then
-        window_found=true
-        break
-    fi
-    sleep 0.1
+clipboard_window=""
+for ((attempt = 0; attempt < 50; attempt++)); do
+  clipboard_window=$(hyprctl clients -j | jq -cer --argjson pid "$terminal_pid" \
+    '.[] | select(.pid == $pid and (
+      .class == "hss-clipboard" or
+      (.class == "org.kde.konsole" and ((.title // "") | test("^hss-clipboard( |$)")))
+    ))' || true)
+  [[ -z $clipboard_window ]] || break
+  sleep 0.1
 done
 
-# 3. Float the window if found
-if $window_found; then
-    # Focus and float using hyprctl commands
-    hyprctl dispatch focuswindow "pid:$alacritty_pid"
-    ~/.config/hypr/scripts/toggle_floating.sh
+if [[ -z $clipboard_window ]]; then
+  printf 'Error: clipboard window not detected within 5 seconds\n' >&2
+  exit 1
+fi
+
+hyprctl dispatch focuswindow "pid:$terminal_pid"
+if [[ $(jq -r '.floating' <<<"$clipboard_window") == false ]]; then
+  hyprctl --batch 'dispatch togglefloating; dispatch resizeactive exact 50% 55%; dispatch centerwindow'
 else
-    echo "Error: Alacritty clipboard window not detected within $timeout seconds"
+  hyprctl --batch 'dispatch resizeactive exact 50% 55%; dispatch centerwindow'
 fi
