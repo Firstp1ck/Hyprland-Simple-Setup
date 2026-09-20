@@ -148,6 +148,8 @@ It sets up the following Components/Apps:
      curl -fsSL https://raw.githubusercontent.com/firstp1ck/Hyprland-Simple-Setup/main/install.sh | bash -s -- --no-tui
      ```
 
+   - Use `--ref <branch-or-tag>` to choose a revision and `--dir <path>` to choose the clone directory. Pass these bootstrap options after `bash -s --`.
+
 2. **Option 2: Install via AUR**
    - **Using yay:**
      ```bash
@@ -227,6 +229,8 @@ Usage (Preflight screen):
 - Edit text fields (wallpaper dir, monitor config): press e or Enter; Enter saves; Esc cancels
 - Start: focus “Start unattended install (Enter)” and press Enter
 
+During installation, scroll output with the mouse wheel, scrollbar, or PgUp/PgDn. Home jumps to the oldest retained output; End or **Follow** resumes live scrolling. Press `v` to switch between compact and detailed output. Scrolling does not interrupt setup.
+
 Notes:
 - The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `SHELL_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
 - Shell language updates `LANG` and `LANGUAGE` in the selected Bash, Fish, and Zsh startup files. `FISH_LANGUAGE_CHOICE_OVERRIDE` remains a fallback for older unattended commands; `SHELL_LANGUAGE_CHOICE_OVERRIDE` takes precedence.
@@ -251,6 +255,7 @@ Notes:
 - **Supported:** Arch Linux, EndeavourOS (other distros may require manual adaptation)
 - **Dependencies:** All handled by the setup script (Pacman and AUR)
 - **Dotfile management:** GNU stow (with backup of existing files)
+- **Upgrading:** Back up custom dotfiles and port older Hyprland settings to the Lua configuration before switching. Rerunning setup refreshes managed helpers but does not replace an existing `~/dotfiles` tree.
 - **Logging:** Each run writes its own log under `${XDG_STATE_HOME:-$HOME/.local/state}/hyprland-simple-setup/runs/`. The installer no longer writes `~/Hyprland-Simple-Setup.log`.
 - **Release notes:** See `dev/RELEASES/RELEASE_v*.md` and `CHANGELOG.md`
 
@@ -287,7 +292,7 @@ cd ~/Hyprland-Simple-Setup
 
 ### Application roles
 
-Choose applications independently in 15 groups:
+Choose applications independently in 17 groups:
 
 | Selection | Groups |
 | --- | --- |
@@ -297,6 +302,8 @@ Choose applications independently in 15 groups:
 | Zero or one | Dock |
 
 Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. Optional groups offer None. Installation is blocked when a required group is empty.
+
+Package choosers show app descriptions beside each choice. Use Up/Down to scroll, Home/End to jump to the first or last choice, and PgUp/PgDn to move five choices at a time.
 
 Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
 
@@ -359,6 +366,8 @@ The live package lookup needs network access and is intentionally excluded from 
 
 ## Package Installations
 
+The lists below cover common packages. Actual installations depend on your selections; `packages.json` contains the full catalog and required packages.
+
 ### Pacman Packages
 **Core Hyprland Packages**
 - hyprland (Wayland compositor)
@@ -370,6 +379,8 @@ The live package lookup needs network access and is intentionally excluded from 
 - hypridle (Idle manager)
 - hyprpolkitagent (Authentication agent)
 - hyprpicker (Color picker)
+- hyprshot (Screenshot utility)
+- hyprsunset (Night light)
 - wl-clipboard & wl-clip-persist (Clipboard managers)
 - hyprgraphics (Graphics utilities)
 - hyprland-guiutils (Hyprland GUI utilities)
@@ -400,7 +411,7 @@ The live package lookup needs network access and is intentionally excluded from 
 - konsole (KDE terminal)
 
 **Browsers** (User-selectable during setup)
-- zen-browser (AUR, default)
+- zen-browser-bin (AUR, default)
 - vivaldi (pacman)
 - vivaldi-ffmpeg-codecs (pacman, required for Vivaldi)
 
@@ -461,13 +472,13 @@ The live package lookup needs network access and is intentionally excluded from 
 ### AUR Packages
 - xwaylandvideobridge (Screen sharing)
 - waybar-module-pacman-updates-git (Package update status)
-- hyprshot (Screenshot utility)
 - visual-studio-code-bin (Code editor)
-- lsplug (Plugin manager)
+- lsplug (Monitor plug/unplug events)
+- pacsea-bin (Package search and installation)
+- usrgrp-manager-bin (User and group management)
 - waypaper-git (Wallpaper manager)
 - pyprland (Python bindings)
 - wl-clipboard-history-git (Clipboard history)
-- hyprsunset (Night light)
 - github-desktop-bin (GitHub client)
 - rose-pine-hyprcursor (Mouse Cursor)
 
