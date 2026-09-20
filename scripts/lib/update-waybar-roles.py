@@ -3,21 +3,15 @@
 
 import json
 from pathlib import Path
-import re
 import sys
 
-TOKENS = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/')
-TRAILING_COMMA = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+# Use the same JSONC grammar as the installed Waybar launcher without writing
+# bytecode into the source dotfiles tree during setup or dry-run.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dotfiles/.config/waybar/scripts'))
+from hss_jsonc import TOKENS, json_text
+
 DECODER = json.JSONDecoder()
-
-
-def json_text(text):
-    def blank_comment(match):
-        token = match.group()
-        return token if token.startswith('"') else re.sub(r'[^\r\n]', ' ', token)
-
-    clean = TOKENS.sub(blank_comment, text)
-    return TRAILING_COMMA.sub(lambda m: ' ' if m.group() == ',' else m.group(), clean)
 
 
 def skip_space(text, pos):

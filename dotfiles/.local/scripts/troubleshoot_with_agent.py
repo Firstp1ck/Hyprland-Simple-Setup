@@ -551,12 +551,21 @@ def terminal_command(terminal: dict[str, str], command: Sequence[str], title: st
 
 
 def detached_environment() -> dict[str, str]:
-    blocked = {"TMUX", "TMUX_PANE", "ZELLIJ", "ZELLIJ_SESSION_NAME"}
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key not in blocked and not key.startswith("HERDR_")
+    # Do not forward ambient credentials or interpreter startup hooks. Apply this
+    # again in run_incident: existing multiplexer servers may restore their env.
+    allowed = {
+        "HOME", "USER", "LOGNAME", "SHELL", "PATH",
+        "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_COLLATE", "LC_MESSAGES",
+        "LC_MONETARY", "LC_NUMERIC", "LC_TIME", "LC_ADDRESS", "LC_IDENTIFICATION",
+        "LC_MEASUREMENT", "LC_NAME", "LC_PAPER", "LC_TELEPHONE",
+        "TERM", "COLORTERM", "TERMINFO", "TERMINFO_DIRS",
+        "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+        "XDG_CACHE_HOME", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS", "XDG_SESSION_TYPE",
+        "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "HYPRLAND_INSTANCE_SIGNATURE",
+        "HSS_ROLES_FILE", "HSS_TRIAGE_CWD",
     }
+    return {key: value for key, value in os.environ.items() if key in allowed}
 
 
 def run_herdr(herdr: str, arguments: Sequence[str], environment: dict[str, str]) -> dict[str, Any]:

@@ -17,22 +17,7 @@ notify_error() {
 validate_config() {
     [[ -s "$CONFIG_FILE" ]] || return 1
 
-    python3 - "$CONFIG_FILE" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-try:
-    data = json.loads(path.read_text())
-except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-    print(f"Invalid Waybar config: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-
-if not isinstance(data, (dict, list)):
-    print("Waybar config must contain an object or array.", file=sys.stderr)
-    raise SystemExit(1)
-PY
+    python3 "$(dirname -- "${BASH_SOURCE[0]}")/hss_jsonc.py" "$CONFIG_FILE"
 }
 
 # Waybar's tray/module startup can block on xdg-desktop-portal during session boot.

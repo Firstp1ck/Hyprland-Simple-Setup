@@ -45,7 +45,9 @@ jobs:
             dotfiles/.config/hypr/scripts/repos_wofi.sh
             dotfiles/.config/hypr/scripts/term_exec.sh
             dotfiles/.config/hypr/scripts/toggle_floating.sh
+            dotfiles/.config/waybar/scripts/brightness.sh
             dotfiles/.config/waybar/scripts/clipboard.sh
+            dotfiles/.config/waybar/scripts/waybar_launch.sh
             dotfiles/.config/waybar/scripts/weather.sh
           )
           bash_files=(setup.sh install.sh "${shell_files[@]}" "${role_scripts[@]}")

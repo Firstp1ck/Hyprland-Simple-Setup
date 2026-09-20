@@ -44,12 +44,11 @@ class TroubleshootWithAgentTests(unittest.TestCase):
         self.release = self.root / "release"
         self.roles = self.home / "roles.json"
         self.agent = self.stub("pi", "#!/usr/bin/env bash\nexit 99\n")
-        self.stub("kitty", self.argv_stub("TEST_TERMINAL_EVENTS"))
+        self.stub("kitty", self.argv_stub(self.terminal_events))
         self.stub("tmux", "#!/usr/bin/env bash\nexit 98\n")
         self.stub("notify-send", self.notify_stub())
         self.write_roles(agent="pi")
         self.env = {
-            **os.environ,
             "HOME": str(self.home),
             "XDG_STATE_HOME": str(self.state),
             "HSS_ROLES_FILE": str(self.roles),
@@ -70,10 +69,10 @@ class TroubleshootWithAgentTests(unittest.TestCase):
         return path
 
     @staticmethod
-    def argv_stub(event_variable: str) -> str:
+    def argv_stub(event_path: Path) -> str:
         return f"""#!/usr/bin/env python3
-import json, os, sys
-with open(os.environ[{event_variable!r}], 'a') as output:
+import json, sys
+with open({str(event_path)!r}, 'a') as output:
     output.write(json.dumps(sys.argv[1:]) + '\\n')
 """
 
@@ -256,6 +255,67 @@ elif mode == 'action':
         self.assertRegex(command[3], r"^hss-triage-[0-9a-f]+$")
         self.assertIn("--run-incident", command)
         self.assertEqual(len(self.incident_paths()), 1, "handoff must remain until the runner claims it")
+
+    def test_detached_environment_keeps_only_desktop_and_handoff_variables(self):
+        helper = load_helper()
+        desktop = {
+            "HOME": str(self.home), "PATH": str(self.bin), "LANG": "en_US.UTF-8",
+            "LC_CTYPE": "en_US.UTF-8", "TERM": "xterm-256color",
+            "DISPLAY": ":1", "WAYLAND_DISPLAY": "wayland-1",
+            "XDG_RUNTIME_DIR": str(self.root / "runtime"),
+            "XDG_STATE_HOME": str(self.state), "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            "HSS_ROLES_FILE": str(self.roles), "HSS_TRIAGE_CWD": str(self.cwd),
+        }
+        excluded = dict.fromkeys((
+            "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN", "GITHUB_TOKEN", "SUDO_PASSWORD", "SUDO_ASKPASS",
+            "SSH_AUTH_SOCK", "HTTP_PROXY", "CUSTOM_CREDENTIAL", "UNRELATED_VALUE",
+            "LD_PRELOAD", "PYTHONPATH", "BASH_ENV", "NODE_OPTIONS",
+            "TMUX", "TMUX_PANE", "ZELLIJ", "ZELLIJ_SESSION_NAME", "HERDR_SOCKET",
+        ), "synthetic-sensitive-value")
+        with mock.patch.dict(os.environ, desktop | excluded, clear=True):
+            self.assertEqual(helper.detached_environment(), desktop)
+
+    def test_dispatch_filters_environment_for_every_destination(self):
+        helper = load_helper()
+        incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        self.stub("zellij", "#!/bin/sh\nexit 0\n")
+        self.stub("herdr", "#!/bin/sh\nexit 0\n")
+        for primary in ("tmux", "zellij", "herdr-bin", None):
+            roles = self.roles_with_multiplexers(primary or "tmux", [primary] if primary else [])
+            responses = [
+                {"type": "session_snapshot"},
+                {"type": "workspace_created", "workspace": {"workspace_id": "new"}, "root_pane": {"pane_id": "new"}},
+                {"type": "ok"}, {"type": "ok"},
+            ]
+            with self.subTest(primary=primary), mock.patch.dict(os.environ, self.env | {"SUDO_PASSWORD": "synthetic"}, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "run_herdr", side_effect=responses) as herdr, mock.patch.object(helper.subprocess, "Popen") as spawn:
+                helper.dispatch(Path("/snapshot"), incident)
+                environments = [call.args[2] for call in herdr.call_args_list]
+                environments += [call.kwargs["env"] for call in spawn.call_args_list]
+                self.assertTrue(environments)
+                for environment in environments:
+                    self.assertNotIn("SUDO_PASSWORD", environment)
+                    self.assertEqual(environment["HOME"], str(self.home))
+
+    def test_incident_runner_refilters_environment_from_existing_multiplexer(self):
+        helper = load_helper()
+        with mock.patch.dict(os.environ, self.env | {"AWS_SESSION_TOKEN": "synthetic", "TMUX": "old-server"}, clear=True):
+            directory = helper.state_directory()
+            helper.ensure_private_directory(directory)
+            path = directory / "incident-env.json"
+            helper.write_private(path, json.dumps({
+                "schema": 1, "nonce": "abc",
+                "agent": {"id": "pi", "label": "Pi", "executable": str(self.agent)},
+            }))
+            with mock.patch.object(helper.os, "geteuid", return_value=1000), mock.patch.object(helper.os, "chdir"), mock.patch.object(helper.os, "execvpe") as execute:
+                helper.run_incident(path, "abc")
+            execute.assert_called_once()
+            environment = execute.call_args.args[2]
+            self.assertNotIn("AWS_SESSION_TOKEN", environment)
+            self.assertNotIn("TMUX", environment)
+            self.assertEqual(environment["PWD"], str(self.cwd))
+            self.assertEqual(environment["HOME"], str(self.home))
 
     def test_log_bounds_redaction_and_unsafe_inputs(self):
         helper = load_helper()
