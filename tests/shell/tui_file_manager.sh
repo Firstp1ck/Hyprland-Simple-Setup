@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -39,7 +40,10 @@ jq -e '.roles.tui_file_manager == null and .selected.tui_file_manager == []
 assert_no_tui_packages
 
 mkdir -p "$fixture/bin"
-printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\0" "$@" > "$TUI_MANAGER_TERMINAL_LOG"' > "$fixture/bin/kitty"
+cat > "$fixture/bin/kitty" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$TUI_MANAGER_TERMINAL_LOG"
+STUB
 chmod +x "$fixture/bin/kitty"
 export TUI_MANAGER_TERMINAL_LOG="$fixture/argv.log"
 export ROLE_TUI_FILE_MANAGER_PACKAGES="${managers[*]}"
@@ -59,13 +63,13 @@ for package in "${managers[@]}"; do
   PATH="$fixture/bin:$PATH" "$HOME/.config/hypr/scripts/role_exec.sh" tui_file_manager -- '/tmp/folder with spaces'
   mapfile -d '' argv < "$TUI_MANAGER_TERMINAL_LOG"
   expected=(--class hss-tui_file_manager --title 'tui file manager' -e "$package" '/tmp/folder with spaces')
-  [[ ${#argv[@]} == ${#expected[@]} ]]
+  [[ ${#argv[@]} -eq ${#expected[@]} ]]
   for index in "${!expected[@]}"; do
     [[ ${argv[$index]} == "${expected[$index]}" ]]
   done
 done
 
-if output=$(ROLE_FILE_MANAGER= "$repo_root/setup.sh" --test-scenario roles 2>&1); then
+if output=$(ROLE_FILE_MANAGER='' "$repo_root/setup.sh" --test-scenario roles 2>&1); then
   printf 'not ok - TUI choices replaced the required graphical file manager\n' >&2
   exit 1
 fi

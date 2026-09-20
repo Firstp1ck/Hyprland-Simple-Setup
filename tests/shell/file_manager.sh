@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -18,7 +19,10 @@ done
 printf 'ok - file manager rejects empty, multiple and unknown choices\n'
 
 mkdir -p "$fixture/bin"
-printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\0" "${0##*/}" "$@" > "$FILE_MANAGER_LOG"' > "$fixture/bin/argv-stub"
+cat > "$fixture/bin/argv-stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "${0##*/}" "$@" > "$FILE_MANAGER_LOG"
+STUB
 chmod +x "$fixture/bin/argv-stub"
 export FILE_MANAGER_LOG="$fixture/argv.log"
 
