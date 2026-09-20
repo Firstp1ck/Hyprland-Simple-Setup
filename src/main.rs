@@ -89,7 +89,7 @@ enum UiMode {
 #[derive(Clone, Debug)]
 struct PreflightConfig {
     prompt_default_yes: bool,
-    fish_language_choice: u8, // 1,2,3
+    shell_language_choice: u8, // 1,2,3
     wallpaper_dir: String,
     monitor_setup_enabled: bool,
     monitor_config: String,
@@ -101,7 +101,7 @@ struct PreflightConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreflightField {
     EnvPromptDefaultYn,
-    EnvFishLanguageChoiceOverride,
+    EnvShellLanguageChoiceOverride,
     Applications,
     EnvWallpaperDirOverride,
     EnvMonitorSetupEnabled,
@@ -341,7 +341,7 @@ impl AppState {
             ui_mode: UiMode::Preflight,
             preflight: PreflightConfig {
                 prompt_default_yes: true,
-                fish_language_choice: 1,
+                shell_language_choice: 1,
                 wallpaper_dir: default_wallpaper,
                 monitor_setup_enabled: false,
                 monitor_config: String::new(),
@@ -1766,9 +1766,9 @@ fn draw_preflight_ui(f: &mut ratatui::Frame, app: &mut AppState, area: Rect) {
     ));
     rows.push(mk(
         "1/2/3",
-        "Fish language",
-        format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.fish_language_choice),
-        sel(PreflightField::EnvFishLanguageChoiceOverride),
+        "Shell language",
+        format!("{} (1=de_CH,2=de_DE,3=en_US)", pf.shell_language_choice),
+        sel(PreflightField::EnvShellLanguageChoiceOverride),
     ));
     rows.push(mk(
         "Enter",
@@ -2839,17 +2839,10 @@ fn spawn_setup(app: &mut AppState, flags: &[&str]) -> Result<()> {
         "PROMPT_DEFAULT_YN",
         if pf.prompt_default_yes { "y" } else { "n" },
     );
-    let selected_shell_is_fish = app
-        .role_selection
-        .as_ref()
-        .and_then(|selection| selection.selected_package("shell"))
-        == Some("fish");
-    if selected_shell_is_fish {
-        cmd.env(
-            "FISH_LANGUAGE_CHOICE_OVERRIDE",
-            pf.fish_language_choice.to_string(),
-        );
-    }
+    cmd.env(
+        "SHELL_LANGUAGE_CHOICE_OVERRIDE",
+        pf.shell_language_choice.to_string(),
+    );
     cmd.env("WALLPAPER_DIR_OVERRIDE", pf.wallpaper_dir.clone());
     cmd.env(
         "MONITOR_SETUP_ENABLED",
@@ -3759,8 +3752,8 @@ fn handle_preflight_keys(app: &mut AppState, key: KeyEvent) -> Result<bool> {
 
 fn preflight_focus_next(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
-        PreflightField::EnvPromptDefaultYn => PreflightField::EnvFishLanguageChoiceOverride,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::Applications,
+        PreflightField::EnvPromptDefaultYn => PreflightField::EnvShellLanguageChoiceOverride,
+        PreflightField::EnvShellLanguageChoiceOverride => PreflightField::Applications,
         PreflightField::Applications => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::EnvMonitorSetupEnabled,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvMonitorConfig,
@@ -3778,8 +3771,8 @@ fn preflight_focus_next(app: &mut AppState) {
 fn preflight_focus_prev(app: &mut AppState) {
     app.preflight_focus = match app.preflight_focus {
         PreflightField::EnvPromptDefaultYn => PreflightField::Start,
-        PreflightField::EnvFishLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
-        PreflightField::Applications => PreflightField::EnvFishLanguageChoiceOverride,
+        PreflightField::EnvShellLanguageChoiceOverride => PreflightField::EnvPromptDefaultYn,
+        PreflightField::Applications => PreflightField::EnvShellLanguageChoiceOverride,
         PreflightField::EnvWallpaperDirOverride => PreflightField::Applications,
         PreflightField::EnvMonitorSetupEnabled => PreflightField::EnvWallpaperDirOverride,
         PreflightField::EnvMonitorConfig => PreflightField::EnvMonitorSetupEnabled,
@@ -3795,15 +3788,15 @@ fn preflight_focus_prev(app: &mut AppState) {
 
 fn adjust_preflight_field(app: &mut AppState, delta: i32) {
     match app.preflight_focus {
-        PreflightField::EnvFishLanguageChoiceOverride => {
-            let mut v = app.preflight.fish_language_choice as i32 + delta;
+        PreflightField::EnvShellLanguageChoiceOverride => {
+            let mut v = app.preflight.shell_language_choice as i32 + delta;
             if v < 1 {
                 v = 3;
             }
             if v > 3 {
                 v = 1;
             }
-            app.preflight.fish_language_choice = v as u8;
+            app.preflight.shell_language_choice = v as u8;
         }
         PreflightField::EnvPromptDefaultYn => {
             app.preflight.prompt_default_yes = delta >= 0;
@@ -3816,10 +3809,10 @@ fn adjust_preflight_field(app: &mut AppState, delta: i32) {
 }
 
 fn set_language_choice(app: &mut AppState, choice: u8) {
-    if app.preflight_focus == PreflightField::EnvFishLanguageChoiceOverride
+    if app.preflight_focus == PreflightField::EnvShellLanguageChoiceOverride
         && (1..=3).contains(&choice)
     {
-        app.preflight.fish_language_choice = choice;
+        app.preflight.shell_language_choice = choice;
     }
 }
 
@@ -4705,7 +4698,9 @@ mod tests {
         assert!(!screen.contains("zen-browser-bin"));
         assert!(!screen.contains("(primary)"));
 
-        app.preflight_focus = PreflightField::EnvFishLanguageChoiceOverride;
+        assert!(screen.contains("Shell language"));
+        assert!(!screen.contains("Fish language"));
+        app.preflight_focus = PreflightField::EnvShellLanguageChoiceOverride;
         preflight_focus_next(&mut app);
         assert_eq!(app.preflight_focus, PreflightField::Applications);
         preflight_focus_next(&mut app);
@@ -4715,7 +4710,7 @@ mod tests {
         preflight_focus_prev(&mut app);
         assert_eq!(
             app.preflight_focus,
-            PreflightField::EnvFishLanguageChoiceOverride
+            PreflightField::EnvShellLanguageChoiceOverride
         );
     }
 

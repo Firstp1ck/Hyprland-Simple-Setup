@@ -53,7 +53,7 @@ AUR_HELPER_CHECKED=""
 
 # Initialize DRY_RUN_OPERATIONS array early for all functions
 declare -a DRY_RUN_OPERATIONS=()
-FISH_LANGUAGE_CHOICE=""
+SHELL_LANGUAGE_CHOICE=""
 SETUP_DIR=Hyprland-Simple-Setup
 PACKAGE_REGISTRY=""
 ROLE_DATA_FILE=""
@@ -67,20 +67,21 @@ declare -a SELECTED_ALL_PACKAGES=()
 
 ############################################################## Helper Functions ##############################################################
 
-get_fish_language_choice() {
-    if [ -z "$FISH_LANGUAGE_CHOICE" ]; then
+get_shell_language_choice() {
+    if [ -z "$SHELL_LANGUAGE_CHOICE" ]; then
         if [ "${NON_INTERACTIVE:-false}" = "true" ]; then
-            FISH_LANGUAGE_CHOICE=${FISH_LANGUAGE_CHOICE_OVERRIDE:-1}
-            print_verbose "Non-interactive mode: using FISH_LANGUAGE_CHOICE='$FISH_LANGUAGE_CHOICE'"
+            # Keep existing unattended Fish setup commands working.
+            SHELL_LANGUAGE_CHOICE=${SHELL_LANGUAGE_CHOICE_OVERRIDE:-${FISH_LANGUAGE_CHOICE_OVERRIDE:-1}}
+            print_verbose "Non-interactive mode: using SHELL_LANGUAGE_CHOICE='$SHELL_LANGUAGE_CHOICE'"
             return
         fi
-        echo "Select your preferred language setting for Fish Shell:"
+        echo "Select the language setting for all selected shells ($ROLE_SHELL_PACKAGES):"
         echo "1) de_CH (Default: LANG=de_CH.UTF-8, LANGUAGE=de_CH:en_US)"
         echo "2) de     (German: LANG=de_DE.UTF-8, LANGUAGE=de_DE:en_US)"
         echo "3) us     (US English: LANG=en_US.UTF-8, LANGUAGE=en_US:de_CH)"
-        read -rp "Enter selection number (1-3): " FISH_LANGUAGE_CHOICE
+        read -rp "Enter selection number (1-3): " SHELL_LANGUAGE_CHOICE
     else
-        print_verbose "FISH_LANGUAGE_CHOICE already set to: '$FISH_LANGUAGE_CHOICE'"
+        print_verbose "SHELL_LANGUAGE_CHOICE already set to: '$SHELL_LANGUAGE_CHOICE'"
     fi
 }
 
@@ -1805,17 +1806,13 @@ update_configs() {
     print_message "Configuration files updated with user input."
 }
 
-# Function to update fish language config in fish config file
-set_fish_language_config() {
-    local fish_conf="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
-    local lang language
+set_shell_language_config() {
+    load_role_selections || return 1
+    local lang language shell source_file runtime_file file lang_line language_line lang_pattern language_pattern
+    local -a shells=()
+    SHELL_LANGUAGE_CHOICE=${SHELL_LANGUAGE_CHOICE//[[:space:]]/}
 
-    # Trim whitespace and ensure we have a valid numeric value
-    FISH_LANGUAGE_CHOICE=$(echo "$FISH_LANGUAGE_CHOICE" | tr -d '[:space:]')
-    
-    print_verbose "FISH_LANGUAGE_CHOICE value: '$FISH_LANGUAGE_CHOICE'"
-
-    case "$FISH_LANGUAGE_CHOICE" in
+    case "$SHELL_LANGUAGE_CHOICE" in
         1)
             lang="de_CH.UTF-8"
             language="de_CH:en_US"
@@ -1829,39 +1826,53 @@ set_fish_language_config() {
             language="en_US:de_CH"
             ;;
         *)
-            print_warning "Invalid FISH_LANGUAGE_CHOICE value: '$FISH_LANGUAGE_CHOICE'. Using default (de_CH)."
+            print_warning "Invalid SHELL_LANGUAGE_CHOICE value: '$SHELL_LANGUAGE_CHOICE'. Using default (de_CH)."
             lang="de_CH.UTF-8"
             language="de_CH:en_US"
             ;;
     esac
-    
-    print_verbose "Selected language: LANG=$lang, LANGUAGE=$language"
 
-    # Check if file exists (try both dotfiles source and symlinked location)
-    local fish_conf_runtime="$HOME/.config/fish/conf.d/01-env.fish"
-    
-    # Update the source file in dotfiles (this will propagate to symlink if stow has run)
-    if [ ! -f "$fish_conf" ]; then
-        print_message "Creating fish config file at $fish_conf"
-        write_text_atomic "$fish_conf" "Add initial language settings" "# Language Settings
-set -gx LANG \"$lang\"
-set -gx LANGUAGE \"$language\"
-
-"
-    else
-        print_message "Updating existing fish config file at $fish_conf"
-        replace_config_line "$fish_conf" '^set -gx LANG ' "set -gx LANG \"$lang\"" "Update LANG"
-        replace_config_line "$fish_conf" '^set -gx LANGUAGE ' "set -gx LANGUAGE \"$language\"" "Update LANGUAGE"
-    fi
-    
-    # Also update the runtime location if it exists and is not a symlink (or if symlink is broken)
-    if [ -f "$fish_conf_runtime" ] && [ ! -L "$fish_conf_runtime" ]; then
-        print_message "Also updating runtime fish config file at $fish_conf_runtime"
-        replace_config_line "$fish_conf_runtime" '^set -gx LANG ' "set -gx LANG \"$lang\"" "Update LANG in runtime config"
-        replace_config_line "$fish_conf_runtime" '^set -gx LANGUAGE ' "set -gx LANGUAGE \"$language\"" "Update LANGUAGE in runtime config"
-    fi
-
-    print_message "Fish language settings updated: LANG=$lang, LANGUAGE=$language"
+    read -r -a shells <<< "$ROLE_SHELL_PACKAGES"
+    for shell in "${shells[@]}"; do
+        case "$shell" in
+            fish)
+                source_file="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
+                runtime_file="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/01-env.fish"
+                lang_line="set -gx LANG \"$lang\""
+                language_line="set -gx LANGUAGE \"$language\""
+                lang_pattern='^[[:space:]]*set -gx LANG[[:space:]]'
+                language_pattern='^[[:space:]]*set -gx LANGUAGE[[:space:]]'
+                ;;
+            bash|zsh)
+                source_file="$HOME/dotfiles/.${shell}rc"
+                runtime_file="$HOME/.${shell}rc"
+                if [ "$shell" = zsh ]; then
+                    runtime_file="${ZDOTDIR:-$HOME}/.zshrc"
+                fi
+                lang_line="export LANG=\"$lang\""
+                language_line="export LANGUAGE=\"$language\""
+                lang_pattern='^[[:space:]]*(export[[:space:]]+)?LANG='
+                language_pattern='^[[:space:]]*(export[[:space:]]+)?LANGUAGE='
+                ;;
+            *)
+                print_error "No language configuration writer for selected shell '$shell'"
+                return 1
+                ;;
+        esac
+        for file in "$source_file" "$runtime_file"; do
+            # A Stow link, including a linked parent directory, already sees the source update.
+            [ "$file" != "$source_file" ] && [ "$file" -ef "$source_file" ] && continue
+            if [ -f "$file" ]; then
+                replace_config_line "$file" "$lang_pattern" "$lang_line" "$shell language: LANG" || return 1
+                replace_config_line "$file" "$language_pattern" "$language_line" "$shell language: LANGUAGE" || return 1
+            else
+                write_text_atomic "$file" "$shell language settings" "$lang_line
+$language_line
+" || return 1
+            fi
+        done
+        print_message "$shell language settings updated: LANG=$lang, LANGUAGE=$language"
+    done
 }
 
 # Role-driven writers share the reliability transaction and preserve Stow symlinks.
@@ -3327,9 +3338,7 @@ main() {
     bootstrap_jq || return 1
     load_role_selections || return 1
     prepare_package_selections || return 1
-    if [ "$ROLE_SHELL" = fish ]; then
-        get_fish_language_choice
-    fi
+    get_shell_language_choice || return 1
     check_desktop_environment
 
     if ! command -v xdg-user-dirs-update &>/dev/null; then
@@ -3413,9 +3422,11 @@ main() {
         return 1
     }
     update_configs
-    if [ "$ROLE_SHELL" = fish ]; then
-        set_fish_language_config
-    fi
+    set_shell_language_config || {
+        print_error "Failed to configure selected shell languages"
+        record_hard_failure "set_shell_language_config" "Selected shell language write failed"
+        return 1
+    }
     configure_roles || {
         print_error "Failed to configure selected application roles"
         record_hard_failure "configure_roles" "Required role configuration write failed"
@@ -3457,6 +3468,8 @@ run_role_test_scenario() {
     bootstrap_jq || return 1
     load_role_selections || return 1
     prepare_package_selections || return 1
+    get_shell_language_choice || return 1
+    set_shell_language_config || return 1
     configure_roles || return 1
     configure_shell || return 1
     configure_environment || return 1

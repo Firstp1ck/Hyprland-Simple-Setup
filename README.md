@@ -223,12 +223,13 @@ HYPR_SETUP_PATH=~/Hyprland-Simple-Setup/setup.sh cargo run --release
 Usage (Preflight screen):
 - Navigate: Tab/Shift-Tab or j/k or ↑/↓
 - Change booleans: Space or ←/→
-- Change language (1/2/3): ←/→
+- Change shell language (1/2/3): ←/→. Applies to every shell selected in Applications, including additional shells.
 - Edit text fields (wallpaper dir, monitor config): press e or Enter; Enter saves; Esc cancels
 - Start: focus “Start unattended install (Enter)” and press Enter
 
 Notes:
-- The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `FISH_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
+- The TUI sets environment variables for a non-interactive run, including `NON_INTERACTIVE`, `PROMPT_DEFAULT_YN`, `SHELL_LANGUAGE_CHOICE_OVERRIDE`, `WALLPAPER_DIR_OVERRIDE`, `MONITOR_SETUP_ENABLED`, `MONITOR_CONFIG`, and `AUTO_CONTINUE_ON_WARNINGS`.
+- Shell language updates `LANG` and `LANGUAGE` in the selected Bash, Fish, and Zsh startup files. `FISH_LANGUAGE_CHOICE_OVERRIDE` remains a fallback for older unattended commands; `SHELL_LANGUAGE_CHOICE_OVERRIDE` takes precedence.
 - It also passes the selected packages and primary app for each application role. See [Application roles](#application-roles).
 - The installer will still use `sudo` for privileged operations when needed.
 

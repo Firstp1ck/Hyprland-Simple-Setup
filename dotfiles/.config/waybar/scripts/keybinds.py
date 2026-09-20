@@ -107,6 +107,11 @@ class KeybindsConfig:
 class KeybindsData:
     """Handles data operations for keybinds."""
     
+    _LUA_FOR_LOOP = re.compile(
+        r'for\s+(?P<variable>\w+)\s*=\s*(?P<start>\d+)\s*,\s*(?P<stop>\d+)'
+        r'\s+do(?P<body>.*?)\nend\b', re.S
+    )
+
     def __init__(self):
         self._setup_logging()
         self.favorites: Set[str] = self.load_favorites()
@@ -209,14 +214,15 @@ class KeybindsData:
         return symbols
 
     def _collect_lua_bind_statements(self, lua_text: str) -> List[str]:
-        """Collect top-level bind_exec, bind_dispatch, and hl.bind statements."""
+        """Collect bind calls outside helper functions and numbered loops."""
         statements = []
         current: List[str] = []
         depth = 0
         collecting = False
 
         in_function = False
-        for raw_line in lua_text.splitlines():
+        # Numbered loops are expanded separately with their iterator in scope.
+        for raw_line in self._LUA_FOR_LOOP.sub("", lua_text).splitlines():
             stripped = raw_line.strip()
             if stripped.startswith("local function"):
                 in_function = True
@@ -227,7 +233,7 @@ class KeybindsData:
                 continue
             if stripped.startswith("--"):
                 continue
-            if not collecting and not stripped.startswith(("bind_exec(", "bind_dispatch(", "hl.bind(")):
+            if not collecting and not stripped.startswith(("bind(", "bind_exec(", "bind_dispatch(", "hl.bind(")):
                 continue
 
             collecting = True
@@ -235,8 +241,7 @@ class KeybindsData:
             depth += self._paren_delta(raw_line)
             if depth <= 0:
                 statement = "\n".join(current)
-                if '"F" .. i' not in statement and 'F" .. i' not in statement:
-                    statements.append(statement)
+                statements.append(statement)
                 current = []
                 depth = 0
                 collecting = False
@@ -278,7 +283,13 @@ class KeybindsData:
 
     def _parse_lua_bind_statement(self, statement: str, symbols: Dict[str, str]) -> Optional[Dict[str, Union[str, int]]]:
         statement = statement.strip()
-        if statement.startswith("bind_exec("):
+        if statement.startswith("bind("):
+            args = self._split_lua_args(statement[len("bind("):-1])
+            if len(args) >= 3:
+                keybind = self._normalize_keybind(self._resolve_lua_expr(args[0], symbols))
+                description = self._resolve_lua_expr(args[1], symbols)
+                return {"keybind": keybind, "description": description}
+        elif statement.startswith("bind_exec("):
             args = self._split_lua_args(statement[len("bind_exec("):-1])
             if len(args) >= 3:
                 keybind = self._format_keybind(self._resolve_lua_expr(args[0], symbols), self._resolve_lua_expr(args[1], symbols))
@@ -298,25 +309,24 @@ class KeybindsData:
                 if "hl.dsp.no_op" in args[1]:
                     return None
                 keybind = self._normalize_keybind(self._resolve_lua_expr(args[0], symbols))
-                description = self._description_from_flags(args[2:]) or self._describe_lua_action(args[1])
+                description = self._description_from_flags(args[2:]) or self._describe_lua_action(args[1], symbols)
                 return {"keybind": keybind, "description": description}
         return None
 
     def _parse_lua_for_loops(self, lua_text: str, symbols: Dict[str, str]) -> List[Dict[str, Union[str, int]]]:
-        """Expand the simple numbered workspace loop used in keybindings.lua."""
+        """Expand simple numbered workspace loops without executing Lua."""
         binds: List[Dict[str, Union[str, int]]] = []
-        match = re.search(r'for\s+i\s*=\s*(\d+)\s*,\s*(\d+)\s+do(?P<body>.*?)\nend', lua_text, re.S)
-        if not match:
-            return binds
-
-        start, end = int(match.group(1)), int(match.group(2))
-        body = match.group("body")
-        shift = symbols.get("mainMod2", "SHIFT")
-        for i in range(start, end + 1):
-            if 'hl.dsp.focus({ workspace = i })' in body:
-                binds.append({"keybind": f"F{i}", "description": f"Open workspace {i}"})
-            if 'hl.dsp.window.move({ workspace = i })' in body:
-                binds.append({"keybind": f"{shift} + F{i}", "description": f"Move window to workspace {i}"})
+        for match in self._LUA_FOR_LOOP.finditer(lua_text):
+            start, stop = int(match['start']), int(match['stop'])
+            if stop - start + 1 > 1000:
+                raise ValueError("Lua keybind loop exceeds 1000 iterations")
+            statements = self._collect_lua_bind_statements(match['body'])
+            for number in range(start, stop + 1):
+                loop_symbols = {**symbols, match['variable']: str(number)}
+                for statement in statements:
+                    bind = self._parse_lua_bind_statement(statement, loop_symbols)
+                    if bind:
+                        binds.append(bind)
         return binds
 
     def _split_lua_args(self, text: str) -> List[str]:
@@ -421,15 +431,15 @@ class KeybindsData:
 
         if expr.startswith("[[") and expr.endswith("]]"):
             return expr[2:-2]
+        concat = self._split_lua_concat(expr)
+        if len(concat) > 1:
+            return "".join(self._resolve_lua_expr(part, symbols) for part in concat)
         if (expr.startswith('"') and expr.endswith('"')) or (expr.startswith("'") and expr.endswith("'")):
             return expr[1:-1]
         if expr.startswith("combo(") and expr.endswith(")"):
             args = self._split_lua_args(expr[len("combo("):-1])
             if len(args) == 2:
                 return self._format_keybind(self._resolve_lua_expr(args[0], symbols), self._resolve_lua_expr(args[1], symbols))
-        concat = self._split_lua_concat(expr)
-        if len(concat) > 1:
-            return "".join(self._resolve_lua_expr(part, symbols) for part in concat)
         lua_or = self._split_lua_or(expr)
         if lua_or:
             first, fallback = lua_or
@@ -482,8 +492,14 @@ class KeybindsData:
         suffix = f" {args}" if args else ""
         return f"Hyprland dispatch: {dispatcher}{suffix}"
 
-    def _describe_lua_action(self, action: str) -> str:
+    def _describe_lua_action(self, action: str, symbols: Dict[str, str]) -> str:
         compact = re.sub(r'\s+', ' ', action.strip())
+        workspace = re.search(r'hl\.dsp\.(focus|window\.move)\(\{\s*workspace\s*=\s*(\w+)\s*\}\)', compact)
+        if workspace:
+            number = self._resolve_lua_expr(workspace[2], symbols)
+            if number.isdigit():
+                action_name = "Open workspace" if workspace[1] == "focus" else "Move window to workspace"
+                return f"{action_name} {number}"
         if "window.close" in compact:
             return "Close window"
         if "fullscreen_state" in compact:

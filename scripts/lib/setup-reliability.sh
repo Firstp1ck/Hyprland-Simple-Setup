@@ -205,6 +205,7 @@ hss_path_is_approved() {
     triage_shell_source="$home_root/dotfiles/.local/scripts/troubleshoot_with_agent.sh"
     case "$path" in
         "$home_config"/*|"$home_dotfiles"/*|"$notification_runtime"|"$notification_source"|"$triage_python_source"|"$triage_shell_source") return 0 ;;
+        "$home_root/.bashrc"|"$home_root/.zshrc"|"$home_root/dotfiles/.bashrc"|"$home_root/dotfiles/.zshrc") return 0 ;;
     esac
     case "$path" in
         /etc/pam.d/login|/etc/pam.d/system-local-login|/etc/pacman.conf|/etc/systemd/system/grub-btrfsd.service.d/override.conf|/etc/sddm.conf.d/sddm.conf) return 0 ;;
