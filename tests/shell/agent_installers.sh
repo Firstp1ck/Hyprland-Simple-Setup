@@ -15,7 +15,7 @@ for command in env readlink tail tar gzip; do
   ln -s "$(command -v "$command")" "$bin/$command"
 done
 ln -s /bin/bash "$bin/bash"
-ln -s /bin/sh "$bin/sh"
+ln -s "${HSS_TEST_INSTALLER_SH:-/bin/sh}" "$bin/sh"
 
 cat > "$bin/id" <<'STUB'
 #!/bin/bash
@@ -87,9 +87,10 @@ case $url in
   https://cursor.com/install) id=cursor-cli; executable=cursor-agent; destination="$HOME/.local/bin/cursor-agent" ;;
   *) exit 90 ;;
 esac
+# The runner invokes this fixture with either sh or bash, regardless of shebang.
 /bin/cat > "$output" <<INSTALLER
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 {
   printf 'id=%s\\n' '$id'
   printf 'argv='
@@ -101,8 +102,8 @@ set -euo pipefail
   printf 'OPENAI_API_KEY=%s\\n' "\${OPENAI_API_KEY-unset}"
   printf 'ANTHROPIC_API_KEY=%s\\n' "\${ANTHROPIC_API_KEY-unset}"
 } > "\$HOME/installer-$id.log"
-[[ ! -f "\$HOME/nonzero-$id" ]] || exit 42
-if [[ ! -f "\$HOME/no-executable-$id" ]]; then
+[ ! -f "\$HOME/nonzero-$id" ] || exit 42
+if [ ! -f "\$HOME/no-executable-$id" ]; then
   /bin/mkdir -p '${destination%/*}'
   printf '#!/bin/sh\\nexit 0\\n' > '$destination'
   /bin/chmod 700 '$destination'
@@ -176,6 +177,12 @@ for log in "$HOME"/installer-*.log; do
 done
 grep -Fq '<--wait>' "$HOME/runner.log"
 grep -Fq '<--kill-after=10s> <600s>' "$HOME/runner.log"
+for id in pi codex-cli; do
+  grep -Fq "<$bin/sh> <$HSS_RUN_TMP_DIR/agent-$id." "$HOME/runner.log"
+done
+for id in opencode claude-code cursor-cli; do
+  grep -Fq "<$bin/bash> <$HSS_RUN_TMP_DIR/agent-$id." "$HOME/runner.log"
+done
 grep -Fq '<url=https://pi.dev/install.sh>' "$HOME/curl-argv.log"
 grep -Fq '<url=https://cursor.com/install>' "$HOME/curl-argv.log"
 grep -Fq "curl <--disable> <--proto> <=https> <--proto-redir> <=https> <--location>" "$HOME/curl-argv.log"

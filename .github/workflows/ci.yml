@@ -56,6 +56,13 @@ jobs:
           done
           shellcheck -x "${bash_files[@]}"
           tests/run.sh
+      - name: Test official-installer fixtures with Dash and Bash
+        shell: bash
+        run: |
+          set -euo pipefail
+          for interpreter in /bin/dash /bin/bash; do
+            HSS_TEST_INSTALLER_SH="$interpreter" tests/run.sh tests/shell/agent_installers.sh
+          done
 
   json:
     runs-on: ubuntu-latest
