@@ -1,269 +1,348 @@
 {
-  "createdAt": "2026-09-19T22:54:10.237Z",
-  "updatedAt": "2026-09-19T23:24:41.386Z",
+  "createdAt": "2026-09-20T17:35:32.305Z",
+  "updatedAt": "2026-09-20T18:18:10.898Z",
   "projectDir": "/mnt/SSD_NVME_4TB/GitHub/Hyprland-Simple-Setup",
-  "plan": "i want to do something ambitious. I want to have a ISO of this setup, so the setup should start directly when booted from the iso over for example an usb. get inspiration of omarchy https://github.com/omacom/omarchy the goal for now is a detailed plan.",
+  "plan": "Use existing plan: desktop harmonization master plan",
   "turns": [
     {
-      "question": "What should appear when someone boots the USB?",
-      "recommendedAnswer": "The configured Hyprland live desktop with an explicit Install launcher, so users can try the setup without touching their disks.",
-      "userAnswer": "Start the setup/installation wizard directly; no full live desktop",
+      "question": "Which plan should we examine? Recommendation: use the existing desktop harmonization master plan, since it coordinates the 12 subplans we just created.",
+      "recommendedAnswer": "Use existing plan: desktop harmonization master plan, since it coordinates the 12 subplans we just created.",
+      "userAnswer": "Use existing plan: desktop harmonization master plan",
       "decisionStatus": "resolved",
-      "notes": "User selected installer-first rather than a live desktop. ISO session is an installation environment; configured Hyprland is the installed outcome."
+      "notes": "Explicit intake answer preserved from completed questionnaire 21fe6c6f-3d91-4d0d-bc1f-7d4ef4700a62, revision 0. Batch recorder is now available. Subject: plans/planned/desktop-harmonization-master.md and its 12 linked subplans. No design decisions were recorded before this intake."
     },
     {
-      "question": "Who must the first release serve?",
-      "recommendedAnswer": "A public experimental release for technical users, with a narrow tested hardware matrix rather than a general-purpose distro promise.",
-      "userAnswer": "Public release for newcomers with a polished supported installation",
-      "decisionStatus": "resolved",
-      "notes": "Requires stronger onboarding, safety, support documentation, hardware validation, and release gates than the recommended technical preview."
-    },
-    {
-      "question": "Which base should the ISO use?",
-      "recommendedAnswer": "Vanilla Arch Linux with archiso; the existing pacman/AUR package model fits it without inheriting another distro's custom repositories.",
-      "userAnswer": "Vanilla Arch Linux",
+      "question": "What must remain equivalent when a user changes apps? Recommendation: the same desktop workflows and shared controls, while retaining native app-specific features. This is achievable without trying to turn Nano into an IDE or every browser into the same product.",
+      "recommendedAnswer": "The same desktop workflows and shared controls, while retaining native app-specific features; do not try to make every application's internal features identical.",
+      "userAnswer": "Same desktop workflows; native application features may differ",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Which hardware must v1 explicitly support and test?",
-      "recommendedAnswer": "x86_64 Intel/AMD graphics plus a QEMU/KVM test target; treat NVIDIA as experimental unless it is essential to your machines.",
-      "userAnswer": "x86_64 PCs with Intel or AMD graphics; x86_64 PCs with NVIDIA graphics; Laptops with hybrid Intel/AMD plus NVIDIA graphics; QEMU/KVM virtual machines; VirtualBox or VMware virtual machines",
-      "decisionStatus": "resolved",
-      "notes": "Broad release matrix selected. Define NVIDIA generations and the actual hardware/VM release evidence in a dependent round. ARM64 not selected."
-    },
-    {
-      "question": "What firmware compatibility is required?",
-      "recommendedAnswer": "UEFI with Secure Boot disabled for v1; legacy BIOS and Secure Boot signing add separate implementation and testing work.",
-      "userAnswer": "UEFI only; Secure Boot disabled",
+      "question": "What is the mandatory functionality baseline for every bar? Recommendation: all currently active Waybar operations, including their menus, with hardware-dependent controls shown only when applicable. Do not promote unused module definitions automatically.",
+      "recommendedAnswer": "All currently active Waybar operations and menus; hardware-dependent controls only when applicable, without automatically promoting inactive modules.",
+      "userAnswer": "All active Waybar operations and menus",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What must work without internet?",
-      "recommendedAnswer": "The default desktop and default disk installation, if included, work offline; optional applications can require internet. This makes USB boot independent of mirrors and AUR availability.",
-      "userAnswer": "Offline default desktop/install; optional extras online",
-      "decisionStatus": "resolved",
-      "notes": "Applied to selected installer-only boot: ISO boots installer offline and installs a usable default desktop offline."
-    },
-    {
-      "question": "How much of today's selectable setup should ship on the ISO?",
-      "recommendedAnswer": "One curated default profile generated from packages.json, preserving other choices for installation or later configuration rather than bundling everything.",
-      "userAnswer": "One representative default profile; keep optional choices available separately",
+      "question": "If an existing app cannot satisfy a mandatory capability safely, what should happen? Recommendation: keep it selectable with a clear limited-support label, but do not call that option fully harmonized. This preserves choice without hiding a failed requirement.",
+      "recommendedAnswer": "Keep the app selectable with a clear limited-support label and withhold full-parity status.",
+      "userAnswer": "Keep selectable, label limitations, withhold full-parity status",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Should changes made while running from USB survive reboot?",
-      "recommendedAnswer": "A disposable live session in v1; persistent USB storage is a separate feature with filesystem and privacy implications.",
-      "userAnswer": "No persistence; every USB boot starts clean",
+      "question": "May the setup offer extra tools to fill gaps in a selected app? Recommendation: small local helpers or companion interfaces, disclosed before installation, with no second full desktop shell or competing notification daemon. Feasibility must be proven first.",
+      "recommendedAnswer": "Offer small local helpers or companion interfaces with explicit installation consent, after proving feasibility; no second full desktop shell or competing notification daemon.",
+      "userAnswer": "Use native app features only; no extra companion tools",
+      "decisionStatus": "resolved",
+      "notes": "Follow-up needed to distinguish ordinary repository adapters/theme generation from implementing missing app capabilities."
+    },
+    {
+      "question": "Which notification experience must every fully supported choice provide? Recommendation: popups, actions, dismissal, real DND state and browsable history. The current Fnott DND action does nothing, so this is a requirement to prove, not an existing capability.",
+      "recommendedAnswer": "Popups, actions, dismissal, DND, browsable history and truthful status, subject to actual provider feasibility.",
+      "userAnswer": "Popups, actions, dismissal, DND, browsable history and truthful status",
+      "decisionStatus": "resolved",
+      "notes": "Native-only policy means providers lacking these capabilities remain limited, not silently supplemented."
+    },
+    {
+      "question": "Must every fully supported audio choice provide per-application volume and output routing? Recommendation: yes, while keeping ALSA hardware mixing a separate operation. Choosing how to fill the ALSA gap comes after this requirement is settled.",
+      "recommendedAnswer": "Yes: per-app volume and routing must remain available, with ALSA hardware mixing treated separately.",
+      "userAnswer": "Yes: per-app volume and routing must remain available",
+      "decisionStatus": "resolved",
+      "notes": "Native-only policy makes ALSA-only options limited unless native capability evidence proves otherwise; do not add a companion."
+    },
+    {
+      "question": "What should the standard launcher shortcut open for every launcher? Recommendation: desktop applications with the same discovery rules; executable-command search remains a separate action. Currently Bemenu uses command discovery instead.",
+      "recommendedAnswer": "Desktop applications by default, with executable-command search remaining a separate action.",
+      "userAnswer": "Desktop applications by default; command search stays separate",
+      "decisionStatus": "resolved",
+      "notes": "Resolve whether native-only excludes a desktop-entry provider for Bemenu, while retaining the existing executable discovery route."
+    },
+    {
+      "question": "Which dock features are mandatory when a dock is enabled? Recommendation: pinned apps, running-app display, launch/focus, active indicators and keyboard access. Treat autohide and richer window controls as optional until requested.",
+      "recommendedAnswer": "Pinned apps, running-app display, launch/focus, active indicators and keyboard access; autohide and richer window controls optional.",
+      "userAnswer": "Pinned applications; Running-application display; Launch an app or focus its existing window; Running and active indicators",
+      "decisionStatus": "resolved",
+      "notes": "Keyboard-accessible dock switching, autohide and window actions were not selected as mandatory."
+    },
+    {
+      "question": "What must be common across terminal and multiplexer combinations? Recommendation: reliable command/cwd/clipboard behavior plus explicit create, attach, detach and basic pane workflows through the selected multiplexer. Native terminal tabs, image protocols and agent-specific extras need not match.",
+      "recommendedAnswer": "Common terminal behavior and explicit multiplexer create/attach/detach/basic pane workflows; native tabs, image protocols and agent extras need not match.",
+      "userAnswer": "Common terminal behavior and multiplexer session/pane workflows",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Which Omarchy ideas should guide this project?",
-      "recommendedAnswer": "Borrow installer structure, prebuilt package delivery, and release testing, while keeping this project's appearance and application choices.",
-      "userAnswer": "Prebuilt packages and offline installation; Polished onboarding and cohesive defaults",
-      "decisionStatus": "resolved",
-      "notes": "Omarchy is inspiration for these selected aspects, not authorization to fork it or adopt its appearance/update system."
-    },
-    {
-      "question": "What should happen to the current setup-on-existing-Arch workflow?",
-      "recommendedAnswer": "Preserve it and share package/configuration logic with the ISO rather than replacing it.",
-      "userAnswer": "Other: the github repo is currently also an aur package. this should be kept. iso will be a release artifact on github releases.",
-      "decisionStatus": "resolved",
-      "notes": "Preserve AUR distribution and add ISO as a GitHub Release artifact. Need check current PKGBUILD and resolve compatibility requirements for existing workflows."
-    },
-    {
-      "question": "How should v1 be built and distributed?",
-      "recommendedAnswer": "A documented local build plus manually approved experimental releases; introduce automated publication only after VM and hardware gates work.",
-      "userAnswer": "Automated CI builds and public releases from the start",
-      "decisionStatus": "resolved",
-      "notes": "Use GitHub Releases per preceding answer. Define publication gates, runner constraints, artifact splitting, and signing policy."
-    },
-    {
-      "question": "What image-size constraint should the plan optimize for?",
-      "recommendedAnswer": "Target an 8 GB USB drive and measure actual ISO/RAM use before declaring hard limits.",
-      "userAnswer": "No initial size target; prioritize functionality",
-      "decisionStatus": "resolved",
-      "notes": "GitHub Release per-asset limits still constrain distribution and require evidence-backed handling."
-    },
-    {
-      "question": "If the offline ISO exceeds GitHub's under-2-GiB per-asset limit, how should we distribute it?",
-      "recommendedAnswer": "Preserve offline functionality and use split GitHub assets with a documented verified reassembly helper; users must reassemble them before flashing.",
-      "userAnswer": "Other: both 1. and 2.",
-      "decisionStatus": "resolved",
-      "notes": "Refers to split GitHub Release assets with reassembly/verification tools AND a full externally hosted ISO linked from GitHub Releases. External hosting choice/availability remains to resolve."
-    },
-    {
-      "question": "What should the automatically launched installer look like?",
-      "recommendedAnswer": "Extend the existing Rust TUI with a guided ISO mode; it works without a graphics driver and preserves the project's current interface.",
-      "userAnswer": "Guided text/terminal installer based on the existing Rust TUI",
+      "question": "Which visual direction should guide the reference design? Recommendation: refine the current dark, blue-accented Waybar look into one consistent theme. This preserves the setup's identity without keeping its conflicting palettes.",
+      "recommendedAnswer": "Refine the current dark, blue-accented setup into one consistent theme.",
+      "userAnswer": "Use a consistent Catppuccin-inspired desktop",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Which disk-installation modes must v1 offer?",
-      "recommendedAnswer": "Erase one explicitly selected whole disk only, with a clear destructive-action summary and typed confirmation; dual boot and partition resizing multiply the risk.",
-      "userAnswer": "Erase disk or install into existing unallocated space; never resize",
+      "question": "Which appearance variants belong in the first supported release? Recommendation: dark, light, high-contrast and reduced-motion support, with readable enlarged text. These are independent appearance preferences, not four separate desktop implementations.",
+      "recommendedAnswer": "Dark, light, high-contrast and reduced-motion support with readable enlarged text.",
+      "userAnswer": "Dark appearance; Light appearance",
       "decisionStatus": "resolved",
-      "notes": "Requires existing-partition/ESP preservation, free-space validation, boot entry policy, multi-disk guardrails, and negative tests."
+      "notes": "Dedicated high-contrast, reduced-motion and enlarged-text variants were not selected; later clarify preservation of existing accessibility preferences rather than assuming they should be disabled."
     },
     {
-      "question": "Which installed filesystem/recovery policy should v1 use?",
-      "recommendedAnswer": "One fixed Btrfs layout with snapshots and a tested recovery path, building on the project's existing Timeshift/grub-btrfs integration rather than exposing many layouts.",
-      "userAnswer": "Btrfs with snapshots and a tested recovery path",
+      "question": "How far should harmonization change native GTK, Qt, libadwaita, browser and Electron interfaces? Recommendation: supported preferences and app themes with shared colors/fonts/spacing intent, accepting native widget differences. Avoid patched toolkits and fragile global CSS overrides.",
+      "recommendedAnswer": "Supported preferences and app themes; accept native widget differences and avoid patched toolkits or fragile global overrides.",
+      "userAnswer": "Use supported theming; accept native widget differences",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What encryption policy should the installer offer?",
-      "recommendedAnswer": "LUKS2 encryption enabled by default with an explicit opt-out and clear passphrase/recovery guidance; do not collect any actual passphrase here.",
-      "userAnswer": "Encryption optional and off by default",
+      "question": "Which distributions need verified support in the first harmonized release? Recommendation: Arch Linux as the tested reference, with EndeavourOS and CachyOS documented as unverified until separately tested. More certified distributions increase the test matrix.",
+      "recommendedAnswer": "Verify Arch Linux; document other Arch-based distributions as unverified until separately tested.",
+      "userAnswer": "Verify Arch Linux; other Arch-based distributions initially unverified",
       "decisionStatus": "resolved"
     },
     {
-      "question": "How should ISO defaults relate to packages.json?",
-      "recommendedAnswer": "An explicit ISO profile with the same desktop identity, using redistributable prebuilt packages and audited substitutions where needed; keep AUR-install defaults unchanged.",
-      "userAnswer": "Allow an explicit ISO-specific default profile; preserve existing AUR defaults",
+      "question": "Which application versions should compatibility guarantees cover? Recommendation: the fully updated repositories at each tested release, recording exact versions and revalidating upgrades. Do not promise arbitrary historical versions.",
+      "recommendedAnswer": "Current fully updated packages with exact tested versions recorded and upgrades revalidated.",
+      "userAnswer": "Current fully updated packages, with recorded tested versions",
       "decisionStatus": "resolved"
     },
     {
-      "question": "When should users choose and install optional online applications?",
-      "recommendedAnswer": "After the first successful desktop boot, keeping network/AUR failures out of the base OS installation.",
-      "userAnswer": "Inside the USB installer when internet is available",
+      "question": "How should harmonization adopt existing installations? Recommendation: preview changes, obtain consent, preserve custom settings and update only clearly managed sections. Conflicting files remain unchanged until resolved.",
+      "recommendedAnswer": "Opt-in preview, preserve custom settings and update only clearly managed sections; block conflicting changes.",
+      "userAnswer": "Opt-in preview; preserve custom settings; block conflicting changes",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "After an approved theme or app-selection change, how should running apps be handled? Recommendation: safe supported reloads only; defer anything requiring termination or session restart and report what remains pending.",
+      "recommendedAnswer": "Safe supported reloads only; defer restarts and report pending activation.",
+      "userAnswer": "Reload safely where supported; defer restarts",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Should changing primary browser, graphical file manager or editor also change system URL/folder/file associations? Recommendation: offer an explicit association preview and separate consent. A shortcut preference should not silently overwrite existing defaults.",
+      "recommendedAnswer": "Offer association changes with a separate preview and consent.",
+      "userAnswer": "Make system associations follow the selected primary app",
       "decisionStatus": "resolved",
-      "notes": "Keep offline base installation independent of optional online selections; clarify behavior if downloads fail."
+      "notes": "Reconcile with opt-in migration: association effects should be disclosed in the approved selection-change preview, rather than silently occurring while browsing choices."
     },
     {
-      "question": "How should optional coding agents appear in the ISO experience?",
-      "recommendedAnswer": "Do not bundle agent binaries or run remote installers during base installation; offer them later through the existing optional agent selector with manual authentication.",
-      "userAnswer": "Offer coding agents later; no agent required for offline installation",
-      "decisionStatus": "resolved"
-    },
-    {
-      "question": "What implementation direction should the plan take for partitioning and base Arch installation?",
-      "recommendedAnswer": "Evaluate a pinned archinstall backend behind the Rust wizard, with an early offline/encryption proof before committing; avoid inventing a partitioning engine.",
-      "userAnswer": "Use pinned archinstall if an early integration proof passes",
+      "question": "May completed parts ship before the entire program is finished? Recommendation: incremental opt-in releases with category-level support labels; reserve the full-desktop harmonization claim until all required categories pass.",
+      "recommendedAnswer": "Incremental opt-in releases with explicit category-level status; full-desktop claim only after required categories pass.",
+      "userAnswer": "Other: all changes will be done in this branch, i will then test it step by step in a AVM",
       "decisionStatus": "resolved",
-      "notes": "Spike must include install into unallocated space, ESP preservation, selected Btrfs recovery scheme, and optional LUKS2. Failure triggers an explicit new architecture decision, not silent fallback."
+      "notes": "Preserved exact returned Other text, including the control character. Interpreted intent for follow-up: all work on current branch, user performs step-by-step VM testing; no release/publication authorization."
     },
     {
-      "question": "Beyond keeping the AUR package, what compatibility must the plan preserve?",
-      "recommendedAnswer": "Keep the current command, existing-system setup, package choices, and config-preservation behavior; add a distinct ISO mode.",
-      "userAnswer": "Preserve current command and existing-system setup behavior",
+      "question": "How should acceptance thresholds be established? Recommendation: require semantic visual review plus reproducible screenshots, then set numeric resource/latency limits from measured baselines before acceptance. Cross-toolkit pixel identity is not a useful universal threshold.",
+      "recommendedAnswer": "Semantic visual review and reproducible screenshots, then measured and approved numeric resource/latency budgets.",
+      "userAnswer": "Manual visual review and functional tests, without numeric budgets",
       "decisionStatus": "resolved"
     },
     {
-      "question": "How should v1 define NVIDIA support?",
-      "recommendedAnswer": "Support explicitly tested GPUs supported by current Arch drivers, including hybrid laptops; detect unsupported/legacy GPUs early instead of promising all NVIDIA generations.",
-      "userAnswer": "Current-driver-supported, explicitly tested NVIDIA and hybrid hardware",
+      "question": "Which environments can be made available for later verification? Recommendation: a disposable Arch VM plus separately approved physical-device checks. This answer identifies resources only; it does not authorize installations or changes to your current desktop.",
+      "recommendedAnswer": "A disposable Arch Linux VM plus separately approved physical-device checks; this identifies resources, not permission for changes.",
+      "userAnswer": "Disposable Arch Linux VM",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Does native-only still allow repository scripts that configure themes, translate existing native CLI/API calls and collect native status? Recommendation: yes, but do not implement missing application features or install companion interfaces. The shared foundation needs these adapters to connect the chosen apps.",
+      "recommendedAnswer": "Allow configuration, theme generation and adapters to existing native CLI/API capabilities; do not implement replacement features or install companion interfaces.",
+      "userAnswer": "Allow configuration and native-API adapters; no replacement features or companions",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which Catppuccin pair should define dark and light appearance? Recommendation: Mocha for dark and Latte for light, giving one clear reference for every app mapping.",
+      "recommendedAnswer": "Mocha dark and Latte light.",
+      "userAnswer": "Mocha dark and Latte light",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which accent should be shared across the desktop? Recommendation: Catppuccin Blue in each variant, preserving the setup's blue emphasis without copying identical hex values between dark and light palettes.",
+      "recommendedAnswer": "Catppuccin Blue in each variant.",
+      "userAnswer": "Blue",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which font policy should the theme use? Recommendation: Noto Sans for ordinary GUI text and JetBrains Mono Nerd Font for terminals/code, with a consistent readable size scale. Avoid bold monospace text everywhere.",
+      "recommendedAnswer": "Noto Sans for GUI text and JetBrains Mono Nerd Font for terminals/code, with consistent readable sizing.",
+      "userAnswer": "Noto Sans GUI text; JetBrains Mono Nerd Font terminals/code",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which application icon family should be the common default? Recommendation: Breeze, already referenced by the GTK/Qt configuration, with dependencies checked explicitly. Do not bundle a new icon family just to imitate every app's branding.",
+      "recommendedAnswer": "Breeze icons with explicit dependency verification and suitable dark/light variants.",
+      "userAnswer": "Breeze icons, using an appropriate dark/light variant",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which cursor direction should replace the current conflicting cursor settings? Recommendation: retain Rose Pine where supported and verify a matching XCursor fallback, rather than assigning an unsupported format to apps. If no coherent supported pair exists, report that before adopting it.",
+      "recommendedAnswer": "Rose Pine with a verified matching XCursor compatibility fallback; report inability to provide a coherent supported pair before adoption.",
+      "userAnswer": "Rose Pine cursor with a verified matching compatibility fallback",
       "decisionStatus": "resolved",
-      "notes": "Potential conflict with later VM-only release gate; must reconcile tested hardware scope versus candidate support."
+      "notes": "Asset compatibility remains a technical verification task, not a user-approved fallback to another family."
     },
     {
-      "question": "How should public support claims be verified?",
-      "recommendedAnswer": "Automated VM gates plus recorded physical Intel/AMD, NVIDIA, and hybrid-laptop checks before a stable release; missing evidence blocks that support claim.",
-      "userAnswer": "Release after VM tests; label physical-hardware support unverified",
+      "question": "What density should guide bars, launchers, notifications and custom dialogs? Recommendation: balanced desktop sizing with modest rounded corners, comfortable targets and compact spacing; native widgets keep their supported geometry.",
+      "recommendedAnswer": "Balanced desktop sizing, modest rounding and comfortable targets; retain supported native widget geometry.",
+      "userAnswer": "Balanced sizing, modest rounding and comfortable targets",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What effects policy should the theme follow? Recommendation: subtle transparency/blur on shell surfaces where supported, opaque readable application content, and no requirement to emulate unavailable effects.",
+      "recommendedAnswer": "Subtle supported transparency/blur on shell surfaces, opaque application content, no emulation of unavailable effects.",
+      "userAnswer": "Subtle shell transparency/blur; opaque application content",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What should a fresh installation use initially? Recommendation: dark mode by default with explicit manual dark/light switching; existing installations retain their approved preference. Automatic scheduling can stay outside this first version.",
+      "recommendedAnswer": "Dark by default with manual dark/light switching; preserve existing approved preferences and omit automatic scheduling.",
+      "userAnswer": "Dark by default; manual dark/light switching",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "On a fresh multi-monitor setup, where should the bar appear? Recommendation: one bar on every connected output, using the same approved module layout and reacting safely to hotplug. Preserve existing custom output assignments during migration.",
+      "recommendedAnswer": "One bar on every connected output, with safe hotplug behavior and existing custom assignments preserved during migration.",
+      "userAnswer": "One bar on every connected output",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "When a user enables a dock without existing pin settings, what should it pin initially? Recommendation: selected primary terminal, browser, graphical file manager and GUI editor when enabled, without pinning disabled optional roles.",
+      "recommendedAnswer": "Pin the primary terminal, browser, graphical file manager and enabled GUI editor; omit disabled optional roles.",
+      "userAnswer": "Pin the primary terminal, browser, file manager and enabled GUI editor",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What should do-not-disturb mean for fully supported notification providers? Recommendation: suppress all notification popups, including critical urgency, while keeping status truthful. Locking and security prompts remain separate from notification DND.",
+      "recommendedAnswer": "Suppress all notification popups during DND, with truthful status; locking and authentication remain separate.",
+      "userAnswer": "Suppress ordinary popups but allow critical notifications",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What retention policy should apply where the provider natively supports it? Recommendation: session-only history capped at 100 entries, with no added disk-backed cache. Providers unable to meet the agreed policy must disclose the limitation.",
+      "recommendedAnswer": "Session-only native history capped at 100 entries, without an added disk-backed cache; disclose unsupported policy.",
+      "userAnswer": "Native persistent history, maximum 24 hours and 100 entries",
       "decisionStatus": "resolved",
-      "notes": "Requires reconciliation with newcomer-facing supported release and explicitly tested NVIDIA selection. VM tests cannot establish physical GPU behavior."
+      "notes": "Both retention limits apply; no new history backend or companion is authorized. Further privacy/locked-screen details may need clarification."
     },
     {
-      "question": "What build infrastructure can the plan rely on?",
-      "recommendedAnswer": "Start with GitHub-hosted runners and a pinned Arch build environment, measure resource limits, and make a dedicated runner a documented escalation rather than an assumption.",
-      "userAnswer": "GitHub-hosted runners only initially; assess limits in a build spike",
-      "decisionStatus": "resolved"
-    },
-    {
-      "question": "When should automation publish an ISO?",
-      "recommendedAnswer": "Tag-triggered builds with automatic prerelease publication after tests; stable promotion requires the selected hardware evidence, not publication on every commit.",
-      "userAnswer": "Tags publish stable releases automatically after automated tests",
-      "decisionStatus": "resolved"
-    },
-    {
-      "question": "What authenticity guarantees should releases provide?",
-      "recommendedAnswer": "SHA-256 checksums, a signed checksum manifest, and build provenance; checksums alone detect corruption but do not authenticate the publisher.",
-      "userAnswer": "Checksums only for v1",
+      "question": "What notification content may appear while the screen is locked? Recommendation: none. Use supported native behavior and verify the lock-screen boundary; do not treat DND alone as a security barrier.",
+      "recommendedAnswer": "Show no notification content while locked, with the lock-screen boundary independently verified.",
+      "userAnswer": "Show no notification content while locked",
       "decisionStatus": "resolved",
-      "notes": "Record authenticity limitation; checksums detect corruption but are not publisher authentication."
+      "notes": "Lock privacy takes precedence over the critical-notification exception during ordinary unlocked DND."
     },
     {
-      "question": "How should installed machines receive updates?",
-      "recommendedAnswer": "Normal Arch/AUR package updates plus explicit setup/config updates that preserve user edits; do not add a custom distro update service in v1.",
-      "userAnswer": "Normal Arch/AUR updates; explicit non-destructive setup/config updates",
+      "question": "Which file-manager workflows define full support? Recommendation: browse folders, open files with selected apps, open the selected editor, access already mounted volumes, and provide trash/recovery and archive workflows where native support exists. Missing required workflows produce limited status, not companions.",
+      "recommendedAnswer": "Browse/open/edit, access mounted volumes, trash/recovery and archive workflows; missing native required workflows produce limited status, not companions.",
+      "userAnswer": "Browse/open/edit, mounted volumes, trash/recovery and archive workflows",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What localization must v1 provide?",
-      "recommendedAnswer": "English installer text with explicit keyboard, timezone, and system-locale selection; remove hardcoded Swiss-German defaults from the ISO path.",
-      "userAnswer": "English and German UI; selectable system localization",
+      "question": "What should a calendar provide on a fresh installation without online accounts? Recommendation: a usable local calendar for viewing, creating and editing events. Use native initialization only, and preserve all existing calendar data on upgrades.",
+      "recommendedAnswer": "View, create and edit local events without an account, using native initialization and preserving existing data.",
+      "userAnswer": "View, create and edit local events without an online account",
       "decisionStatus": "resolved"
     },
     {
-      "question": "How should we reconcile broad NVIDIA/hybrid support with VM-only release gates?",
-      "recommendedAnswer": "Implement support for current drivers, publish stable tags after VM gates as requested, but label all physical GPU compatibility unverified until device-specific evidence exists.",
-      "userAnswer": "Target current physical GPUs, but explicitly label them unverified at release",
+      "question": "How should bars handle hardware that is not present, such as a VM with no battery or Bluetooth adapter? Recommendation: hide inapplicable hardware modules, but show failures or stale state when an expected device/backend stops working. Never confuse absence with a command failure.",
+      "recommendedAnswer": "Hide genuinely absent hardware; show errors or stale state for expected devices/backends.",
+      "userAnswer": "Keep modules visible with explicit unavailable states",
       "decisionStatus": "resolved",
-      "notes": "Supersedes the explicitly-tested physical-hardware boundary from turn 23. Public newcomer-oriented stable releases are VM-validated, not physically hardware-certified."
+      "notes": "Overrides earlier recommendation of conditional display, not a reversal of a recorded user choice; keep absence, backend error and disabled states distinct."
     },
     {
-      "question": "Which virtual machines must be release-tested automatically?",
-      "recommendedAnswer": "QEMU/KVM with UEFI and working 3D acceleration is mandatory; document VirtualBox/VMware as unverified until separately tested, since desktop graphics behavior differs.",
-      "userAnswer": "QEMU/KVM required; VirtualBox and VMware documented but unverified",
+      "question": "Which power actions should require explicit confirmation? Recommendation: confirm logout, reboot and shutdown; keep lock immediate and suspend deliberate but without an extra dialog. Offer hibernate only when its prerequisites are verified.",
+      "recommendedAnswer": "Confirm logout/reboot/shutdown, keep lock immediate and suspend direct, and offer hibernate only when prerequisites are verified.",
+      "userAnswer": "Confirm logout/reboot/shutdown; immediate lock and direct suspend",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What external-hosting contract should the plan use for the full ISO?",
-      "recommendedAnswer": "User-provisioned S3-compatible object storage with a public HTTPS download URL and automated CI uploads; keep provider/bucket/credentials as deployment configuration, not source code or interview answers.",
-      "userAnswer": "Plan S3-compatible object storage and public HTTPS downloads",
-      "decisionStatus": "resolved",
-      "notes": "Provider-neutral S3 deployment contract. Provisioning endpoint/bucket/CI credentials is a future infrastructure prerequisite, not authorization to create paid infrastructure now."
-    },
-    {
-      "question": "If one required distribution destination fails, what should release automation do?",
-      "recommendedAnswer": "Keep the GitHub release draft until GitHub parts and the full mirror ISO are uploaded and verified; retry uploads without rebuilding different bytes.",
-      "userAnswer": "Publish verified GitHub assets even if the mirror is temporarily unavailable",
-      "decisionStatus": "resolved",
-      "notes": "Mirror failure is non-blocking. Mark mirror unavailable, omit invalid URLs, retry publishing the exact same verified bytes."
-    },
-    {
-      "question": "If an optional application cannot download or install, what should happen?",
-      "recommendedAnswer": "Preserve the completed offline base, show the failure clearly, and let the user retry or explicitly skip it; never report that application as installed.",
-      "userAnswer": "Keep the base installed; offer explicit Retry or Skip with a final summary",
+      "question": "When a selected limited-support app cannot perform a requested standard action, what should the desktop do? Recommendation: keep its normal native launch available, but clearly disable or explain the unsupported action and return an honest unsupported result. Never silently substitute a different action or app.",
+      "recommendedAnswer": "Explain or disable unsupported standard actions with an honest unsupported result, while keeping normal native launch available; no silent substitutions.",
+      "userAnswer": "Explain/disable the unsupported action; keep normal native launch available",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What should 'install into unallocated space' guarantee?",
-      "recommendedAnswer": "Support existing Windows or Linux on GPT disks, never resize/format their partitions, preserve their EFI files/entries, and let firmware select the OS; a unified cross-OS GRUB menu is not required in v1.",
-      "userAnswer": "Preserve Windows/Linux and require a unified boot menu",
+      "question": "Where should manual dark/light switching be available? Recommendation: installer settings plus a dedicated project command and an entry in the existing desktop tools menu. These configure native themes, not a new companion service; theme switching must not rerun package installation.",
+      "recommendedAnswer": "Installer settings, a dedicated project theme command and an entry in the existing desktop tools menu; no package installation during theme switching.",
+      "userAnswer": "Installer appearance setting; Dedicated Hyprland keyboard shortcut; Dedicated control on every supported bar",
       "decisionStatus": "resolved",
-      "notes": "Requires GRUB integration plus reliable identification and preservation of foreign boot targets. Unsupported layouts must be refused before writes; clarify supported foreign-OS boundary if needed."
+      "notes": "User-facing command and tools-menu entry were not selected. A shared internal action is still needed behind the chosen controls; no scheduling daemon."
     },
     {
-      "question": "What must the tested Btrfs recovery path provide?",
-      "recommendedAnswer": "Initial/system snapshots plus a guided recovery mode on the ISO that restores the system and repairs matching boot files; leave personal files untouched and do not call snapshots a backup.",
-      "userAnswer": "Guided ISO-based snapshot restore and boot repair; no snapshot boot-menu requirement",
+      "question": "Within native-only support, may the installer declare required theme assets and the actual dependencies of existing native workflows? Recommendation: yes, with a package preview. This includes fonts/icons/cursors and currently missing calculator or music prerequisites, but not apps added to imitate missing features.",
+      "recommendedAnswer": "Allow theme assets and genuine native-workflow dependencies with a package preview; do not add apps to imitate missing capabilities.",
+      "userAnswer": "Allow theme assets and genuine native-workflow dependencies, with preview",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Which baseline should the plan specify?",
-      "recommendedAnswer": "Firefox, Fish, Kitty, Zellij, Neovim, Kate, Waybar, SwayNC, Wofi, Merkuro, Bluedevil, plasma-nm, and pavucontrol-qt; retain this project's Hyprland theme and keybindings, omit agents and a dock, and audit all bundled assets.",
-      "userAnswer": "Other: packages as recommended in 1. but instead of zejllji, use herdr.",
-      "decisionStatus": "resolved",
-      "notes": "Final profile uses Herdr instead of Zellij. Current package registry identifies herdr-bin as AUR. Audit redistribution, runtime dependencies, offline launch, and update path; do not silently substitute another multiplexer."
-    },
-    {
-      "question": "Must v1 support hibernation to disk?",
-      "recommendedAnswer": "Normal shutdown and suspend only, with suspend explicitly hardware-dependent; defer hibernation because swap/resume setup interacts with encryption and Btrfs recovery.",
-      "userAnswer": "No hibernation guarantee in v1; shutdown and suspend only",
+      "question": "How should shell prompts be harmonized without forcing another tool? Recommendation: theme native prompts and preserve an existing selected Starship setup, rather than make Starship mandatory across Bash, Fish and Zsh.",
+      "recommendedAnswer": "Theme native prompts and preserve existing Starship integration; do not make Starship mandatory.",
+      "userAnswer": "Theme native prompts; preserve existing Starship integration",
       "decisionStatus": "resolved"
     },
     {
-      "question": "Which existing installations should the unified-menu promise cover?",
-      "recommendedAnswer": "GPT/UEFI Windows and Linux with discoverable, intact EFI loaders; reject unsupported or ambiguous layouts before writes, never resize partitions, and warn BitLocker users that boot changes can trigger recovery.",
-      "userAnswer": "Discoverable intact GPT/UEFI loaders only; refuse unsupported layouts before writes",
+      "question": "When a dock is enabled on a fresh multi-monitor setup, where should it appear? Recommendation: on the designated primary output only, avoiding duplicated task controls while the bars remain on every output. Preserve existing custom assignments.",
+      "recommendedAnswer": "Primary output only, preserving existing custom assignments during migration.",
+      "userAnswer": "Follow the currently focused output, where natively supported",
+      "decisionStatus": "resolved",
+      "notes": "A dock lacking native follow-focus support needs an explicit fallback policy; do not emulate missing features or silently change monitor behavior."
+    },
+    {
+      "question": "If GUI editor is set to None, what should text-file associations do? Recommendation: follow the primary TUI editor through a managed desktop entry and the selected terminal. This invokes existing native functionality and matches your rule that defaults follow the chosen primary.",
+      "recommendedAnswer": "Use a managed desktop entry to launch the primary TUI editor through the selected terminal.",
+      "userAnswer": "Open text files in the primary TUI editor through the selected terminal",
       "decisionStatus": "resolved"
     },
     {
-      "question": "What Windows-specific evidence should block release?",
-      "recommendedAnswer": "Require synthetic Windows-style partition/EFI preservation tests and real Linux dual-boot VM tests, but label actual Windows/BitLocker boot unverified until a licensed test image is supplied. A fake EFI fixture must not be reported as a Windows boot test.",
-      "userAnswer": "Fixtures and Linux dual-boot gate releases; actual Windows/BitLocker boot remains explicitly unverified",
+      "question": "If an approved appearance or selection-change batch encounters a user-edited configuration conflict, how much should be applied? Recommendation: block that whole configuration batch before activation, show the conflict and leave the prior setup active. Unrelated package operations are not claimed to roll back.",
+      "recommendedAnswer": "Block the whole configuration batch before activation, preserve the prior active setup and explain the conflict; no package rollback claim.",
+      "userAnswer": "Apply nonconflicting apps and clearly mark the batch partially applied",
       "decisionStatus": "resolved",
-      "notes": "Final user-facing release notes and installer warnings must distinguish implemented detection/chainloading from unverified actual Windows/BitLocker boot."
+      "notes": "Requires dependency-aware activation units and reporting of mixed theme/selection state; cannot skip a shared prerequisite and still activate its dependents."
+    },
+    {
+      "question": "For the 24-hour history limit, is native cleanup on the next provider start sufficient when the provider was not running? Recommendation: yes, discard expired entries before they are displayed after startup. A strict deletion deadline while the provider is stopped would need capabilities we cannot assume under native-only support.",
+      "recommendedAnswer": "Use native expiration while running and purge expired entries before display on restart; no invented off-process deletion guarantee.",
+      "userAnswer": "Native expiration while running; purge expired entries before display on restart",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "How should notifications marked transient or private by their sender be handled in persistent history? Recommendation: do not retain them when native provider policy can honor those hints, and disclose any limitation. Do not claim that arbitrary OTPs or secrets can be detected reliably.",
+      "recommendedAnswer": "Exclude sender-marked transient/private notifications where native support permits and disclose limits; do not claim reliable arbitrary-secret detection.",
+      "userAnswer": "Exclude sender-marked transient/private notifications where native support permits",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which single authentication agent should the managed session use? Recommendation: Hyprpolkitagent, already a required dependency, and stop requesting the duplicate KDE agent in setup-owned autostart. Existing foreign session owners must not be terminated automatically.",
+      "recommendedAnswer": "Hyprpolkitagent as the managed authentication agent; remove the duplicate setup-owned KDE autostart request without terminating foreign owners.",
+      "userAnswer": "Hyprpolkitagent as the managed authentication agent",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "What should the desktop logout action terminate? Recommendation: only the current Hyprland/login session. If that session cannot be identified safely, report an error rather than fall back to terminating every session belonging to the user.",
+      "recommendedAnswer": "Terminate only the current session; fail safely when it cannot be identified.",
+      "userAnswer": "Current session only; fail safely if it cannot be identified",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "When the interview is complete, should I incorporate its decisions into the planning documents? Recommendation: save the interview record and update the master plus affected subplans, marking native-only limitations and VM-only verification accurately. This still authorizes no implementation or desktop changes.",
+      "recommendedAnswer": "Save the interview record and update the master and affected subplans; no implementation or desktop changes.",
+      "userAnswer": "Save the interview and update the master and affected subplans",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "If a dock cannot natively follow the focused output, which fallback is acceptable? Recommendation: use a documented fixed primary output, preserve existing custom assignments, and label follow-focus unsupported. Do not emulate follow-focus with another service.",
+      "recommendedAnswer": "Use a documented fixed primary output, preserve custom assignments and label follow-focus unsupported; no emulation service.",
+      "userAnswer": "Use the fixed primary output and label follow-focus unsupported",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "Which default shortcut should toggle dark/light mode? Recommendation: Super+Shift+T, unused in the shipped keybindings.lua. Detect and preserve custom binding conflicts during adoption rather than overwrite them.",
+      "recommendedAnswer": "Super+Shift+T, with detection and preservation of existing custom-binding conflicts.",
+      "userAnswer": "Super+Shift+T, with custom-binding conflict detection",
+      "decisionStatus": "resolved"
+    },
+    {
+      "question": "If the new primary app launches correctly but its user-edited theme configuration conflicts, should routing still switch? Recommendation: apply the approved primary choice and its system associations, preserve the conflicting theme file, and clearly report incomplete appearance. A broken required runtime dependency must still block its dependent action.",
+      "recommendedAnswer": "Switch the approved primary routing and associations, preserve the conflicting theme file and report partial appearance; block actions with broken required runtime dependencies.",
+      "userAnswer": "Switch routing/associations; preserve conflicting theme and report partial appearance",
+      "decisionStatus": "resolved"
     }
   ]
 }
