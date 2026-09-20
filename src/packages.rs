@@ -5,11 +5,13 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-pub const ROLE_ORDER: [&str; 15] = [
+pub const ROLE_ORDER: [&str; 17] = [
     "browser",
     "shell",
     "terminal",
     "multiplexer",
+    "file_manager",
+    "tui_file_manager",
     "notifications",
     "tui_editor",
     "gui_editor",
@@ -649,8 +651,8 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
                 &["class", "shell_path", "editor_bin", "desktop_file"],
             )?;
         }
-        "multiplexer" | "notifications" | "bar" | "dock" | "calendar" | "bluetooth" | "network"
-        | "audio" => reject_fields(
+        "multiplexer" | "file_manager" | "tui_file_manager" | "notifications" | "bar" | "dock"
+        | "calendar" | "bluetooth" | "network" | "audio" => reject_fields(
             option,
             &["class", "shell_path", "editor_bin", "desktop_file", "dmenu"],
         )?,
@@ -875,21 +877,21 @@ mod tests {
                 .into_iter()
                 .filter(|role| registry.roles[*role].selection == SelectionKind::Single)
                 .count(),
-            8
+            9
         );
         assert_eq!(
             ROLE_ORDER
                 .into_iter()
                 .filter(|role| registry.roles[*role].selection == SelectionKind::Multiple)
                 .count(),
-            7
+            8
         );
         assert_eq!(
             ROLE_ORDER
                 .into_iter()
                 .filter(|role| registry.roles[*role].required)
                 .count(),
-            12
+            13
         );
         assert_eq!(
             registry
@@ -897,7 +899,7 @@ mod tests {
                 .values()
                 .map(|role| role.options.len())
                 .sum::<usize>(),
-            62
+            73
         );
     }
 
@@ -982,6 +984,126 @@ mod tests {
             .unwrap();
         assert!(selection.selected_packages("launcher").unwrap().is_empty());
         assert_eq!(selection.missing_roles(&registry), vec!["Launcher"]);
+    }
+
+    #[test]
+    fn file_manager_requires_one_choice_and_exports_only_that_package() {
+        let registry = shipped_registry();
+        let mut selection = RoleSelection::defaults(&registry);
+        assert_eq!(selection.selected_package("file_manager"), Some("dolphin"));
+        assert_eq!(
+            registry.roles["file_manager"].selection,
+            SelectionKind::Single
+        );
+        assert!(registry.roles["file_manager"].required);
+        for option in &registry.roles["file_manager"].options {
+            selection.clear(&registry, "file_manager").unwrap();
+            assert!(selection.export_env(&registry).is_err());
+            assert_eq!(selection.missing_roles(&registry), vec!["File manager"]);
+            selection
+                .toggle_member(&registry, "file_manager", &option.package)
+                .unwrap();
+            let env = selection.export_env(&registry).unwrap();
+            assert_eq!(env["ROLE_FILE_MANAGER"], option.package);
+            assert_eq!(env["ROLE_FILE_MANAGER_PACKAGES"], option.package);
+            let packages = selection.selected_install_packages(&registry, PackageSource::Pacman);
+            for candidate in &registry.roles["file_manager"].options {
+                assert_eq!(
+                    packages.contains(&candidate.package),
+                    candidate.package == option.package
+                );
+            }
+        }
+        selection
+            .toggle_member(&registry, "file_manager", "thunar")
+            .unwrap();
+        assert_eq!(
+            selection.selected_packages("file_manager").unwrap(),
+            &BTreeSet::from(["thunar".to_string()])
+        );
+    }
+
+    #[test]
+    fn tui_file_managers_are_optional_multiple_and_independent_of_the_graphical_choice() {
+        let registry = shipped_registry();
+        let mut selection = RoleSelection::defaults(&registry);
+        let role = &registry.roles["tui_file_manager"];
+        assert_eq!(role.selection, SelectionKind::Multiple);
+        assert!(!role.required);
+        assert!(role.default.is_none());
+        assert!(role.options.iter().all(|option| option.terminal));
+        assert_eq!(
+            selection.export_env(&registry).unwrap()["ROLE_TUI_FILE_MANAGER"],
+            ""
+        );
+        assert!(
+            !selection
+                .selected_install_packages(&registry, PackageSource::Pacman)
+                .contains("yazi")
+        );
+
+        selection
+            .toggle_member(&registry, "tui_file_manager", "yazi")
+            .unwrap();
+        let env = selection.export_env(&registry).unwrap();
+        assert_eq!(env["ROLE_TUI_FILE_MANAGER"], "yazi");
+        assert_eq!(env["ROLE_TUI_FILE_MANAGER_PACKAGES"], "yazi");
+        assert_eq!(env["ROLE_FILE_MANAGER"], "dolphin");
+        let packages = selection.selected_install_packages(&registry, PackageSource::Pacman);
+        assert!(packages.contains("yazi") && packages.contains("dolphin"));
+
+        for package in ["ranger", "lf", "nnn", "mc", "vifm"] {
+            selection
+                .toggle_member(&registry, "tui_file_manager", package)
+                .unwrap();
+        }
+        selection
+            .set_primary(&registry, "tui_file_manager", "mc")
+            .unwrap();
+        let env = selection.export_env(&registry).unwrap();
+        assert_eq!(env["ROLE_TUI_FILE_MANAGER"], "mc");
+        assert_eq!(
+            env["ROLE_TUI_FILE_MANAGER_PACKAGES"],
+            "lf mc nnn ranger vifm yazi"
+        );
+        let packages = selection.selected_install_packages(&registry, PackageSource::Pacman);
+        assert!(
+            role.options
+                .iter()
+                .all(|option| packages.contains(&option.package))
+        );
+        selection
+            .toggle_member(&registry, "tui_file_manager", "ranger")
+            .unwrap();
+        assert_eq!(selection.selected_package("tui_file_manager"), Some("mc"));
+        assert_eq!(
+            selection
+                .selected_packages("tui_file_manager")
+                .unwrap()
+                .len(),
+            5
+        );
+        assert!(
+            !selection
+                .selected_install_packages(&registry, PackageSource::Pacman)
+                .contains("ranger")
+        );
+
+        selection.clear(&registry, "file_manager").unwrap();
+        assert_eq!(selection.missing_roles(&registry), vec!["File manager"]);
+        selection
+            .toggle_member(&registry, "file_manager", "thunar")
+            .unwrap();
+        selection.clear(&registry, "tui_file_manager").unwrap();
+        let env = selection.export_env(&registry).unwrap();
+        assert_eq!(env["ROLE_TUI_FILE_MANAGER"], "");
+        assert_eq!(env["ROLE_TUI_FILE_MANAGER_PACKAGES"], "");
+        let packages = selection.selected_install_packages(&registry, PackageSource::Pacman);
+        assert!(
+            role.options
+                .iter()
+                .all(|option| !packages.contains(&option.package))
+        );
     }
 
     #[test]

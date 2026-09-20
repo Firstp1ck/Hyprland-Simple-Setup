@@ -30,6 +30,10 @@
     "desktop_evnironment": [
       "alacritty",
       "dolphin",
+      "thunar",
+      "nautilus",
+      "nemo",
+      "pcmanfm-qt",
       "grim",
       "htop",
       "iwd",
@@ -93,6 +97,12 @@
       "linux-firmware"
     ],
     "file_management": [
+      "yazi",
+      "ranger",
+      "lf",
+      "nnn",
+      "mc",
+      "vifm",
       "xdg-user-dirs",
       "git",
       "onefetch",
@@ -253,7 +263,17 @@
     "hyprland": "Hyprland compositor",
     "xdg-desktop-portal-hyprland": "Portal backend for Hyprland",
     "alacritty": "Minimal GPU terminal; use tmux or Zellij rather than built-in tabs and splits.",
-    "dolphin": "KDE file manager",
+    "yazi": "Keyboard-driven terminal file manager with file previews; runs alongside your graphical file manager.",
+    "ranger": "Three-column terminal file manager with Vim-style keys and file previews; written in Python.",
+    "lf": "Minimal Ranger-inspired terminal file manager with shell-based customization; written in Go.",
+    "nnn": "Compact terminal file manager with plugins for additional tools and workflows.",
+    "mc": "Midnight Commander: two-pane terminal file manager with visible menus, mouse support and a built-in editor.",
+    "vifm": "Two-pane terminal file manager with Vim-style modes, commands and key bindings.",
+    "dolphin": "KDE/Qt file manager with split views, tabs and an integrated terminal panel.",
+    "thunar": "Xfce/GTK file manager with a compact interface, bulk renaming and custom actions.",
+    "nautilus": "GNOME Files, a GTK file manager with a streamlined interface and search.",
+    "nemo": "Cinnamon/GTK file manager with dual-pane browsing and a traditional menu interface.",
+    "pcmanfm-qt": "LXQt file manager with tabs and a lightweight Qt interface.",
     "grim": "Wayland screenshot tool",
     "htop": "Interactive process viewer",
     "iwd": "Wireless daemon",
@@ -599,6 +619,94 @@
           "package": "herdr-bin",
           "source": "aur",
           "executable": "herdr",
+          "args": [],
+          "terminal": true
+        }
+      ]
+    },
+    "file_manager": {
+      "label": "File manager",
+      "selection": "single",
+      "required": true,
+      "default": "dolphin",
+      "options": [
+        {
+          "package": "dolphin",
+          "source": "pacman",
+          "executable": "dolphin",
+          "args": []
+        },
+        {
+          "package": "thunar",
+          "source": "pacman",
+          "executable": "thunar",
+          "args": []
+        },
+        {
+          "package": "nautilus",
+          "source": "pacman",
+          "executable": "nautilus",
+          "args": []
+        },
+        {
+          "package": "nemo",
+          "source": "pacman",
+          "executable": "nemo",
+          "args": []
+        },
+        {
+          "package": "pcmanfm-qt",
+          "source": "pacman",
+          "executable": "pcmanfm-qt",
+          "args": []
+        }
+      ]
+    },
+    "tui_file_manager": {
+      "label": "TUI file manager",
+      "selection": "multiple",
+      "required": false,
+      "default": null,
+      "options": [
+        {
+          "package": "yazi",
+          "source": "pacman",
+          "executable": "yazi",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "ranger",
+          "source": "pacman",
+          "executable": "ranger",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "lf",
+          "source": "pacman",
+          "executable": "lf",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "nnn",
+          "source": "pacman",
+          "executable": "nnn",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "mc",
+          "source": "pacman",
+          "executable": "mc",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "vifm",
+          "source": "pacman",
+          "executable": "vifm",
           "args": [],
           "terminal": true
         }

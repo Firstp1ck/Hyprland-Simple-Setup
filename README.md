@@ -291,13 +291,17 @@ Choose applications independently in 15 groups:
 | Selection | Groups |
 | --- | --- |
 | One or more | Browser, shell, terminal, multiplexer, terminal text editor |
-| Zero or more | GUI text editor, coding agents |
-| Exactly one | App launcher, notifications, audio interface, network interface, Bluetooth interface, calendar, bar |
+| Zero or more | TUI file manager, GUI text editor, coding agents |
+| Exactly one | File manager, app launcher, notifications, audio interface, network interface, Bluetooth interface, calendar, bar |
 | Zero or one | Dock |
 
-Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. GUI editor and dock offer None. Installation is blocked when a required group is empty.
+Open **Applications** with Enter, then select a group in the submenu and press Enter again. Use Space to change selections and `p` to choose the primary app in a multi-select group. Escape returns one level. Optional groups offer None. Installation is blocked when a required group is empty.
 
 Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
+
+File manager requires exactly one choice: Dolphin, Thunar, Nautilus, Nemo, or PCManFM-Qt. Dolphin is selected by default. Super+E opens the selected file manager.
+
+The optional **TUI file manager** group offers Yazi, Ranger, lf, nnn, Midnight Commander (`mc`), and Vifm. Select any combination with Space and choose a primary with `p`; it defaults to None. Run each app by its command in a terminal, or launch the primary with `~/.config/hypr/scripts/role_exec.sh tui_file_manager`. Super+E still opens the graphical file manager.
 
 Multiplexers are required and allow multiple selections: tmux, Zellij, and Herdr. Herdr is selected and primary by default, installed through AUR `herdr-bin`; tmux and Zellij use pacman. Ctrl+Y opens the primary multiplexer in the primary terminal.
 

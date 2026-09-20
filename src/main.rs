@@ -1354,6 +1354,12 @@ fn application_type_description(role: &str) -> &'static str {
         "multiplexer" => {
             "Keeps terminal workspaces and sessions organized or persistent. The primary choice drives the multiplexer shortcut."
         }
+        "file_manager" => {
+            "Browses files and folders. The selected file manager opens with Super+E."
+        }
+        "tui_file_manager" => {
+            "Optional terminal file managers alongside the required graphical file manager. Select any combination."
+        }
         "notifications" => {
             "Displays desktop alerts. Some providers also offer history and do-not-disturb controls."
         }
@@ -1575,6 +1581,9 @@ fn draw_role_menu(f: &mut ratatui::Frame, app: &AppState, area: Rect) {
             }
             "agent" => {
                 "Do not install or integrate a coding agent. Existing agent installations are not removed."
+            }
+            "tui_file_manager" => {
+                "Skip TUI file managers; keep the required graphical file manager."
             }
             _ => "Do not start a dock. The selected bar remains enabled.",
         };
@@ -4682,7 +4691,7 @@ mod tests {
         app.ui_mode = UiMode::Preflight;
         let screen = render_app_screen(&mut app, 120, 24);
         assert_eq!(screen.matches("Applications").count(), 1);
-        assert!(screen.contains("15 groups"));
+        assert!(screen.contains("17 groups"));
         assert!(screen.contains("Start unattended install"));
         for label in [
             "Browser",
@@ -5041,6 +5050,85 @@ mod tests {
         );
         assert!(!app.pacman_sel_map["wofi"]);
         assert!(app.pacman_sel_map["rofi"]);
+    }
+
+    #[test]
+    fn file_manager_popup_requires_exactly_one_choice() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        open_application_role(&mut app, "file_manager");
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert!(screen.contains("File manager — single choice, required"));
+        assert!(!screen.contains("[*] None"));
+        for package in ["dolphin", "thunar", "nautilus", "nemo", "pcmanfm-qt"] {
+            assert!(screen.contains(package));
+        }
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert!(!app.pacman_sel_map["dolphin"]);
+        assert!(app.pacman_sel_map["thunar"]);
+        assert_eq!(
+            app.role_selection
+                .as_ref()
+                .unwrap()
+                .selected_packages("file_manager")
+                .unwrap(),
+            &BTreeSet::from(["thunar".to_string()])
+        );
+        assert!(package_start_blocker(&app).is_none());
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert_eq!(
+            package_start_blocker(&app).as_deref(),
+            Some("Select exactly one File manager")
+        );
+    }
+
+    #[test]
+    fn optional_tui_file_manager_popup_supports_multiple_choices_and_a_primary() {
+        let (tx, rx) = mpsc::channel();
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("setup.sh");
+        let mut app = AppState::new(rx, tx, Some(script));
+        let key = |code| KeyEvent::new(code, event::KeyModifiers::NONE);
+        open_application_role(&mut app, "tui_file_manager");
+        let screen = render_app_screen(&mut app, 120, 40);
+        assert!(screen.contains("TUI file manager — multiple choices, optional"));
+        assert!(screen.contains("[*] None"));
+        assert!(screen.contains("Skip TUI file managers"));
+        for package in ["yazi", "ranger", "lf", "nnn", "mc", "vifm"] {
+            assert!(screen.contains(package));
+            assert!(!app.pacman_sel_map[package]);
+        }
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        assert!(app.pacman_sel_map["yazi"]);
+        assert!(app.pacman_sel_map["dolphin"]);
+        assert!(package_start_blocker(&app).is_none());
+
+        handle_preflight_keys(&mut app, key(KeyCode::Down)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char('p'))).unwrap();
+        assert!(app.pacman_sel_map["yazi"] && app.pacman_sel_map["ranger"]);
+        let selection = app.role_selection.as_ref().unwrap();
+        assert_eq!(
+            selection.selected_package("tui_file_manager"),
+            Some("ranger")
+        );
+        assert_eq!(
+            selection.selected_packages("tui_file_manager").unwrap(),
+            &BTreeSet::from(["ranger".to_string(), "yazi".to_string()])
+        );
+
+        handle_preflight_keys(&mut app, key(KeyCode::Home)).unwrap();
+        handle_preflight_keys(&mut app, key(KeyCode::Char(' '))).unwrap();
+        for package in ["yazi", "ranger", "lf", "nnn", "mc", "vifm"] {
+            assert!(!app.pacman_sel_map[package]);
+        }
+        assert!(app.pacman_sel_map["dolphin"]);
+        assert!(package_start_blocker(&app).is_none());
     }
 
     #[test]

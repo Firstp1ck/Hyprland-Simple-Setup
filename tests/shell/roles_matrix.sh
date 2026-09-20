@@ -299,7 +299,7 @@ assert_common_consumers() {
   assert_contains 'roles.json' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather uses role metadata'
   assert_contains '.roles.browser.executable' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather resolves selected browser'
 
-  jq -e '.schema_version == 2 and (.roles | length == 15) and (.selected | length == 15)
+  jq -e '.schema_version == 2 and (.roles | length == 17) and (.selected | length == 17)
     and (.agent_executables | type == "object")' "$roles_file" >/dev/null
 }
 
@@ -330,6 +330,11 @@ assert_role_consumers() {
     shell)
       shell_path=$(jq -er '.roles.shell.shell_path' "$roles_file")
       grep -Fq "chsh -s $shell_path -- $(id -un)" "$STUB_LOG" || fail "chsh argv mismatch for $package"
+      ;;
+    file_manager)
+      command_json=$(jq -nr --arg helper "$HOME/.config/hypr/scripts/role_exec.sh" '[$helper, "file_manager"] | @sh | @json')
+      assert_line "    file_manager = $command_json," "$app_variables" 'Lua file manager shortcut command'
+      assert_line "\$fileManager = $(jq -r . <<<"$command_json")" "$hypr_root/app_variables.conf" 'Hyprlang file manager shortcut command'
       ;;
     gui_editor)
       assert_contains 'role_exec.sh' "$app_variables" 'Lua GUI editor wrapper executable'
@@ -367,7 +372,7 @@ assert_role_consumers() {
       command_json=$(jq -nr --arg helper "$HOME/.config/hypr/scripts/term_exec.sh" --arg executable "$executable" '[$helper, "--", $executable] | @sh | @json')
       assert_line "    multiplex = $command_json," "$app_variables" 'Lua multiplexer shortcut command'
       ;;
-    notifications|bar|dock|calendar|bluetooth|network|audio)
+    tui_file_manager|notifications|bar|dock|calendar|bluetooth|network|audio)
       :
       ;;
     *) fail "unknown role in matrix: $role" ;;
@@ -409,5 +414,5 @@ while IFS=$'\t' read -r role package; do
   fixture=""
 done < <(jq -r '.roles | to_entries[] | .key as $role | .value.options[] | [$role, .package] | @tsv' "$repo_root/packages.json")
 
-[[ $count -eq 62 ]] || fail "expected 62 role cases, got $count"
-printf 'ok - 62 role options passed metadata and behavioral assertions\n'
+[[ $count -eq 73 ]] || fail "expected 73 role cases, got $count"
+printf 'ok - 73 role options passed metadata and behavioral assertions\n'

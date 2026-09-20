@@ -1,10 +1,10 @@
 # Application selections
 
-The setup UI manages 15 independent application roles. Browser, shell, terminal, multiplexer, TUI editor, GUI editor, and coding agents may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. The required multiplexer role defaults to Herdr and also offers tmux and Zellij. Notifications, bar, calendar, Bluetooth, network, audio, launcher, and dock are single-choice roles. GUI editor, dock, and coding agents may be set to **None**.
+The setup UI manages 17 independent application roles. Browser, shell, terminal, multiplexer, TUI file manager, TUI editor, GUI editor, and coding agents may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. The required multiplexer role defaults to Herdr and also offers tmux and Zellij. File manager, notifications, bar, calendar, Bluetooth, network, audio, launcher, and dock are single-choice roles. TUI file manager, GUI editor, dock, and coding agents may be set to **None**.
 
 ## TUI controls
 
-Open **Applications** with Enter from the main preflight window. The submenu lists all 15 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
+Open **Applications** with Enter from the main preflight window. The submenu lists all 17 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
 
 The package chooser has two columns: app names on the left and wrapped descriptions on the right. The app-type explanation is in its own titled frame above the choices, separated by a blank row. Names retain selection markers, package sources and TUI labels. Row heights accommodate wrapping in either column, including optional None. The chooser grows to fit all entries when space permits; very short windows prioritize the focused row over the description panel. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
 
@@ -26,6 +26,9 @@ ROLE_BROWSER=firefox \
 ROLE_BROWSER_PACKAGES='firefox chromium' \
 ROLE_MULTIPLEXER=zellij \
 ROLE_MULTIPLEXER_PACKAGES='tmux zellij' \
+ROLE_FILE_MANAGER=thunar \
+ROLE_TUI_FILE_MANAGER=yazi \
+ROLE_TUI_FILE_MANAGER_PACKAGES='yazi ranger lf nnn mc vifm' \
 ROLE_DOCK= \
 ROLE_DOCK_PACKAGES= \
 ROLE_AGENT= \
@@ -49,6 +52,12 @@ Scripts use `role_exec.sh` to launch the primary application. Terminal applicati
 The generated `apps.multiplex` and `$multiplex` values are complete terminal actions. Setup migrates the exact former stock shortcuts to execute them directly. Custom bindings are not rewritten: if they prepend a terminal wrapper to either variable, remove that wrapper to avoid nesting terminals.
 
 ## Desktop controls
+
+File manager requires exactly one of Dolphin, Thunar, Nautilus, Nemo, or PCManFM-Qt, with Dolphin selected by default. Setup updates `apps.file_manager` and `$fileManager` so Super+E launches the selected app through `role_exec.sh file_manager`. Existing file managers are not uninstalled.
+
+The optional TUI file manager role offers Yazi, Ranger, lf, nnn, Midnight Commander (`mc`), and Vifm. It defaults to None and accepts any combination independently of the required graphical file manager. Use Space to toggle membership and `p` to choose the primary. For the direct installer, set `ROLE_TUI_FILE_MANAGER_PACKAGES` to the selected package names and `ROLE_TUI_FILE_MANAGER` to one of them.
+
+Run `yazi`, `ranger`, `lf`, `nnn`, `mc`, or `vifm` in a terminal, or use `~/.config/hypr/scripts/role_exec.sh tui_file_manager` to open the primary in the selected terminal. Super+E remains assigned to the graphical file manager. Selecting None clears the TUI install selection without uninstalling existing copies.
 
 Hyprland and Waybar actions use the selected calendar, audio, Bluetooth, network, launcher, notification provider, bar, and optional dock. Selecting `nwg-panel` for both bar and dock combines the `bar` and `dock` profiles into one generated `hss-panels` configuration and one process; nwg-panel replaces other running instances. The notification selection also writes a user D-Bus service override for `org.freedesktop.Notifications`.
 

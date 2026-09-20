@@ -60,7 +60,7 @@ ROLE_DATA_FILE=""
 ROLE_SELECTIONS_LOADED=false
 PACKAGE_SELECTIONS_PREPARED=false
 SELECTED_PACKAGES_VERIFIED=false
-ROLE_NAMES=(browser shell terminal multiplexer notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent)
+ROLE_NAMES=(browser shell terminal multiplexer file_manager tui_file_manager notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent)
 declare -a SELECTED_PACMAN_LIST=()
 declare -a SELECTED_AUR_LIST=()
 declare -a SELECTED_ALL_PACKAGES=()
@@ -2095,6 +2095,7 @@ configure_roles() {
     generate_roles_json || return 1
 
     local terminal_command multiplexer_command multiplexer_shell_command browser_command launcher_command menu_toggle_command editor_command calendar_command
+    local file_manager_command file_manager_shell_command
     local browser_exec browser_class terminal_exec editor_bin launcher_namespace
     terminal_command=$(role_option_json terminal | role_command_json) || return 1
     multiplexer_command=$(role_option_json multiplexer | jq -er --arg helper "$HOME/.config/hypr/scripts/term_exec.sh" --arg home "$HOME" '
@@ -2105,6 +2106,8 @@ configure_roles() {
     ') || return 1
     multiplexer_shell_command=$(printf '%s\n' "$multiplexer_command" | jq -er '.') || return 1
     browser_command=$(role_option_json browser | role_command_json) || return 1
+    file_manager_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" '[$executable, "file_manager"] | @sh | @json') || return 1
+    file_manager_shell_command=$(printf '%s\n' "$file_manager_command" | jq -er '.') || return 1
     launcher_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable] | @sh | @json') || return 1
     menu_toggle_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable, "--toggle"] | @sh | @json') || return 1
     editor_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/role_exec.sh" --arg role gui_editor '[$executable, $role] | @sh | @json') || return 1
@@ -2153,8 +2156,10 @@ configure_roles() {
         replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser" || return 1
         replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected editor action" || return 1
         replace_config_line "$file" '^[[:space:]]*calendar[[:space:]]*=' "    calendar = $calendar_command," "selected calendar action" || return 1
+        replace_config_line "$file" '^[[:space:]]*file_manager[[:space:]]*=' "    file_manager = $file_manager_command," "selected file manager action" || return 1
 
         file="$root/app_variables.conf"
+        replace_config_line "$file" '^[[:space:]]*[$]fileManager[[:space:]]*=' "\$fileManager = $file_manager_shell_command" "selected file manager action for Hyprlang" || return 1
         replace_config_line "$file" '^[[:space:]]*[$]multiplex[[:space:]]*=' "\$multiplex = $multiplexer_shell_command" "selected multiplexer shortcut for Hyprlang" || return 1
 
         file="$root/environment_variables.lua"
