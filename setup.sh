@@ -114,8 +114,8 @@ resolve_package_registry() {
 }
 
 prompt_role_selection() {
-    local role=$1 label=$2 selection=$3 required=$4 default=$5
-    local input token package default_index= option_index primary_input primary_index=1
+    local role=$1 label=$2 selection=$3 role_required=$4 default=$5
+    local input token package default_index='' option_index primary_input primary_index=1
     local -a options=() selected=() selection_numbers=()
     mapfile -t options < <(jq -r --arg role "$role" '.roles[$role].options[].package' "$PACKAGE_REGISTRY") || return 1
 
@@ -124,13 +124,13 @@ prompt_role_selection() {
         printf '%d) %s\n' "$((option_index + 1))" "${options[$option_index]}"
         [ "${options[$option_index]}" != "$default" ] || default_index=$((option_index + 1))
     done
-    [ "$required" = true ] || printf '0) None\n'
+    [ "$role_required" = true ] || printf '0) None\n'
 
     if [ "$selection" = single ]; then
         read -rp "Enter selection number (default: ${default_index:-None}): " input
         if [ -z "$input" ]; then
             package=$default
-        elif [ "$input" = 0 ] && [ "$required" = false ]; then
+        elif [ "$input" = 0 ] && [ "$role_required" = false ]; then
             package=""
         elif [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 1 ] && [ "$input" -le "${#options[@]}" ]; then
             package=${options[$((input - 1))]}
@@ -146,7 +146,7 @@ prompt_role_selection() {
     read -rp "Enter one or more selection numbers separated by spaces (default: ${default_index:-None}): " input
     if [ -z "$input" ]; then
         [ -z "$default" ] || selected=("$default")
-    elif [ "$input" = 0 ] && [ "$required" = false ]; then
+    elif [ "$input" = 0 ] && [ "$role_required" = false ]; then
         selected=()
     else
         read -r -a selection_numbers <<< "$input"
@@ -188,7 +188,7 @@ load_role_selections() {
     [ "$ROLE_SELECTIONS_LOADED" = true ] && return 0
     [ -n "$PACKAGE_REGISTRY" ] || resolve_package_registry || return 1
 
-    local role env_name list_env value packages default label selection required package
+    local role env_name list_env value packages default label selection role_required package
     local scalar_set list_set
     local -a members=()
     local -A seen=()
@@ -204,7 +204,7 @@ load_role_selections() {
         default=$(jq -r --arg role "$role" '.roles[$role].default // ""' "$PACKAGE_REGISTRY") || return 1
         label=$(jq -er --arg role "$role" '.roles[$role].label' "$PACKAGE_REGISTRY") || return 1
         selection=$(jq -er --arg role "$role" '.roles[$role].selection' "$PACKAGE_REGISTRY") || return 1
-        required=$(jq -r --arg role "$role" '.roles[$role].required' "$PACKAGE_REGISTRY") || return 1
+        role_required=$(jq -r --arg role "$role" '.roles[$role].required' "$PACKAGE_REGISTRY") || return 1
 
         if [ "$scalar_set" = false ] && [ "$list_set" = false ]; then
             if [ "${NON_INTERACTIVE:-false}" = true ]; then
@@ -212,7 +212,7 @@ load_role_selections() {
                 packages=$default
                 print_message "$env_name was not set; using registry default '${default:-None}'"
             else
-                prompt_role_selection "$role" "$label" "$selection" "$required" "$default" || return 1
+                prompt_role_selection "$role" "$label" "$selection" "$role_required" "$default" || return 1
                 value=$PROMPT_ROLE_PRIMARY
                 packages=$PROMPT_ROLE_PACKAGES
             fi
@@ -246,7 +246,7 @@ load_role_selections() {
             fi
         done
 
-        if [ "$required" = true ] && [ ${#members[@]} -eq 0 ]; then
+        if [ "$role_required" = true ] && [ ${#members[@]} -eq 0 ]; then
             print_error "$env_name is required and cannot be empty"
             return 1
         fi
@@ -267,7 +267,7 @@ load_role_selections() {
         packages=${members[*]}
         printf -v "$env_name" '%s' "$value"
         printf -v "$list_env" '%s' "$packages"
-        export "$env_name" "$list_env"
+        export "${env_name?}" "${list_env?}"
         hss_meta_set "$env_name" "$value" || return 1
         hss_meta_set "$list_env" "$packages" || return 1
     done
@@ -2238,6 +2238,8 @@ configure_roles() {
 
     local aliases="$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
     remove_config_matching "$aliases" '^alias (vi|vim)=' "remove stale editor aliases" || return 1
+    # Assigned dynamically by load_role_selections via printf -v.
+    # shellcheck disable=SC2153
     if [ "$ROLE_TUI_EDITOR" = neovim ]; then
         replace_config_line "$aliases" '^# hss-role:editor-aliases$' "alias vi='nvim'; alias vim='nvim' # hss-role:editor-aliases" "Neovim aliases" || return 1
     else

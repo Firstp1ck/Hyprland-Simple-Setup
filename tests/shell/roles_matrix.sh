@@ -309,7 +309,7 @@ assert_role_consumers() {
   local app_variables="$hypr_root/app_variables.lua"
   local fish_env="$HOME/dotfiles/.config/fish/conf.d/01-env.fish"
   local aliases="$HOME/dotfiles/.config/fish/conf.d/02-aliases.fish"
-  local command_json executable class shell_path editor dmenu process namespace
+  local command_json executable class shell_path editor dmenu namespace
 
   case "$role" in
     browser)
@@ -350,7 +350,7 @@ assert_role_consumers() {
     launcher)
       command_json=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable] | @sh | @json')
       dmenu=$(jq -r '[.roles.launcher.dmenu_executable] + .roles.launcher.dmenu_args | join(" ")' "$roles_file")
-      process=$(jq -er '.roles.launcher.process' "$roles_file")
+      jq -er '.roles.launcher.process' "$roles_file" >/dev/null
       namespace=$(jq -er '.roles.launcher.namespace' "$roles_file")
       assert_line "    menu = $command_json," "$app_variables" 'Lua launcher command'
       assert_contains 'menu_exec.sh' "$hypr_root/keybindings.lua" 'Lua launcher toggle wrapper'

@@ -63,6 +63,8 @@ run_shortcut_case() {
     grep -Fqx "\$multiplex = $shortcut" "$conf"
     grep -Fq 'Open Preferred Multiplexer", hl.dsp.exec_cmd(apps.multiplex)' \
       "$HOME/dotfiles/.config/hypr/$root/keybindings.lua"
+    # Match literal Hyprland variables in the generated configuration.
+    # shellcheck disable=SC2016
     grep -Fqx 'bindd = $mainMod1, Y, Open Preferred Multiplexer, exec, $multiplex' \
       "$HOME/dotfiles/.config/hypr/$root/keybindings.conf"
   done

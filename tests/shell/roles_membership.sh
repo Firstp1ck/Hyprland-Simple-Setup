@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Literal configuration variables and shell payloads must not expand in this test.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 # shellcheck source=tests/shell/roles_testlib.sh
@@ -104,7 +106,9 @@ for root in sources sources_example; do
   [[ $(grep -Fc 'hss-role:bar-autostart' "$autostart") -eq 1 ]]
   [[ $(grep -Fc 'hss-role:dock-autostart' "$autostart") -eq 1 ]]
   [[ $(grep -Fc 'hss-role:notification-autostart' "$autostart") -eq 1 ]]
-  ! grep -Eq '^[[:space:]]*hl\.exec_cmd\("swaync"\)|^[[:space:]]*hl\.exec_cmd\("nm-applet' "$autostart"
+  if grep -Eq '^[[:space:]]*hl\.exec_cmd\("swaync"\)|^[[:space:]]*hl\.exec_cmd\("nm-applet' "$autostart"; then
+    fail 'unselected daemon remains in autostart'
+  fi
 done
 grep -Fq 'class = "qasmixer"' "$HOME/dotfiles/.config/pypr/config.toml"
 grep -Fq 'role_exec.sh" notifications' "$HOME/dotfiles/.local/share/dbus-1/services/org.freedesktop.Notifications.service"
@@ -120,7 +124,9 @@ selection_dump=$(bash -c '
   printf "aur=%s\n" "${SELECTED_AUR_LIST[*]}"
 ' bash "$repo_root")
 [[ $(grep -o '\bnwg-panel\b' <<<"$selection_dump" | wc -l) -eq 1 ]]
-! grep -Eq '\bwaybar\b|\bnwg-dock-hyprland\b' <<<"$selection_dump"
+if grep -Eq '\bwaybar\b|\bnwg-dock-hyprland\b' <<<"$selection_dump"; then
+  fail 'unselected bar or dock remains in the package plan'
+fi
 grep -Eq '\bnetworkmanager\b' <<<"$selection_dump"
 grep -Eq '\bbluez\b' <<<"$selection_dump"
 pacman_selection=$(grep '^pacman=' <<<"$selection_dump")
@@ -141,7 +147,9 @@ selection_dump=$(bash -c '
   printf "aur=%s\n" "${SELECTED_AUR_LIST[*]}"
 ' bash "$repo_root")
 grep -Eq '\bherdr-bin\b' <<<"$selection_dump"
-! grep -Eq '\btmux\b|\bzellij\b' <<<"$selection_dump"
+if grep -Eq '\btmux\b|\bzellij\b' <<<"$selection_dump"; then
+  fail 'unselected multiplexer remains in the package plan'
+fi
 printf 'ok - default Herdr selection excludes unselected generic multiplexers\n'
 
 bin="$fixture/bin"

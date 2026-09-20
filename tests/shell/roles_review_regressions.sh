@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT

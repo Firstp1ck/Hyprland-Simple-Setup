@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -39,7 +40,10 @@ done
 for root in sources sources_example; do
     directory="$HOME/.config/hypr/$root"
     [[ $(grep -Fc 'startup_state.sh mark numlock' "$directory/autostart.conf") -eq 1 ]]
-    ! grep -Fqx 'exec-once = hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set' "$directory/autostart.conf"
+    if grep -Fqx 'exec-once = hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set' "$directory/autostart.conf"; then
+        printf 'not ok - legacy numlock command remains\n' >&2
+        exit 1
+    fi
     grep -Fqx 'exec-once = hyprctl keyword input:kb_numlock true && audit-helper /tmp/numlock-set' "$directory/autostart.conf"
     grep -Fqx 'exec-once = hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set && audit-helper' "$directory/autostart.conf"
     grep -Fqx 'exec-once = custom-user-command' "$directory/autostart.conf"
@@ -47,6 +51,8 @@ for root in sources sources_example; do
     grep -Fq '; hl.exec_cmd("keep-custom")' "$directory/autostart.lua"
     [[ $(grep -Fc '/tmp/numlock-set' "$directory/autostart.lua") -eq 1 ]]
     [[ $(grep -Fc 'hss-role:agent-path' "$directory/environment_variables.conf") -eq 1 ]]
+    # Hyprland expands these variables, not the test shell.
+    # shellcheck disable=SC2016
     grep -Fqx 'env = PATH,$HOME/.local/bin:$HOME/.opencode/bin:$PATH # hss-role:agent-path' "$directory/environment_variables.conf"
     grep -Fqx 'env = USER_SETTING,keep-me' "$directory/environment_variables.conf"
 done
@@ -59,11 +65,13 @@ HSS_RELIABILITY_ACTION=autostart-extras "$repo_root/setup.sh" --test-scenario re
 [[ $(sha256sum "$custom") == "$custom_before" ]]
 printf 'ok - no-match custom config without a final newline stays byte-identical\n'
 
-ROLE_AGENT= ROLE_AGENT_PACKAGES= "$repo_root/setup.sh" --test-scenario roles > "$fixture/none.log"
+ROLE_AGENT='' ROLE_AGENT_PACKAGES='' "$repo_root/setup.sh" --test-scenario roles > "$fixture/none.log"
 for root in sources sources_example; do
     directory="$HOME/.config/hypr/$root"
-    ! grep -Fq 'hss-role:agent-path' "$directory/environment_variables.conf"
-    ! grep -Fq 'hss-role:agent-path' "$directory/environment_variables.lua"
+    if grep -Fq 'hss-role:agent-path' "$directory/environment_variables.conf" "$directory/environment_variables.lua"; then
+        printf 'not ok - managed agent PATH remains after selecting None\n' >&2
+        exit 1
+    fi
     grep -Fqx 'env = USER_SETTING,keep-me' "$directory/environment_variables.conf"
 done
 printf 'ok - agent None removes managed PATH lines from both config variants\n'

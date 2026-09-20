@@ -8,6 +8,7 @@ case "${1:-}" in
   --toggle) mode=toggle; shift ;;
 esac
 
+# shellcheck source=dotfiles/.config/hypr/scripts/app_log.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/app_log.sh"
 hss_start_app_log launcher
 [[ -r "$roles_file" ]] || { printf 'Missing role data: %s\n' "$roles_file" >&2; exit 1; }

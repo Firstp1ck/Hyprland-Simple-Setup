@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
@@ -73,7 +74,7 @@ PATH="$bin:$PATH" "$HOME/.config/hypr/scripts/role_exec.sh" dock
 jq -e 'map(.name) == ["dock"] and .[0]["use-sigrt"] == false' "$config" >/dev/null
 printf 'ok - nwg-panel dock also starts independently with a different bar\n'
 
-export ROLE_BAR=nwg-panel ROLE_DOCK= ROLE_DOCK_PACKAGES=
+export ROLE_BAR=nwg-panel ROLE_DOCK='' ROLE_DOCK_PACKAGES=''
 "$repo_root/setup.sh" --test-scenario roles >/dev/null
 PATH="$bin:$PATH" "$HOME/.config/hypr/scripts/role_exec.sh" bar
 jq -e 'map(.name) == ["bar"]' "$config" >/dev/null
@@ -118,7 +119,10 @@ for package in wofi rofi fuzzel bemenu tofi; do
         tofi) [[ ${args[*]} == 'tofi-drun --drun-launch=true' ]] ;;
     esac
     grep -Fq menu_exec.sh "$HOME/.config/hypr/sources/app_variables.lua"
-    ! grep -q 'pkill ' "$HOME/.config/hypr/sources/keybindings.lua"
+    if grep -q 'pkill ' "$HOME/.config/hypr/sources/keybindings.lua"; then
+        printf 'not ok - keybindings bypass the launcher toggle wrapper\n' >&2
+        exit 1
+    fi
 done
 printf 'ok - all five launchers keep their documented argv; bemenu always selects the Wayland renderer\n'
 
@@ -133,11 +137,16 @@ selection=$(bash -c '
 ' bash "$repo_root")
 grep -Fxq bemenu-wayland <<< "$selection"
 [[ $(jq -r '.roles.launcher.process' "$HOME/.config/hypr/roles.json") == bemenu-run ]]
+# Keep shell syntax literal to test argument handling and log privacy.
+# shellcheck disable=SC2016
 choice='private choice ; $(touch should-not-exist)'
 result=$(printf '%s\n' "$choice" | PATH="$bin:$PATH" DMENU_INPUT=1 \
     "$HOME/.config/hypr/scripts/menu_exec.sh" --dmenu)
 [[ $result == "$choice" ]]
-! grep -Fq "$choice" "$XDG_STATE_HOME/hyprland-simple-setup/apps/launcher.log"
+if grep -Fq "$choice" "$XDG_STATE_HOME/hyprland-simple-setup/apps/launcher.log"; then
+    printf 'not ok - private dmenu choice leaked into the launcher log\n' >&2
+    exit 1
+fi
 printf 'ok - bemenu Wayland dependency is selected and dmenu input/output stays literal and out of logs\n'
 
 export ROLE_LAUNCHER=fuzzel

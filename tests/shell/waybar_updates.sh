@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=tests/shell/roles_testlib.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/roles_testlib.sh"
 
 for test in test_system_update.sh test_launch_system_update.sh test_confirm_system_update.sh test_update_maintenance_action.sh; do
