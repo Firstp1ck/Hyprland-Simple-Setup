@@ -5,10 +5,11 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-pub const ROLE_ORDER: [&str; 14] = [
+pub const ROLE_ORDER: [&str; 15] = [
     "browser",
     "shell",
     "terminal",
+    "multiplexer",
     "notifications",
     "tui_editor",
     "gui_editor",
@@ -648,12 +649,11 @@ fn validate_option(role_name: &str, option: &RoleOption) -> Result<()> {
                 &["class", "shell_path", "editor_bin", "desktop_file"],
             )?;
         }
-        "notifications" | "bar" | "dock" | "calendar" | "bluetooth" | "network" | "audio" => {
-            reject_fields(
-                option,
-                &["class", "shell_path", "editor_bin", "desktop_file", "dmenu"],
-            )?
-        }
+        "multiplexer" | "notifications" | "bar" | "dock" | "calendar" | "bluetooth" | "network"
+        | "audio" => reject_fields(
+            option,
+            &["class", "shell_path", "editor_bin", "desktop_file", "dmenu"],
+        )?,
         _ => bail!("unknown role {role_name}"),
     }
     Ok(())
@@ -882,14 +882,14 @@ mod tests {
                 .into_iter()
                 .filter(|role| registry.roles[*role].selection == SelectionKind::Multiple)
                 .count(),
-            6
+            7
         );
         assert_eq!(
             ROLE_ORDER
                 .into_iter()
                 .filter(|role| registry.roles[*role].required)
                 .count(),
-            11
+            12
         );
         assert_eq!(
             registry
@@ -897,7 +897,7 @@ mod tests {
                 .values()
                 .map(|role| role.options.len())
                 .sum::<usize>(),
-            59
+            62
         );
     }
 
@@ -917,6 +917,53 @@ mod tests {
             .set_primary(&registry, "terminal", "foot")
             .unwrap();
         assert_eq!(selection.selected_package("terminal"), Some("foot"));
+    }
+
+    #[test]
+    fn multiplexer_defaults_to_herdr_and_tracks_multiple_members_with_a_primary() {
+        let registry = shipped_registry();
+        let mut selection = RoleSelection::defaults(&registry);
+        assert_eq!(selection.selected_package("multiplexer"), Some("herdr-bin"));
+        assert_eq!(
+            selection.selected_packages("multiplexer").unwrap(),
+            &BTreeSet::from(["herdr-bin".to_string()])
+        );
+
+        selection
+            .toggle_member(&registry, "multiplexer", "tmux")
+            .unwrap();
+        selection
+            .toggle_member(&registry, "multiplexer", "zellij")
+            .unwrap();
+        selection
+            .set_primary(&registry, "multiplexer", "zellij")
+            .unwrap();
+        assert_eq!(selection.selected_package("multiplexer"), Some("zellij"));
+        assert_eq!(
+            selection.selected_packages("multiplexer").unwrap(),
+            &BTreeSet::from([
+                "herdr-bin".to_string(),
+                "tmux".to_string(),
+                "zellij".to_string()
+            ])
+        );
+
+        let pacman = selection.selected_install_packages(&registry, PackageSource::Pacman);
+        let aur = selection.selected_install_packages(&registry, PackageSource::Aur);
+        assert!(pacman.contains("tmux") && pacman.contains("zellij"));
+        assert!(aur.contains("herdr-bin"));
+        let env = selection.export_env(&registry).unwrap();
+        assert_eq!(env["ROLE_MULTIPLEXER"], "zellij");
+        assert_eq!(env["ROLE_MULTIPLEXER_PACKAGES"], "herdr-bin tmux zellij");
+    }
+
+    #[test]
+    fn required_multiplexer_cannot_be_empty_at_export() {
+        let registry = shipped_registry();
+        let mut selection = RoleSelection::defaults(&registry);
+        selection.clear(&registry, "multiplexer").unwrap();
+        let error = selection.export_env(&registry).unwrap_err().to_string();
+        assert!(error.contains("Multiplexer"));
     }
 
     #[test]
@@ -981,6 +1028,8 @@ mod tests {
         assert_eq!(env["ROLE_DOCK"], "");
         assert_eq!(env["ROLE_DOCK_PACKAGES"], "");
         assert_eq!(env["ROLE_GUI_EDITOR"], "visual-studio-code-bin");
+        assert_eq!(env["ROLE_MULTIPLEXER"], "herdr-bin");
+        assert_eq!(env["ROLE_MULTIPLEXER_PACKAGES"], "herdr-bin");
         assert_eq!(env["ROLE_AGENT"], "pi");
         assert_eq!(env["ROLE_AGENT_PACKAGES"], "pi");
         assert_eq!(env.len(), ROLE_ORDER.len() * 2);
@@ -1029,6 +1078,7 @@ mod tests {
                         .collect()
                 )
             );
+            assert!(!generic.contains("zellij"));
         }
     }
 

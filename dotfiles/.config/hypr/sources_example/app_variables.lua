@@ -2,7 +2,7 @@ local home = os.getenv("HOME") or ""
 
 return {
     terminal = "kitty",
-    multiplex = "zellij",
+    multiplex = string.format("%q -- herdr", home .. "/.config/hypr/scripts/term_exec.sh"),
     file_manager = "dolphin",
     menu = home .. "/.config/hypr/scripts/menu_exec.sh",
     browser = "zen-browser",

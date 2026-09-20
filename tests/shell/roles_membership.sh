@@ -37,6 +37,8 @@ export ROLE_BROWSER=chromium
 export ROLE_BROWSER_PACKAGES='firefox chromium'
 export ROLE_TERMINAL=foot
 export ROLE_TERMINAL_PACKAGES='foot konsole'
+export ROLE_MULTIPLEXER=zellij
+export ROLE_MULTIPLEXER_PACKAGES='tmux zellij herdr-bin'
 export ROLE_GUI_EDITOR=
 export ROLE_GUI_EDITOR_PACKAGES=
 export ROLE_DOCK=
@@ -49,6 +51,8 @@ jq -e '
   and ([.selected.browser[].package] == ["firefox", "chromium"])
   and .roles.terminal.package == "foot"
   and ([.selected.terminal[].package] == ["konsole", "foot"])
+  and .roles.multiplexer.package == "zellij"
+  and ([.selected.multiplexer[].package] == ["tmux", "zellij", "herdr-bin"])
   and .roles.gui_editor == null and .selected.gui_editor == []
   and .roles.dock == null and .selected.dock == []
 ' "$roles_file" >/dev/null
@@ -72,6 +76,8 @@ expect_rejected 'ROLE_BLUETOOTH_PACKAGES accepts at most one package' \
   ROLE_BLUETOOTH=blueman ROLE_BLUETOOTH_PACKAGES='blueman bluetui'
 expect_rejected 'ROLE_BLUETOOTH is required and cannot be empty' \
   ROLE_BLUETOOTH= ROLE_BLUETOOTH_PACKAGES=
+expect_rejected 'ROLE_MULTIPLEXER is required and cannot be empty' \
+  ROLE_MULTIPLEXER= ROLE_MULTIPLEXER_PACKAGES=
 expect_rejected 'ROLE_BROWSER is required and cannot be empty' \
   ROLE_BROWSER= ROLE_BROWSER_PACKAGES=
 expect_rejected "invalid package token 'firefox;'" \
@@ -87,6 +93,8 @@ set_role_defaults
 export ROLE_BAR=nwg-panel
 export ROLE_DOCK=nwg-panel
 export ROLE_AUDIO=qastools
+export ROLE_MULTIPLEXER=zellij
+export ROLE_MULTIPLEXER_PACKAGES='tmux zellij herdr-bin'
 "$repo_root/setup.sh" --test-scenario roles >/dev/null
 roles_file="$HOME/.config/hypr/roles.json"
 jq -e '.roles.bar.package == "nwg-panel" and .roles.bar.args == ["-c", "bar"]
@@ -115,7 +123,26 @@ selection_dump=$(bash -c '
 ! grep -Eq '\bwaybar\b|\bnwg-dock-hyprland\b' <<<"$selection_dump"
 grep -Eq '\bnetworkmanager\b' <<<"$selection_dump"
 grep -Eq '\bbluez\b' <<<"$selection_dump"
-printf 'ok - shared role package is deduplicated and required backends remain independent\n'
+pacman_selection=$(grep '^pacman=' <<<"$selection_dump")
+aur_selection=$(grep '^aur=' <<<"$selection_dump")
+grep -Eq '\btmux\b' <<<"$pacman_selection"
+grep -Eq '\bzellij\b' <<<"$pacman_selection"
+grep -Eq '\bherdr-bin\b' <<<"$aur_selection"
+printf 'ok - shared packages are deduplicated and multiplexer sources are unioned\n'
+
+set_role_defaults
+selection_dump=$(bash -c '
+  set -e
+  source "$1/setup.sh"
+  resolve_package_registry
+  load_role_selections
+  prepare_package_selections
+  printf "pacman=%s\n" "${SELECTED_PACMAN_LIST[*]}"
+  printf "aur=%s\n" "${SELECTED_AUR_LIST[*]}"
+' bash "$repo_root")
+grep -Eq '\bherdr-bin\b' <<<"$selection_dump"
+! grep -Eq '\btmux\b|\bzellij\b' <<<"$selection_dump"
+printf 'ok - default Herdr selection excludes unselected generic multiplexers\n'
 
 bin="$fixture/bin"
 log="$fixture/argv.log"

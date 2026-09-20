@@ -71,6 +71,7 @@ if ! jq -e '
       browser: ["multiple", true, "zen-browser-bin"],
       shell: ["multiple", true, "fish"],
       terminal: ["multiple", true, "kitty"],
+      multiplexer: ["multiple", true, "herdr-bin"],
       notifications: ["single", true, "swaync"],
       tui_editor: ["multiple", true, "neovim"],
       gui_editor: ["multiple", false, "visual-studio-code-bin"],
@@ -88,6 +89,7 @@ if ! jq -e '
       browser: ["brave-bin", "chromium", "firefox", "vivaldi", "zen-browser-bin"],
       shell: ["bash", "fish", "zsh"],
       terminal: ["alacritty", "foot", "ghostty", "kitty", "konsole"],
+      multiplexer: ["herdr-bin", "tmux", "zellij"],
       notifications: ["dunst", "fnott", "mako", "swaync"],
       tui_editor: ["helix", "nano", "neovim", "vim"],
       gui_editor: ["cursor-bin", "kate", "mousepad", "visual-studio-code-bin", "zed"],
@@ -158,6 +160,11 @@ if ! jq -e '
       and (.roles.launcher.options[] | select(.package == "tofi") | .source == "aur")
       and (.roles.bluetooth.options[] | select(.package == "bluetuith") | .source == "aur")
       and (.roles.audio.options[] | select(.package == "ncpamixer") | .source == "aur")
+      and (.roles.multiplexer.options == [
+        {package:"tmux", source:"pacman", executable:"tmux", args:[], terminal:true},
+        {package:"zellij", source:"pacman", executable:"zellij", args:[], terminal:true},
+        {package:"herdr-bin", source:"aur", executable:"herdr", args:[], terminal:true}
+      ])
       and (.roles.agent.options == [
         {package:"pi", source:"official", executable:"pi", args:[], extra_packages:["curl","nodejs","npm"], installer:{url:"https://pi.dev/install.sh",shell:"sh",args:[]}, binary_paths:["{HOME}/.local/bin/pi"]},
         {package:"opencode", source:"official", executable:"opencode", args:[], extra_packages:["curl","tar","gzip"], installer:{url:"https://opencode.ai/install",shell:"bash",args:["--no-modify-path"]}, binary_paths:["{HOME}/.opencode/bin/opencode"]},

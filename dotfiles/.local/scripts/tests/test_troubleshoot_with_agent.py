@@ -125,6 +125,17 @@ elif mode == 'action':
             )
         )
 
+    def roles_with_multiplexers(self, primary: str, selected: list[str]) -> dict[str, object]:
+        entries = {
+            "tmux": {"package": "tmux", "executable": "tmux", "args": []},
+            "zellij": {"package": "zellij", "executable": "zellij", "args": []},
+            "herdr-bin": {"package": "herdr-bin", "executable": "herdr", "args": []},
+        }
+        roles = json.loads(self.roles.read_text())
+        roles["roles"]["multiplexer"] = entries[primary]
+        roles["selected"]["multiplexer"] = [entries[package] for package in selected]
+        return roles
+
     def run_adapter(self, *extra: str, **environment: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [str(ADAPTER), "--source", "Startup_check.sh", "--title", "Startup failure", "--body", "A component failed", *extra],
@@ -298,7 +309,69 @@ elif mode == 'action':
             self.assertLessEqual(len(prompt.encode()), helper.MAX_PROMPT_BYTES)
             helper.safe_remove(claimed)
 
-    def test_dispatch_falls_through_probe_only_before_herdr_mutation(self):
+    def test_selected_multiplexer_order_supports_each_primary_with_multiple_choices(self):
+        helper = load_helper()
+        expected = {
+            "tmux": ["tmux", "zellij", "herdr-bin"],
+            "zellij": ["zellij", "tmux", "herdr-bin"],
+            "herdr-bin": ["herdr-bin", "tmux", "zellij"],
+        }
+        for primary, order in expected.items():
+            with self.subTest(primary=primary):
+                roles = self.roles_with_multiplexers(primary, ["herdr-bin", "zellij", "tmux"])
+                self.assertEqual(helper.selected_multiplexers(roles), order)
+
+    def test_new_metadata_excludes_installed_but_unselected_multiplexers(self):
+        helper = load_helper()
+        roles = self.roles_with_multiplexers("tmux", ["tmux"])
+        terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
+        incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        available = {"zellij", "herdr", "kitty"}
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name) if name in available else None), mock.patch.object(helper, "run_herdr") as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+            destination = helper.dispatch(Path("/snapshot"), incident)
+        self.assertEqual(destination, "terminal")
+        run.assert_not_called()
+        self.assertNotIn("zellij", spawn.call_args.args[1])
+
+    def test_missing_primary_uses_next_selected_multiplexer(self):
+        helper = load_helper()
+        roles = self.roles_with_multiplexers("tmux", ["tmux", "zellij", "herdr-bin"])
+        terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
+        incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        available = {"zellij", "herdr", "kitty"}
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name) if name in available else None), mock.patch.object(helper, "run_herdr") as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+            destination = helper.dispatch(Path("/snapshot"), incident)
+        self.assertEqual(destination, "Zellij")
+        self.assertEqual(Path(spawn.call_args.args[1][0]).name, "zellij")
+        run.assert_not_called()
+
+    def test_malformed_present_metadata_falls_back_to_plain_terminal(self):
+        helper = load_helper()
+        terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
+        incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        malformed_values = [
+            self.roles_with_multiplexers("tmux", []),
+            self.roles_with_multiplexers("tmux", ["zellij"]),
+            self.roles_with_multiplexers("tmux", ["tmux"]),
+            self.roles_with_multiplexers("tmux", ["tmux"]),
+        ]
+        malformed_values[2]["roles"]["multiplexer"]["args"] = ["arbitrary"]
+        malformed_values[3]["roles"]["multiplexer"]["executable"] = "untrusted-mux"
+        for value in (None, [], {}, 1, True):
+            for location in ("primary", "selected"):
+                roles = self.roles_with_multiplexers("tmux", ["tmux"])
+                if location == "primary":
+                    roles["roles"]["multiplexer"] = {"package": value, "executable": "tmux", "args": []}
+                else:
+                    roles["selected"]["multiplexer"] = [{"package": value, "executable": "tmux", "args": []}]
+                malformed_values.append(roles)
+        for roles in malformed_values:
+            with self.subTest(roles=roles), mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name)), mock.patch.object(helper, "run_herdr") as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+                self.assertEqual(helper.dispatch(Path("/snapshot"), incident), "terminal")
+                self.assertEqual(spawn.call_args.args[1][0], str(helper.Path(helper.__file__).resolve()))
+                run.assert_not_called()
+
+    def test_legacy_metadata_preserves_availability_order(self):
         helper = load_helper()
         roles = json.loads(self.roles.read_text())
         incident = {"nonce": "abc", "agent": {"label": "Pi"}}
@@ -307,12 +380,23 @@ elif mode == 'action':
         self.assertEqual(destination, "terminal")
         spawn.assert_called_once()
 
+    def test_herdr_probe_failure_falls_through_before_mutation(self):
+        helper = load_helper()
+        roles = self.roles_with_multiplexers("herdr-bin", ["tmux", "herdr-bin"])
+        terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
+        incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name)), mock.patch.object(helper, "run_herdr", side_effect=helper.HelperError("probe failed")) as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+            self.assertEqual(helper.dispatch(Path("/snapshot"), incident), "tmux")
+        self.assertEqual(run.call_args.args[1], ["api", "snapshot"])
+        self.assertEqual(Path(spawn.call_args.args[1][0]).name, "tmux")
+
     def test_zellij_and_herdr_use_new_incident_surfaces(self):
         helper = load_helper()
         terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
         incident = {"nonce": "abc", "agent": {"label": "Pi"}}
+        zellij_roles = self.roles_with_multiplexers("zellij", ["zellij"])
         base_patches = (
-            mock.patch.object(helper, "read_roles", return_value={}),
+            mock.patch.object(helper, "read_roles", return_value=zellij_roles),
             mock.patch.object(helper, "resolve_terminal", return_value=terminal),
             mock.patch.object(helper, "working_directory", return_value=self.cwd),
         )
@@ -329,7 +413,8 @@ elif mode == 'action':
             {"type": "ok"},
             {"type": "workspace_info"},
         ]
-        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value={}), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name) if name == "herdr" else None), mock.patch.object(helper, "run_herdr", side_effect=responses) as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+        herdr_roles = self.roles_with_multiplexers("herdr-bin", ["herdr-bin"])
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=herdr_roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name) if name == "herdr" else None), mock.patch.object(helper, "run_herdr", side_effect=responses) as run, mock.patch.object(helper, "spawn_terminal") as spawn:
             self.assertEqual(helper.dispatch(Path("/snapshot"), incident), "Herdr")
         self.assertEqual(run.call_args_list[0].args[1], ["api", "snapshot"])
         self.assertEqual(run.call_args_list[1].args[1][:2], ["workspace", "create"])
@@ -372,6 +457,21 @@ elif mode == 'action':
             helper.safe_remove(expired)
             helper.safe_remove(large)
 
+    def test_herdr_workspace_mutation_failure_does_not_fall_back(self):
+        helper = load_helper()
+        roles = self.roles_with_multiplexers("herdr-bin", ["herdr-bin", "zellij"])
+        terminal = {"package": "kitty", "executable": str(self.bin / "kitty")}
+        incident = {"schema": 1, "nonce": "abc", "agent": {"label": "Pi"}}
+        responses = [
+            {"type": "session_snapshot"},
+            subprocess.TimeoutExpired(["herdr", "workspace", "create"], 15),
+        ]
+        with mock.patch.dict(os.environ, self.env, clear=True), mock.patch.object(helper, "read_roles", return_value=roles), mock.patch.object(helper, "resolve_terminal", return_value=terminal), mock.patch.object(helper, "working_directory", return_value=self.cwd), mock.patch.object(helper.shutil, "which", side_effect=lambda name, path=None: str(self.bin / name) if name in {"herdr", "zellij"} else None), mock.patch.object(helper, "run_herdr", side_effect=responses) as run, mock.patch.object(helper, "spawn_terminal") as spawn:
+            with self.assertRaises(helper.DispatchUncertain):
+                helper.dispatch(Path("/snapshot"), incident)
+        self.assertEqual(run.call_count, 2)
+        spawn.assert_not_called()
+
     def test_ambiguous_herdr_dispatch_retains_evidence_without_fallback(self):
         helper = load_helper()
         incident = {'schema': 1, 'nonce': 'abc', 'agent': {'label': 'Pi'}}
@@ -386,7 +486,8 @@ elif mode == 'action':
             helper.ensure_private_directory(directory)
             path = directory / 'incident-uncertain.json'
             helper.write_private(path, json.dumps(incident))
-            with mock.patch.object(helper, 'read_roles', return_value={}), mock.patch.object(helper, 'resolve_terminal', return_value=terminal), mock.patch.object(helper, 'working_directory', return_value=self.cwd), mock.patch.object(helper.shutil, 'which', side_effect=lambda name, path=None: str(self.bin / name) if name == 'herdr' else None), mock.patch.object(helper, 'run_herdr', side_effect=responses) as run, mock.patch.object(helper, 'spawn_terminal') as spawn:
+            roles = self.roles_with_multiplexers('herdr-bin', ['herdr-bin', 'zellij'])
+            with mock.patch.object(helper, 'read_roles', return_value=roles), mock.patch.object(helper, 'resolve_terminal', return_value=terminal), mock.patch.object(helper, 'working_directory', return_value=self.cwd), mock.patch.object(helper.shutil, 'which', side_effect=lambda name, path=None: str(self.bin / name) if name in {'herdr', 'zellij'} else None), mock.patch.object(helper, 'run_herdr', side_effect=responses) as run, mock.patch.object(helper, 'spawn_terminal') as spawn:
                 with self.assertRaises(helper.DispatchUncertain):
                     helper.dispatch(path, incident)
                 self.assertEqual(run.call_count, 3)

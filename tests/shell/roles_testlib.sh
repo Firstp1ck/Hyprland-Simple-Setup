@@ -37,6 +37,7 @@ set_role_defaults() {
   export ROLE_BROWSER=zen-browser-bin
   export ROLE_SHELL=fish
   export ROLE_TERMINAL=kitty
+  export ROLE_MULTIPLEXER=herdr-bin
   export ROLE_NOTIFICATIONS=swaync
   export ROLE_TUI_EDITOR=neovim
   export ROLE_GUI_EDITOR=visual-studio-code-bin
@@ -49,7 +50,7 @@ set_role_defaults() {
   export ROLE_LAUNCHER=wofi
   export ROLE_AGENT=
   local role list_env
-  for role in browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent; do
+  for role in browser shell terminal multiplexer notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent; do
     list_env="ROLE_${role^^}_PACKAGES"
     unset "$list_env"
   done
@@ -61,6 +62,7 @@ set_role_value() {
     browser) export ROLE_BROWSER=$package ;;
     shell) export ROLE_SHELL=$package ;;
     terminal) export ROLE_TERMINAL=$package ;;
+    multiplexer) export ROLE_MULTIPLEXER=$package ;;
     notifications) export ROLE_NOTIFICATIONS=$package ;;
     tui_editor) export ROLE_TUI_EDITOR=$package ;;
     gui_editor) export ROLE_GUI_EDITOR=$package ;;

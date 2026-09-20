@@ -47,6 +47,12 @@ TERMINALS = {
     "konsole": "konsole",
     "foot": "foot",
 }
+MULTIPLEXERS = {
+    "tmux": ("tmux", "tmux"),
+    "zellij": ("zellij", "Zellij"),
+    "herdr-bin": ("herdr", "Herdr"),
+}
+MULTIPLEXER_ORDER = tuple(MULTIPLEXERS)
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 PRIVATE_KEY_RE = re.compile(
@@ -312,6 +318,42 @@ def resolve_terminal(roles: dict[str, Any]) -> dict[str, str]:
     return {"package": package, "executable": executable}
 
 
+def multiplexer_package(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    package = value.get("package")
+    if not isinstance(package, str) or package not in MULTIPLEXERS:
+        return None
+    expected, _ = MULTIPLEXERS[package]
+    if value.get("executable") != expected or value.get("args") != []:
+        return None
+    return package
+
+
+def selected_multiplexers(roles: dict[str, Any]) -> list[str] | None:
+    role_values = roles.get("roles")
+    if not isinstance(role_values, dict):
+        return []
+    if "multiplexer" not in role_values:
+        return None
+
+    primary = multiplexer_package(role_values.get("multiplexer"))
+    selected_values = roles.get("selected")
+    selected = selected_values.get("multiplexer") if isinstance(selected_values, dict) else None
+    if primary is None or not isinstance(selected, list) or not selected:
+        return []
+
+    packages: set[str] = set()
+    for value in selected:
+        package = multiplexer_package(value)
+        if package is None or package in packages:
+            return []
+        packages.add(package)
+    if primary not in packages:
+        return []
+    return [primary, *(package for package in MULTIPLEXER_ORDER if package in packages and package != primary)]
+
+
 def working_directory() -> Path:
     path = Path(os.environ.get("HSS_TRIAGE_CWD", Path.home() / "dotfiles")).expanduser().absolute()
     try:
@@ -555,7 +597,9 @@ def spawn_terminal(terminal: dict[str, str], command: Sequence[str], title: str,
 
 def dispatch(snapshot_path: Path, incident: dict[str, Any]) -> str:
     roles = read_roles()
-    terminal = resolve_terminal(roles)
+    candidates = selected_multiplexers(roles)
+    if candidates is None:
+        candidates = list(MULTIPLEXER_ORDER)
     cwd = working_directory()
     environment = detached_environment()
     helper = Path(__file__).resolve()
@@ -563,26 +607,40 @@ def dispatch(snapshot_path: Path, incident: dict[str, Any]) -> str:
     runner = [str(helper), "--run-incident", str(snapshot_path), nonce]
     session = f"hss-triage-{secrets.token_hex(6)}"
     title = f"Troubleshoot with {incident['agent']['label']}"
+    terminal: dict[str, str] | None = None
 
-    tmux = shutil.which("tmux", path=environment.get("PATH"))
-    if tmux:
-        spawn_terminal(terminal, [tmux, "new-session", "-s", session, *runner], title, cwd, environment)
-        return "tmux"
+    for package in candidates:
+        expected, label = MULTIPLEXERS[package]
+        executable = shutil.which(expected, path=environment.get("PATH"))
+        if executable is None:
+            continue
 
-    zellij = shutil.which("zellij", path=environment.get("PATH"))
-    if zellij:
-        spawn_terminal(terminal, [zellij, "attach", "-c", session, "--", *runner], title, cwd, environment)
-        return "Zellij"
+        if package in {"tmux", "zellij"}:
+            if terminal is None:
+                try:
+                    terminal = resolve_terminal(roles)
+                except HelperError:
+                    continue
+            command = (
+                [executable, "new-session", "-s", session, *runner]
+                if package == "tmux"
+                else [executable, "attach", "-c", session, "--", *runner]
+            )
+            try:
+                spawn_terminal(terminal, command, title, cwd, environment)
+            except OSError:
+                continue
+            return label
 
-    herdr = shutil.which("herdr", path=environment.get("PATH"))
-    if herdr:
         try:
-            probe = run_herdr(herdr, ["api", "snapshot"], environment)
-        except (HelperError, subprocess.TimeoutExpired):
-            probe = {}
-        if probe.get("type") == "session_snapshot":
+            probe = run_herdr(executable, ["api", "snapshot"], environment)
+        except (HelperError, OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.get("type") != "session_snapshot":
+            continue
+        try:
             created = run_herdr(
-                herdr,
+                executable,
                 ["workspace", "create", "--cwd", str(cwd), "--label", truncate_text(title, 80).replace("\n[truncated]", "…"), "--no-focus"],
                 environment,
             )
@@ -593,21 +651,25 @@ def dispatch(snapshot_path: Path, incident: dict[str, Any]) -> str:
             workspace_id = workspace.get("workspace_id") if isinstance(workspace, dict) else None
             if not isinstance(pane_id, str) or not pane_id or not isinstance(workspace_id, str) or not workspace_id:
                 raise HelperError("herdr workspace omitted its identifiers")
-            command_text = shlex.join(runner)
-            try:
-                result = run_herdr(herdr, ["pane", "run", pane_id, command_text], environment)
-                if result.get("type") not in {"pane_command_sent", "ok"}:
-                    raise HelperError("herdr pane run response is unexpected")
-            except (HelperError, OSError, subprocess.TimeoutExpired) as error:
-                raise DispatchUncertain("herdr pane dispatch may have succeeded") from error
-            try:
-                focused = run_herdr(herdr, ["workspace", "focus", workspace_id], environment)
-                if focused.get("type") not in {"workspace_info", "ok"}:
-                    raise HelperError("herdr focus response is unexpected")
-            except (HelperError, OSError, subprocess.TimeoutExpired):
-                append_error(snapshot_path.parent, snapshot_path.name, "herdr-focus-failed")
-            return "Herdr"
+        except (HelperError, OSError, subprocess.TimeoutExpired) as error:
+            raise DispatchUncertain("herdr workspace creation may have succeeded") from error
+        command_text = shlex.join(runner)
+        try:
+            result = run_herdr(executable, ["pane", "run", pane_id, command_text], environment)
+            if result.get("type") not in {"pane_command_sent", "ok"}:
+                raise HelperError("herdr pane run response is unexpected")
+        except (HelperError, OSError, subprocess.TimeoutExpired) as error:
+            raise DispatchUncertain("herdr pane dispatch may have succeeded") from error
+        try:
+            focused = run_herdr(executable, ["workspace", "focus", workspace_id], environment)
+            if focused.get("type") not in {"workspace_info", "ok"}:
+                raise HelperError("herdr focus response is unexpected")
+        except (HelperError, OSError, subprocess.TimeoutExpired):
+            append_error(snapshot_path.parent, snapshot_path.name, "herdr-focus-failed")
+        return label
 
+    if terminal is None:
+        terminal = resolve_terminal(roles)
     spawn_terminal(terminal, runner, title, cwd, environment)
     return "terminal"
 

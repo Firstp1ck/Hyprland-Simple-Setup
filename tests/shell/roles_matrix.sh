@@ -261,7 +261,8 @@ assert_common_consumers() {
   local waybar="$HOME/dotfiles/.config/waybar/config.jsonc"
   local pypr="$HOME/dotfiles/.config/pypr/config.toml"
 
-  assert_contains 'term_exec.sh -- ' "$hypr_root/keybindings.lua" 'Lua terminal keybinding uses wrapper'
+  assert_contains 'hl.dsp.exec_cmd(apps.multiplex)' "$hypr_root/keybindings.lua" 'Lua multiplexer keybinding uses generated action'
+  assert_contains 'term_exec.sh' "$hypr_root/app_variables.lua" 'Lua multiplexer action uses selected terminal wrapper'
   assert_contains 'hl.exec_cmd(apps.editor, { workspace = "1 silent" }) -- hss-role:gui-editor-autostart' "$hypr_root/autostart.lua" 'Lua autostart uses selected GUI editor'
   assert_contains 'role_exec.sh notifications' "$hypr_root/autostart.lua" 'Lua autostart uses selected notifications'
   assert_contains 'role_exec.sh bar' "$hypr_root/autostart.lua" 'Lua autostart uses selected bar'
@@ -298,7 +299,7 @@ assert_common_consumers() {
   assert_contains 'roles.json' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather uses role metadata'
   assert_contains '.roles.browser.executable' "$HOME/dotfiles/.config/waybar/scripts/weather.sh" 'weather resolves selected browser'
 
-  jq -e '.schema_version == 2 and (.roles | length == 14) and (.selected | length == 14)
+  jq -e '.schema_version == 2 and (.roles | length == 15) and (.selected | length == 15)
     and (.agent_executables | type == "object")' "$roles_file" >/dev/null
 }
 
@@ -361,6 +362,11 @@ assert_role_consumers() {
       assert_contains 'hss-role:agent-path' "$hypr_root/environment_variables.lua" 'Hyprland agent PATH'
       assert_contains 'hss-role:agent-path' "$fish_env" 'Fish agent PATH'
       ;;
+    multiplexer)
+      executable=$(jq -er '.roles.multiplexer.executable' "$roles_file")
+      command_json=$(jq -nr --arg helper "$HOME/.config/hypr/scripts/term_exec.sh" --arg executable "$executable" '[$helper, "--", $executable] | @sh | @json')
+      assert_line "    multiplex = $command_json," "$app_variables" 'Lua multiplexer shortcut command'
+      ;;
     notifications|bar|dock|calendar|bluetooth|network|audio)
       :
       ;;
@@ -403,5 +409,5 @@ while IFS=$'\t' read -r role package; do
   fixture=""
 done < <(jq -r '.roles | to_entries[] | .key as $role | .value.options[] | [$role, .package] | @tsv' "$repo_root/packages.json")
 
-[[ $count -eq 59 ]] || fail "expected 59 role cases, got $count"
-printf 'ok - 59 role options passed metadata and behavioral assertions\n'
+[[ $count -eq 62 ]] || fail "expected 62 role cases, got $count"
+printf 'ok - 62 role options passed metadata and behavioral assertions\n'

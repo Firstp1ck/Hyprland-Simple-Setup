@@ -12,13 +12,8 @@ Nothing is sent to an agent until the user clicks the action. The helper freezes
 
 A click shares the frozen notification and diagnostic evidence with the selected agent and its configured provider. Redaction is best-effort and is **not** a secrecy guarantee. Embedded diagnostics are untrusted data, not instructions.
 
-Dispatch order is deterministic:
+For schema-2 metadata with a multiplexer role, dispatch order is deterministic: the selected primary multiplexer first, then only the other selected multiplexers in registry order (tmux, Zellij, Herdr), then the selected primary terminal. An installed but unselected multiplexer is never used. If the primary executable is missing, the helper tries the next selected choice. Present but empty or malformed multiplexer metadata falls back directly to the primary terminal instead of discovering an arbitrary installed multiplexer. Legacy metadata without a multiplexer role retains the former tmux, Zellij, Herdr availability order before the terminal fallback.
 
-1. a new unique tmux session, if tmux is installed;
-2. a new unique Zellij session, if Zellij is installed;
-3. a new Herdr workspace and its returned root pane, if the default Herdr API responds compatibly;
-4. the selected primary terminal.
-
-The helper does not install a multiplexer or reuse, mutate, or kill an existing session. It does not retry after an ambiguous launch that might already have run. The private incident runner claims each snapshot at most once and passes the prompt as one argument.
+Herdr is considered available only when its existing default session answers the compatible read-only API snapshot probe. A failed or incompatible probe can fall through to the next selected choice. Workspace creation is the first mutation; after that request begins, any uncertain result stops dispatch without retrying or falling back. The helper does not start a background Herdr service, install a multiplexer, or reuse, mutate, or kill a pre-existing tmux or Zellij session. The private incident runner claims each snapshot at most once and passes the prompt as one argument.
 
 The selected agent starts in its supported read-only or planning mode: Pi receives only `read,grep,find,ls`; Claude uses plan permission mode; Codex uses the read-only sandbox; OpenCode uses its plan agent; and Cursor uses ask mode. These CLI and prompt restrictions are not a universal operating-system sandbox. The helper never logs in, chooses a model, bypasses permissions, performs an automatic fix, or runs as root.

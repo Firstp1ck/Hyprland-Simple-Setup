@@ -60,7 +60,7 @@ ROLE_DATA_FILE=""
 ROLE_SELECTIONS_LOADED=false
 PACKAGE_SELECTIONS_PREPARED=false
 SELECTED_PACKAGES_VERIFIED=false
-ROLE_NAMES=(browser shell terminal notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent)
+ROLE_NAMES=(browser shell terminal multiplexer notifications tui_editor gui_editor bar dock calendar bluetooth network audio launcher agent)
 declare -a SELECTED_PACMAN_LIST=()
 declare -a SELECTED_AUR_LIST=()
 declare -a SELECTED_ALL_PACKAGES=()
@@ -2091,9 +2091,16 @@ configure_roles() {
     announce_step "Configuring selected application roles"
     generate_roles_json || return 1
 
-    local terminal_command browser_command launcher_command menu_toggle_command editor_command calendar_command
+    local terminal_command multiplexer_command multiplexer_shell_command browser_command launcher_command menu_toggle_command editor_command calendar_command
     local browser_exec browser_class terminal_exec editor_bin launcher_namespace
     terminal_command=$(role_option_json terminal | role_command_json) || return 1
+    multiplexer_command=$(role_option_json multiplexer | jq -er --arg helper "$HOME/.config/hypr/scripts/term_exec.sh" --arg home "$HOME" '
+        walk(if type == "string" and startswith("{HOME}/") then $home + ltrimstr("{HOME}") else . end)
+        | [$helper, "--", .executable] + (.args // [])
+        | @sh
+        | @json
+    ') || return 1
+    multiplexer_shell_command=$(printf '%s\n' "$multiplexer_command" | jq -er '.') || return 1
     browser_command=$(role_option_json browser | role_command_json) || return 1
     launcher_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable] | @sh | @json') || return 1
     menu_toggle_command=$(jq -nr --arg executable "$HOME/.config/hypr/scripts/menu_exec.sh" '[$executable, "--toggle"] | @sh | @json') || return 1
@@ -2138,10 +2145,14 @@ configure_roles() {
     for root in "$HOME/dotfiles/.config/hypr/sources" "$HOME/dotfiles/.config/hypr/sources_example"; do
         file="$root/app_variables.lua"
         replace_config_line "$file" '^[[:space:]]*terminal[[:space:]]*=' "    terminal = $terminal_command," "selected terminal" || return 1
+        replace_config_line "$file" '^[[:space:]]*multiplex[[:space:]]*=' "    multiplex = $multiplexer_command," "selected multiplexer shortcut" || return 1
         replace_config_line "$file" '^[[:space:]]*menu[[:space:]]*=' "    menu = $launcher_command," "selected launcher" || return 1
         replace_config_line "$file" '^[[:space:]]*browser[[:space:]]*=' "    browser = $browser_command," "selected browser" || return 1
         replace_config_line "$file" '^[[:space:]]*editor[[:space:]]*=' "    editor = $editor_command," "selected editor action" || return 1
         replace_config_line "$file" '^[[:space:]]*calendar[[:space:]]*=' "    calendar = $calendar_command," "selected calendar action" || return 1
+
+        file="$root/app_variables.conf"
+        replace_config_line "$file" '^[[:space:]]*[$]multiplex[[:space:]]*=' "\$multiplex = $multiplexer_shell_command" "selected multiplexer shortcut for Hyprlang" || return 1
 
         file="$root/environment_variables.lua"
         replace_config_line "$file" '^hl[.]env[(]"BROWSER",' "hl.env(\"BROWSER\", $browser_exec_lua)" "selected browser environment" || return 1
@@ -2158,7 +2169,11 @@ configure_roles() {
             remove_config_matching "$file" 'hss-role:agent-path$' "disabled agent executable paths for Hyprlang" || return 1
         fi
 
+        file="$root/keybindings.conf"
+        replace_exact_trimmed_line "$file" 'bindd = $mainMod1, Y, Open Preferred Terminal, exec, $hyprscripts/term_exec.sh -- $multiplex' 'bindd = $mainMod1, Y, Open Preferred Multiplexer, exec, $multiplex' "migrate stock multiplexer shortcut" || return 1
+
         file="$root/keybindings.lua"
+        replace_exact_trimmed_line "$file" 'bind(control .. " + Y", "Open Preferred Terminal", hl.dsp.exec_cmd(apps.hyprscripts .. "/term_exec.sh -- " .. apps.multiplex))' 'bind(control .. " + Y", "Open Preferred Multiplexer", hl.dsp.exec_cmd(apps.multiplex))' "migrate stock multiplexer shortcut" || return 1
         replace_literal_prefix "$file" 'bind(main_mod .. " + SPACE",' "bind(main_mod .. \" + SPACE\", \"Open Menu\", hl.dsp.exec_cmd($menu_toggle_command))" "selected launcher toggle wrapper" || return 1
         replace_literal_prefix "$file" 'bind(main_mod .. " + " .. less,' 'bind(main_mod .. " + " .. less, "Notification action", hl.dsp.exec_cmd(apps.hyprscripts .. "/notification_control.sh toggle"))' "selected notification control" || return 1
         replace_literal_prefix "$file" 'bind(main_mod .. " + H",' 'bind(main_mod .. " + H", "Toggle Selected Bar", hl.dsp.exec_cmd(apps.hyprscripts .. "/toggle_waybar.sh"))' "selected bar toggle" || return 1
@@ -2271,7 +2286,7 @@ configure_hypr_autostart_optional_extras() {
         fi
     }
 
-    local configured_terminal=""
+    local configured_terminal="" configured_multiplexer=""
     local legacy_numlock_line='hl.exec_cmd([[hyprctl keyword input:kb_numlock true && date "+%Y-%m-%d %H:%M:%S" > /tmp/numlock-set]])'
     local session_numlock_line='hl.exec_cmd("hyprctl keyword input:kb_numlock true && " .. apps.hyprscripts .. "/startup_state.sh mark numlock")'
     local legacy_wallpaper_line='hl.exec_cmd(apps.hyprscripts .. "/change_wallpaper.sh")'
@@ -2281,6 +2296,7 @@ configure_hypr_autostart_optional_extras() {
     local kitty_zellij_line='hl.exec_cmd("kitty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
     local alacritty_zellij_line='hl.exec_cmd("alacritty -e zellij -l ~/.config/zellij/layouts/sysmon.kdl", { workspace = "3 silent" })'
     configured_terminal=$(role_field terminal executable 2>/dev/null || printf '%s' "${ROLE_TERMINAL:-}")
+    configured_multiplexer=$(role_field multiplexer package 2>/dev/null || printf '%s' "${ROLE_MULTIPLEXER:-}")
 
     local lua_files=(
         "$HOME/dotfiles/.config/hypr/sources/autostart.lua"
@@ -2310,7 +2326,7 @@ configure_hypr_autostart_optional_extras() {
 
         if [ "$configured_terminal" = "kitty" ]; then
             uncomment_lua_line_if_file_exists "$lua_file" "$HOME/.config/kitty/my_layout.conf" "$kitty_session_line"
-        elif [ "$configured_terminal" = "alacritty" ] && command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
+        elif [ "$configured_terminal" = "alacritty" ] && [ "$configured_multiplexer" = "zellij" ] && command -v zellij >/dev/null 2>&1 && [ -f "$HOME/.config/zellij/layouts/sysmon.kdl" ]; then
             uncomment_lua_line_if_cmd_exists "$lua_file" "alacritty" "$alacritty_zellij_line"
         fi
     done

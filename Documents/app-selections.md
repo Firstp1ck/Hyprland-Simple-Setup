@@ -1,10 +1,10 @@
 # Application selections
 
-The setup UI manages 14 independent application roles. Browser, shell, terminal, TUI editor, GUI editor, and coding agents may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. Notifications, bar, calendar, Bluetooth, network, audio, launcher, and dock are single-choice roles. GUI editor, dock, and coding agents may be set to **None**.
+The setup UI manages 15 independent application roles. Browser, shell, terminal, multiplexer, TUI editor, GUI editor, and coding agents may contain multiple installed choices; each nonempty role has one primary choice used by shortcuts and integrations. The required multiplexer role defaults to Herdr and also offers tmux and Zellij. Notifications, bar, calendar, Bluetooth, network, audio, launcher, and dock are single-choice roles. GUI editor, dock, and coding agents may be set to **None**.
 
 ## TUI controls
 
-Open **Applications** with Enter from the main preflight window. The submenu lists all 14 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
+Open **Applications** with Enter from the main preflight window. The submenu lists all 15 groups and their current selections, with a short explanation of the highlighted app type below the list. Use Up/Down to choose a group, then Enter to open its package chooser.
 
 The package chooser has two columns: app names on the left and wrapped descriptions on the right. The app-type explanation is in its own titled frame above the choices, separated by a blank row. Names retain selection markers, package sources and TUI labels. Row heights accommodate wrapping in either column, including optional None. The chooser grows to fit all entries when space permits; very short windows prioritize the focused row over the description panel. On smaller terminals, Up/Down scrolls the choices; Home/End jumps to the first/last choice and Page Up/Down moves five choices. The position indicator shows where you are in the list.
 
@@ -24,6 +24,8 @@ For example:
 ```sh
 ROLE_BROWSER=firefox \
 ROLE_BROWSER_PACKAGES='firefox chromium' \
+ROLE_MULTIPLEXER=zellij \
+ROLE_MULTIPLEXER_PACKAGES='tmux zellij' \
 ROLE_DOCK= \
 ROLE_DOCK_PACKAGES= \
 ROLE_AGENT= \
@@ -42,7 +44,9 @@ The installer writes `~/.config/hypr/roles.json` with schema version 2:
 - `.agent_executables` maps selected agent IDs to verified absolute executable paths found after the installer stage.
 - command arguments remain JSON arrays and are passed as separate argv fields.
 
-Scripts use `role_exec.sh` to launch the primary application. Terminal applications are wrapped by the selected terminal. If the GUI editor is disabled, explicit editor actions open the TUI editor in that terminal; it is not autostarted.
+Scripts use `role_exec.sh` to launch the primary application. Terminal applications are wrapped by the selected terminal. The preferred-multiplexer shortcut runs the primary multiplexer once through that terminal, preserving each argument literally rather than nesting another terminal command. If the GUI editor is disabled, explicit editor actions open the TUI editor in that terminal; it is not autostarted.
+
+The generated `apps.multiplex` and `$multiplex` values are complete terminal actions. Setup migrates the exact former stock shortcuts to execute them directly. Custom bindings are not rewritten: if they prepend a terminal wrapper to either variable, remove that wrapper to avoid nesting terminals.
 
 ## Desktop controls
 
@@ -52,7 +56,7 @@ Konsole uses fixed `hss-*` tab titles and separate processes for role windows, s
 
 When Waybar is selected, its role action updates preserve JSONC comments, unrelated settings, and trailing-comma syntax. Selecting another bar leaves the Waybar configuration unchanged. Toggling an nwg-panel bar sends its configured real-time signal to hide or show only the bar, without stopping the shared dock.
 
-Changing a selection and rerunning setup rewrites the generated metadata and role-managed lines atomically. It does not uninstall previously installed alternatives. Coding-agent choices use the fixed official installer contract described in [Coding agents](agents.md); None disables agent integration without uninstalling an existing CLI. NetworkManager, BlueZ, and BlueZ utilities remain installed as required backends regardless of UI choice.
+Changing a selection and rerunning setup rewrites the generated metadata and role-managed lines atomically. Zellij's Alacritty workspace example is enabled only when Alacritty and primary Zellij are selected; Kitty keeps its existing dashboard session independently of the multiplexer choice. Multiplexers remain on-demand applications and are not startup-health processes. Rerunning setup does not uninstall previously installed alternatives. Coding-agent choices use the fixed official installer contract described in [Coding agents](agents.md); None disables agent integration without uninstalling an existing CLI. NetworkManager, BlueZ, and BlueZ utilities remain installed as required backends regardless of UI choice.
 
 ## Startup errors
 

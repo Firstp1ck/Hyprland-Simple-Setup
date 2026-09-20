@@ -170,6 +170,7 @@
       "firewalld",
       "fastfetch",
       "tldr",
+      "tmux",
       "zellij",
       "psensor",
       "konsole",
@@ -225,7 +226,8 @@
       "pacsea-bin",
       "usrgrp-manager-bin",
       "ncpamixer",
-      "tofi"
+      "tofi",
+      "herdr-bin"
     ]
   },
   "package_descriptions": {
@@ -359,7 +361,9 @@
     "firewalld": "Firewall daemon",
     "fastfetch": "System info tool",
     "tldr": "Simplified man pages",
-    "zellij": "Terminal workspace",
+    "tmux": "Long-established terminal multiplexer with a compact server/client model and broad remote-session compatibility.",
+    "zellij": "Modern terminal workspace with discoverable shortcuts, built-in layouts and plugins, and a more guided interface than tmux.",
+    "herdr-bin": "Agent-aware terminal multiplexer with workspaces, pane status and a local control API; prebuilt AUR package.",
     "psensor": "Hardware sensors monitor",
     "konsole": "KDE/Qt terminal with tabs, split views and profiles; fits KDE-themed desktops.",
     "playerctl": "Media player control",
@@ -568,6 +572,35 @@
           "executable": "foot",
           "args": [],
           "class": "foot"
+        }
+      ]
+    },
+    "multiplexer": {
+      "label": "Multiplexer",
+      "selection": "multiple",
+      "required": true,
+      "default": "herdr-bin",
+      "options": [
+        {
+          "package": "tmux",
+          "source": "pacman",
+          "executable": "tmux",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "zellij",
+          "source": "pacman",
+          "executable": "zellij",
+          "args": [],
+          "terminal": true
+        },
+        {
+          "package": "herdr-bin",
+          "source": "aur",
+          "executable": "herdr",
+          "args": [],
+          "terminal": true
         }
       ]
     },

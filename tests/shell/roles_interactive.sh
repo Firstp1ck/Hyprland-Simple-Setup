@@ -8,7 +8,7 @@ fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 setup_role_fixture "$fixture"
 
-input=$'1 2\n2\n\n4 5\n1\n2\n\n0\n3\n2\n4\n3\n\n5\n3\n0\n'
+input=$'1 2\n2\n\n4 5\n1\n\n2\n\n0\n3\n2\n4\n3\n\n5\n3\n0\n'
 output=$(printf '%s' "$input" | NON_INTERACTIVE=false "$repo_root/setup.sh" --test-scenario roles)
 grep -Fq 'Select Browser:' <<<"$output"
 grep -Fq 'Choose the primary Browser:' <<<"$output"
@@ -20,6 +20,8 @@ jq -e '
   and ([.selected.browser[].package] == ["firefox", "chromium"])
   and .roles.terminal.package == "konsole"
   and ([.selected.terminal[].package] == ["konsole", "foot"])
+  and .roles.multiplexer.package == "herdr-bin"
+  and ([.selected.multiplexer[].package] == ["herdr-bin"])
   and .roles.notifications.package == "mako"
   and .roles.gui_editor == null and .selected.gui_editor == []
   and .roles.bar.package == "nwg-panel"

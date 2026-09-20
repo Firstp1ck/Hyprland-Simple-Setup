@@ -1351,6 +1351,9 @@ fn application_type_description(role: &str) -> &'static str {
         "terminal" => {
             "Provides the window for shells and text-based apps; separate from the shell itself."
         }
+        "multiplexer" => {
+            "Keeps terminal workspaces and sessions organized or persistent. The primary choice drives the multiplexer shortcut."
+        }
         "notifications" => {
             "Displays desktop alerts. Some providers also offer history and do-not-disturb controls."
         }
@@ -4679,7 +4682,7 @@ mod tests {
         app.ui_mode = UiMode::Preflight;
         let screen = render_app_screen(&mut app, 120, 24);
         assert_eq!(screen.matches("Applications").count(), 1);
-        assert!(screen.contains("14 groups"));
+        assert!(screen.contains("15 groups"));
         assert!(screen.contains("Start unattended install"));
         for label in [
             "Browser",

@@ -286,11 +286,11 @@ cd ~/Hyprland-Simple-Setup
 
 ### Application roles
 
-Choose applications independently in 14 groups:
+Choose applications independently in 15 groups:
 
 | Selection | Groups |
 | --- | --- |
-| One or more | Browser, shell, terminal, terminal text editor |
+| One or more | Browser, shell, terminal, multiplexer, terminal text editor |
 | Zero or more | GUI text editor, coding agents |
 | Exactly one | App launcher, notifications, audio interface, network interface, Bluetooth interface, calendar, bar |
 | Zero or one | Dock |
@@ -299,9 +299,11 @@ Open **Applications** with Enter, then select a group in the submenu and press E
 
 Shortcuts and desktop controls use the primary app. Choosing alternatives does not uninstall existing applications. NetworkManager, BlueZ, and the audio backend remain independent of the selected interfaces.
 
+Multiplexers are required and allow multiple selections: tmux, Zellij, and Herdr. Herdr is selected and primary by default, installed through AUR `herdr-bin`; tmux and Zellij use pacman. Ctrl+Y opens the primary multiplexer in the primary terminal.
+
 Coding agents are optional, with Pi selected by default. Available choices are Pi, OpenCode, Claude Code, Codex CLI and Cursor CLI. Setup uses their official installers for missing selections; authentication remains manual. See [Coding agents](Documents/agents.md) for installation and rollback limits.
 
-Startup failures can offer a **Troubleshoot with your primary agent** notification action. No agent starts until you click it. Triage uses tmux, Zellij or an available Herdr session before falling back to the selected terminal. See [Startup checks and triage](Documents/startup-triage.md) for diagnostic privacy and behavior.
+Startup failures can offer a **Troubleshoot with your primary agent** notification action. No agent starts until you click it. Triage tries the primary multiplexer, then other selected multiplexers, then the primary terminal. Herdr requires an existing compatible default session. See [Startup checks and triage](Documents/startup-triage.md) for diagnostic privacy and behavior.
 
 See [Application selections](Documents/app-selections.md) for direct-installer environment variables, compatibility, and runtime details.
 
